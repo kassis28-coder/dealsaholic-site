@@ -1,5 +1,4 @@
-Here's the full code again — please use the copy icon in the top-right corner of this block (hover over it to reveal a small clipboard icon) rather than manually selecting the text:
-javascript/**
+/**
  * Netlify Scheduled Function — runs automatically once a day.
  * This is the same logic as the standalone fetch-deals.js script,
  * adapted to run inside Netlify's serverless environment and write
@@ -153,9 +152,6 @@ async function fetchAndStoreDeals() {
     },
   };
 
-  // Netlify Blobs is a simple built-in key/value store — this is
-  // where the daily results get saved so the public site can read
-  // them back via the get-deals function.
   const store = getStore("deals");
   await store.setJSON("latest", output);
 
