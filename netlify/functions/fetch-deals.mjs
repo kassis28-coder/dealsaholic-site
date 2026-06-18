@@ -15,7 +15,7 @@
  * Optional:
  *   AMAZON_MARKETPLACE   (default "www.amazon.com")
  *   DEALS_MIN_DISCOUNT   (default 20)
- *   DEALS_MAX_RESULTS    (default 24)
+ *   DEALS_MAX_RESULTS    (default 300)
  */
 
 import { getStore } from "@netlify/blobs";
@@ -25,7 +25,7 @@ const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
-const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 24);
+const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
@@ -33,9 +33,32 @@ const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
 const SEARCH_BUCKETS = [
   "deal of the day",
   "clearance",
+  "today's deals",
   "electronics",
+  "electronics accessories",
+  "headphones",
   "home and kitchen",
+  "kitchen gadgets",
+  "small appliances",
   "best sellers",
+  "home decor",
+  "wall art",
+  "furniture",
+  "storage organization",
+  "beauty",
+  "skincare",
+  "haircare tools",
+  "toys",
+  "toys for kids",
+  "board games",
+  "fashion",
+  "womens clothing",
+  "mens clothing",
+  "shoes",
+  "sports and outdoors",
+  "fitness equipment",
+  "outdoor camping gear",
+  "pet supplies",
 ];
 
 async function getAccessToken() {
