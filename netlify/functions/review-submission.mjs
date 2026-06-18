@@ -15,7 +15,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 export default async (req) => {
   try {
     const body = await req.json();
-    const { password, submissionId, action } = body;
+    const { password, submissionId, action, updatedUrl } = body;
 
     if (!ADMIN_PASSWORD || password !== ADMIN_PASSWORD) {
       return new Response(
@@ -39,6 +39,11 @@ export default async (req) => {
         JSON.stringify({ error: "Submission not found." }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    if (updatedUrl && typeof updatedUrl === "string" && updatedUrl.trim() !== "") {
+      record.productUrl = updatedUrl.trim();
+      record.needsAffiliateLink = false; // admin has supplied the real link
     }
 
     record.status = action === "approve" ? "approved" : "rejected";
