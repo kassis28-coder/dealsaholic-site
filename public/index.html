@@ -5,40 +5,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dealsaholic — Today's Best Amazon Deals</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #FAF8F4;
-    --ink-soft: #FFFFFF;
-    --paper: #1F2229;
-    --red: #FF4B3E;
-    --yellow: #D98E00;
-    --slate: #8A8578;
-    --line: #E8E3D8;
+    --paper: #FAF8F4;
+    --card: #FFFFFF;
+    --ink: #1C1A17;
+    --ink-soft: #6B6459;
+    --deal-red: #E1432D;
+    --deal-red-dark: #B8341F;
+    --line: #E8E2D8;
   }
 
   * { box-sizing: border-box; }
 
   body {
     margin: 0;
-    background: var(--ink);
+    background: var(--paper);
     font-family: 'Inter', sans-serif;
-    color: var(--paper);
+    color: var(--ink);
     min-height: 100vh;
   }
 
   .site-footer {
     text-align: center;
-    padding: 24px 20px 40px;
+    padding: 28px 20px 44px;
     font-size: 12px;
-    color: var(--slate);
+    color: var(--ink-soft);
+    border-top: 1px solid var(--line);
+    margin-top: 8px;
   }
 
-  .site-footer a { color: var(--yellow); text-decoration: none; }
-
   .deals-feed {
-    padding: 28px 0 32px;
-    max-width: 1200px;
+    padding: 32px 0 24px;
+    max-width: 1320px;
     margin: 0 auto;
   }
 
@@ -46,92 +46,89 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    padding: 0 20px 18px;
-    border-bottom: 1px solid var(--line);
-    margin-bottom: 22px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 24px 20px;
+    border-bottom: 2px solid var(--ink);
+    margin: 0 0 24px;
   }
 
   .deals-feed__title {
-    font-family: 'Archivo', sans-serif;
-    font-weight: 800;
-    font-size: 22px;
-    letter-spacing: -0.02em;
+    font-family: 'Archivo Black', sans-serif;
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: -0.01em;
     margin: 0;
     text-transform: uppercase;
   }
 
   .deals-feed__title span {
-    color: var(--yellow);
+    color: var(--deal-red);
   }
 
   .deals-feed__updated {
     font-size: 12px;
-    color: var(--slate);
+    font-weight: 500;
+    color: var(--ink-soft);
     font-family: 'Inter', sans-serif;
   }
 
-  .deals-feed__track {
-    display: flex;
+  .deals-feed__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 16px;
-    overflow-x: auto;
-    padding: 4px 20px 12px;
-    scroll-snap-type: x proximity;
+    padding: 0 24px;
   }
-
-  .deals-feed__track::-webkit-scrollbar { height: 6px; }
-  .deals-feed__track::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
   .deal-card {
     position: relative;
-    flex: 0 0 220px;
-    scroll-snap-align: start;
-    background: var(--ink-soft);
+    background: var(--card);
     border: 1px solid var(--line);
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
     text-decoration: none;
-    color: var(--paper);
-    box-shadow: 0 1px 3px rgba(31, 34, 41, 0.06);
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    color: var(--ink);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    flex-direction: column;
   }
 
   .deal-card:hover {
     transform: translateY(-3px);
-    border-color: var(--yellow);
-    box-shadow: 0 6px 16px rgba(31, 34, 41, 0.12);
+    border-color: var(--deal-red);
+    box-shadow: 0 8px 20px rgba(28, 26, 23, 0.08);
   }
-  .deal-card:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+  .deal-card:focus-visible { outline: 2px solid var(--deal-red); outline-offset: 2px; }
 
   .deal-card__image-wrap {
     position: relative;
     background: #fff;
-    height: 160px;
+    aspect-ratio: 1 / 1;
     display: flex;
     align-items: center;
     justify-content: center;
+    border-bottom: 1px solid var(--line);
   }
 
   .deal-card__image {
-    max-width: 88%;
-    max-height: 88%;
+    max-width: 82%;
+    max-height: 82%;
     object-fit: contain;
   }
 
-  /* Price-tag badge: die-cut ticket shape with a perforated notch,
-     this is the signature element — the discount is rendered like
-     a price-gun sticker stamped onto the corner of the photo. */
   .deal-card__badge {
     position: absolute;
-    top: 8px;
+    top: 10px;
     left: -6px;
-    background: var(--red);
-    color: var(--paper);
+    background: var(--deal-red);
+    color: #fff;
     font-family: 'Archivo Black', sans-serif;
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1;
-    padding: 6px 12px 6px 16px;
+    padding: 6px 11px 6px 15px;
     clip-path: polygon(0% 50%, 10% 0%, 100% 0%, 100% 100%, 10% 100%);
-    filter: drop-shadow(0 2px 3px rgba(31, 34, 41, 0.25));
+    filter: drop-shadow(0 2px 4px rgba(28, 26, 23, 0.25));
   }
 
   .deal-card__badge::after {
@@ -141,20 +138,23 @@
     top: 50%;
     width: 4px;
     height: 4px;
-    background: var(--ink-soft);
+    background: var(--paper);
     border-radius: 50%;
     transform: translateY(-50%);
   }
 
   .deal-card__body {
-    padding: 12px 14px 14px;
+    padding: 12px 13px 14px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
   }
 
   .deal-card__title {
     font-size: 13px;
     font-weight: 500;
     line-height: 1.35;
-    margin: 0 0 8px;
+    margin: 0 0 10px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -166,25 +166,34 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    margin-top: auto;
   }
 
   .deal-card__price {
     font-family: 'Archivo', sans-serif;
     font-weight: 800;
-    font-size: 18px;
-    color: var(--yellow);
+    font-size: 17px;
+    color: var(--deal-red-dark);
   }
 
   .deal-card__rating {
     font-size: 11px;
-    color: var(--slate);
+    font-weight: 500;
+    color: var(--ink-soft);
   }
 
   .deals-feed__empty {
-    padding: 40px 20px;
+    grid-column: 1 / -1;
+    padding: 64px 20px;
     text-align: center;
-    color: var(--slate);
+    color: var(--ink-soft);
     font-size: 14px;
+  }
+
+  @media (max-width: 480px) {
+    .deals-feed__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 0 16px; }
+    .deals-feed__header { padding: 0 16px 16px; }
+    .deals-feed__title { font-size: 21px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -199,7 +208,7 @@
     <h2 class="deals-feed__title">Today's Best <span>Deals</span></h2>
     <span class="deals-feed__updated" id="deals-updated"></span>
   </div>
-  <div class="deals-feed__track" id="deals-track">
+  <div class="deals-feed__grid" id="deals-grid">
     <div class="deals-feed__empty">Loading today's deals…</div>
   </div>
 </div>
@@ -211,8 +220,6 @@
 </p>
 
 <script>
-  // Same-site serverless function — no setup needed, this works
-  // automatically once deployed on Netlify.
   const DEALS_JSON_URL = '/api/deals';
 
   function formatUpdated(iso) {
@@ -226,16 +233,16 @@
   }
 
   function renderDeals(data) {
-    const track = document.getElementById('deals-track');
+    const grid = document.getElementById('deals-grid');
     const updated = document.getElementById('deals-updated');
     updated.textContent = data.generatedAt ? formatUpdated(data.generatedAt) : '';
 
     if (!data.deals || data.deals.length === 0) {
-      track.innerHTML = '<div class="deals-feed__empty">No deals meet today\'s discount threshold yet — check back soon.</div>';
+      grid.innerHTML = '<div class="deals-feed__empty">No deals meet today\'s discount threshold yet — check back soon.</div>';
       return;
     }
 
-    track.innerHTML = data.deals.map(deal => `
+    grid.innerHTML = data.deals.map(deal => `
       <a class="deal-card" href="${deal.url}" target="_blank" rel="nofollow sponsored noopener">
         <div class="deal-card__image-wrap">
           ${deal.discountPercent ? `<div class="deal-card__badge">-${deal.discountPercent}%</div>` : ''}
@@ -265,7 +272,7 @@
     })
     .then(renderDeals)
     .catch(err => {
-      document.getElementById('deals-track').innerHTML =
+      document.getElementById('deals-grid').innerHTML =
         '<div class="deals-feed__empty">Deals are loading — please refresh in a moment.</div>';
       console.error(err);
     });
