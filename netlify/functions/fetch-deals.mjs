@@ -1,4 +1,24 @@
-import { getStore } from "@netlify/blobs";
+/**
+ * Netlify Scheduled Function — runs automatically once a day.
+ * This is the same logic as the standalone fetch-deals.js script,
+ * adapted to run inside Netlify's serverless environment and write
+ * its output to a location the live site can read from.
+ *
+ * Schedule is configured in netlify.toml, not here.
+ *
+ * Required environment variables (set in Netlify dashboard under
+ * Site configuration → Environment variables):
+ *   AMAZON_CLIENT_ID
+ *   AMAZON_CLIENT_SECRET
+ *   AMAZON_PARTNER_TAG
+ *
+ * Optional:
+ *   AMAZON_MARKETPLACE   (default "www.amazon.com")
+ *   DEALS_MIN_DISCOUNT   (default 20)
+ *   DEALS_MAX_RESULTS    (default 24)
+ */
+
+const { getStore } = require("@netlify/blobs");
 
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
@@ -54,10 +74,9 @@ async function searchItems(accessToken, keywords) {
         "images.primary.large",
         "itemInfo.title",
         "offersV2.listings.price",
-        "offersV2.listings.savings",
+        "offersV2.listings.dealDetails",
         "customerReviews.starRating",
         "customerReviews.count",
-        "detailPageURL",
       ],
     }),
   });
@@ -72,10 +91,10 @@ async function searchItems(accessToken, keywords) {
 function computeDiscountPercent(item) {
   const listing = item.offersV2?.listings?.[0];
   if (!listing) return null;
-  const savingsPercent = listing.savings?.percentage;
+  const savingsPercent = listing.dealDetails?.percentageOff;
   if (typeof savingsPercent === "number") return savingsPercent;
   const price = listing.price?.amount;
-  const savingsAmount = listing.savings?.amount;
+  const savingsAmount = listing.dealDetails?.savingsAmount?.amount;
   if (typeof price === "number" && typeof savingsAmount === "number") {
     const originalPrice = price + savingsAmount;
     if (originalPrice > 0) return Math.round((savingsAmount / originalPrice) * 100);
@@ -93,7 +112,7 @@ function normalizeDeal(item) {
     discountPercent: computeDiscountPercent(item),
     rating: item.customerReviews?.starRating?.value || null,
     reviewCount: item.customerReviews?.count || null,
-    url: item.detailPageURL,
+    url: item.detailPageURL || `https://www.amazon.com/dp/${item.asin}?tag=${PARTNER_TAG}`,
   };
 }
 
@@ -121,6 +140,9 @@ async function fetchAndStoreDeals() {
     deals,
   };
 
+  // Netlify Blobs is a simple built-in key/value store — this is
+  // where the daily results get saved so the public site can read
+  // them back via the get-deals function.
   const store = getStore("deals");
   await store.setJSON("latest", output);
 
