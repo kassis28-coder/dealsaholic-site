@@ -39,6 +39,27 @@ async function getAccessToken() {
   return data.access_token;
 }
 
+const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || "kethya08-20";
+
+function isAmazonUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.includes("amazon.");
+  } catch {
+    return false;
+  }
+}
+
+function addAffiliateTag(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("tag", PARTNER_TAG);
+    return parsed.toString();
+  } catch {
+    return url; // if it's somehow not a valid URL, leave it untouched
+  }
+}
+
 function generateSubmissionId() {
   return `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -107,6 +128,8 @@ export default async (req) => {
     const amountPaid = purchaseUnit?.payments?.captures?.[0]?.amount?.value || null;
 
     const submissionId = generateSubmissionId();
+    const productUrl = submission.productUrl;
+    const isAmazon = isAmazonUrl(productUrl);
     const record = {
       id: submissionId,
       status: "pending",
@@ -117,7 +140,9 @@ export default async (req) => {
       postsAllowed: pkg.posts,
       amountPaid,
       productTitle: submission.productTitle,
-      productUrl: submission.productUrl,
+      originalUrl: productUrl,
+      productUrl: isAmazon ? addAffiliateTag(productUrl) : productUrl,
+      needsAffiliateLink: !isAmazon,
       discountCode: submission.discountCode,
       price: submission.price,
       photoUrl: submission.photoUrl || null,
