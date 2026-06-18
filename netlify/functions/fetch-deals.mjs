@@ -126,13 +126,13 @@ async function fetchAndStoreDeals() {
     await new Promise((r) => setTimeout(r, 1100));
   }
 
-  console.log(`Total items fetched across all buckets: ${allItems.length}`);
+  console.error(`Total items fetched across all buckets: ${allItems.length}`);
   if (allItems[0]) {
-    console.log("Sample raw item offersV2.listings[0]:", JSON.stringify(allItems[0].offersV2?.listings?.[0]));
+    console.error("Sample raw item offersV2.listings[0]:", JSON.stringify(allItems[0].offersV2?.listings?.[0]));
   }
 
   const normalized = allItems.map(normalizeDeal);
-  console.log(`Discount percents found: ${JSON.stringify(normalized.map((d) => d.discountPercent))}`);
+  console.error(`Discount percents found: ${JSON.stringify(normalized.map((d) => d.discountPercent))}`);
 
   const deals = normalized
     .filter((d) => d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT)
