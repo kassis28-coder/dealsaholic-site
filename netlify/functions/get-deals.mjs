@@ -2,29 +2,73 @@
  * Public endpoint the website calls to read today's deals.
  * Reachable at: /.netlify/functions/get-deals
  *
- * This just reads back whatever fetch-deals.mjs last saved —
- * it does not call Amazon itself, so it's fast and has no
- * credentials of its own.
+ * This reads back whatever fetch-deals.mjs last saved (Amazon
+ * deals) AND merges in any APPROVED, non-expired seller
+ * submissions, clearly labeled so visitors can tell them apart
+ * from Amazon Associates deals.
  */
 import { getStore } from "@netlify/blobs";
+
+async function getApprovedSellerDeals() {
+  try {
+    const store = getStore("submissions");
+    const index = await store.get("index", { type: "json" });
+    if (!Array.isArray(index)) return [];
+
+    const now = Date.now();
+    const approved = [];
+
+    for (const id of index) {
+      let record;
+      try {
+        record = await store.get(id, { type: "json" });
+      } catch {
+        continue;
+      }
+      if (!record || record.status !== "approved") continue;
+
+      const expiresAt = new Date(record.expiresOn).getTime();
+      if (!isNaN(expiresAt) && expiresAt < now) continue; // skip expired
+
+      approved.push({
+        asin: record.id,
+        title: record.productTitle,
+        image: record.photoUrl || null,
+        price: record.price,
+        discountPercent: null,
+        rating: null,
+        reviewCount: null,
+        url: record.productUrl,
+        discountCode: record.discountCode,
+        sponsored: true,
+      });
+    }
+
+    return approved;
+  } catch {
+    return [];
+  }
+}
 
 export default async () => {
   try {
     const store = getStore("deals");
     const data = await store.get("latest", { type: "json" });
 
-    if (!data) {
-      return new Response(
-        JSON.stringify({
-          generatedAt: null,
-          deals: [],
-          message: "No deals fetched yet — first scheduled run hasn't completed.",
-        }),
-        { headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const sellerDeals = await getApprovedSellerDeals();
 
-    return new Response(JSON.stringify(data), {
+    const base = data || {
+      generatedAt: null,
+      deals: [],
+      message: "No deals fetched yet — first scheduled run hasn't completed.",
+    };
+
+    const combined = {
+      ...base,
+      deals: [...sellerDeals, ...(base.deals || [])],
+    };
+
+    return new Response(JSON.stringify(combined), {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control": "public, max-age=300",
