@@ -145,7 +145,7 @@ async function fetchAndStoreDeals() {
   for (const bucket of SEARCH_BUCKETS) {
     const items = await searchItems(accessToken, bucket);
     allItems.push(...items);
-    await new Promise((r) => setTimeout(r, 1100));
+    await new Promise((r) => setTimeout(r, 2500));
   }
 
   console.error(`Total items fetched across all buckets: ${allItems.length}`);
