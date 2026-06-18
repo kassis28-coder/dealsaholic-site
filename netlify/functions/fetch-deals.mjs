@@ -1,4 +1,5 @@
-/**
+Here's the full code again — please use the copy icon in the top-right corner of this block (hover over it to reveal a small clipboard icon) rather than manually selecting the text:
+javascript/**
  * Netlify Scheduled Function — runs automatically once a day.
  * This is the same logic as the standalone fetch-deals.js script,
  * adapted to run inside Netlify's serverless environment and write
