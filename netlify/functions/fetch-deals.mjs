@@ -145,6 +145,11 @@ async function fetchAndStoreDeals() {
     marketplace: MARKETPLACE,
     minDiscountPercent: MIN_DISCOUNT,
     deals,
+    debug: {
+      totalItemsFetched: allItems.length,
+      discountPercentsFound: normalized.map((d) => d.discountPercent),
+      sampleListing: allItems[0]?.offersV2?.listings?.[0] || null,
+    },
   };
 
   // Netlify Blobs is a simple built-in key/value store — this is
