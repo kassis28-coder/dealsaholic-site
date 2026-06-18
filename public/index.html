@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dealsaholic — Today's Best Amazon Deals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #FAF8F4;
+    --ink-soft: #FFFFFF;
+    --paper: #1F2229;
+    --red: #FF4B3E;
+    --yellow: #D98E00;
+    --slate: #8A8578;
+    --line: #E8E3D8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ink);
+    font-family: 'Inter', sans-serif;
+    color: var(--paper);
+    min-height: 100vh;
+  }
+
+  .site-footer {
+    text-align: center;
+    padding: 24px 20px 40px;
+    font-size: 12px;
+    color: var(--slate);
+  }
+
+  .site-footer a { color: var(--yellow); text-decoration: none; }
+
+  .deals-feed {
+    padding: 28px 0 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .deals-feed__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 20px 18px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+
+  .deals-feed__title {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    margin: 0;
+    text-transform: uppercase;
+  }
+
+  .deals-feed__title span {
+    color: var(--yellow);
+  }
+
+  .deals-feed__updated {
+    font-size: 12px;
+    color: var(--slate);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .deals-feed__track {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 4px 20px 12px;
+    scroll-snap-type: x proximity;
+  }
+
+  .deals-feed__track::-webkit-scrollbar { height: 6px; }
+  .deals-feed__track::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+  .deal-card {
+    position: relative;
+    flex: 0 0 220px;
+    scroll-snap-align: start;
+    background: var(--ink-soft);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    text-decoration: none;
+    color: var(--paper);
+    box-shadow: 0 1px 3px rgba(31, 34, 41, 0.06);
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .deal-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--yellow);
+    box-shadow: 0 6px 16px rgba(31, 34, 41, 0.12);
+  }
+  .deal-card:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+  .deal-card__image-wrap {
+    position: relative;
+    background: #fff;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .deal-card__image {
+    max-width: 88%;
+    max-height: 88%;
+    object-fit: contain;
+  }
+
+  /* Price-tag badge: die-cut ticket shape with a perforated notch,
+     this is the signature element — the discount is rendered like
+     a price-gun sticker stamped onto the corner of the photo. */
+  .deal-card__badge {
+    position: absolute;
+    top: 8px;
+    left: -6px;
+    background: var(--red);
+    color: var(--paper);
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 15px;
+    line-height: 1;
+    padding: 6px 12px 6px 16px;
+    clip-path: polygon(0% 50%, 10% 0%, 100% 0%, 100% 100%, 10% 100%);
+    filter: drop-shadow(0 2px 3px rgba(31, 34, 41, 0.25));
+  }
+
+  .deal-card__badge::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    background: var(--ink-soft);
+    border-radius: 50%;
+    transform: translateY(-50%);
+  }
+
+  .deal-card__body {
+    padding: 12px 14px 14px;
+  }
+
+  .deal-card__title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    margin: 0 0 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 35px;
+  }
+
+  .deal-card__price-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .deal-card__price {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    color: var(--yellow);
+  }
+
+  .deal-card__rating {
+    font-size: 11px;
+    color: var(--slate);
+  }
+
+  .deals-feed__empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--slate);
+    font-size: 14px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .deal-card { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="deals-feed" id="deals-feed">
+  <div class="deals-feed__header">
+    <h2 class="deals-feed__title">Today's Best <span>Deals</span></h2>
+    <span class="deals-feed__updated" id="deals-updated"></span>
+  </div>
+  <div class="deals-feed__track" id="deals-track">
+    <div class="deals-feed__empty">Loading today's deals…</div>
+  </div>
+</div>
+
+<p class="site-footer">
+  As an Amazon Associate, Dealsaholic earns from qualifying purchases.
+  Prices and availability are accurate as of the time shown above and
+  are subject to change.
+</p>
+
+<script>
+  // Same-site serverless function — no setup needed, this works
+  // automatically once deployed on Netlify.
+  const DEALS_JSON_URL = '/api/deals';
+
+  function formatUpdated(iso) {
+    try {
+      const d = new Date(iso);
+      return 'Updated ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+        ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  }
+
+  function renderDeals(data) {
+    const track = document.getElementById('deals-track');
+    const updated = document.getElementById('deals-updated');
+    updated.textContent = data.generatedAt ? formatUpdated(data.generatedAt) : '';
+
+    if (!data.deals || data.deals.length === 0) {
+      track.innerHTML = '<div class="deals-feed__empty">No deals meet today\'s discount threshold yet — check back soon.</div>';
+      return;
+    }
+
+    track.innerHTML = data.deals.map(deal => `
+      <a class="deal-card" href="${deal.url}" target="_blank" rel="nofollow sponsored noopener">
+        <div class="deal-card__image-wrap">
+          ${deal.discountPercent ? `<div class="deal-card__badge">-${deal.discountPercent}%</div>` : ''}
+          ${deal.image ? `<img class="deal-card__image" src="${deal.image}" alt="${escapeHtml(deal.title)}" loading="lazy">` : ''}
+        </div>
+        <div class="deal-card__body">
+          <p class="deal-card__title">${escapeHtml(deal.title)}</p>
+          <div class="deal-card__price-row">
+            <span class="deal-card__price">${deal.price || ''}</span>
+            ${deal.rating ? `<span class="deal-card__rating">★ ${deal.rating}</span>` : ''}
+          </div>
+        </div>
+      </a>
+    `).join('');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  fetch(DEALS_JSON_URL)
+    .then(res => {
+      if (!res.ok) throw new Error('Could not load deals.json (' + res.status + ')');
+      return res.json();
+    })
+    .then(renderDeals)
+    .catch(err => {
+      document.getElementById('deals-track').innerHTML =
+        '<div class="deals-feed__empty">Deals are loading — please refresh in a moment.</div>';
+      console.error(err);
+    });
+</script>
+
+</body>
+</html>
