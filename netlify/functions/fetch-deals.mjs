@@ -1,8 +1,14 @@
 /**
- * Netlify Scheduled Function — runs automatically once a day.
- * This is the same logic as the standalone fetch-deals.js script,
- * adapted to run inside Netlify's serverless environment and write
- * its output to a location the live site can read from.
+ * Netlify Scheduled Function — runs automatically every hour.
+ * Each run only searches a SLICE of categories (one "batch") instead
+ * of all 28 at once. This avoids Amazon's rate limit (which was
+ * causing 429 ThrottleException errors when all 28 ran back-to-back)
+ * and avoids Netlify's function timeout.
+ *
+ * Results from each batch are MERGED into the existing stored deals
+ * rather than replacing them, so the full catalog builds up over a
+ * full rotation (4 batches × every hour = full refresh every 4 hours).
+ * Deals older than 24 hours are dropped so prices don't go stale.
  *
  * Schedule is configured in netlify.toml, not here.
  *
@@ -26,11 +32,12 @@ const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
 const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
+const MAX_AGE_HOURS = 24;
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
 
-const SEARCH_BUCKETS = [
+const ALL_CATEGORIES = [
   "deal of the day",
   "clearance",
   "today's deals",
@@ -60,6 +67,14 @@ const SEARCH_BUCKETS = [
   "outdoor camping gear",
   "pet supplies",
 ];
+
+// Split the 28 categories into 4 batches of 7. Each scheduled run
+// only processes one batch, then moves to the next on the following run.
+const BATCH_SIZE = 7;
+const BATCHES = [];
+for (let i = 0; i < ALL_CATEGORIES.length; i += BATCH_SIZE) {
+  BATCHES.push(ALL_CATEGORIES.slice(i, i + BATCH_SIZE));
+}
 
 async function getAccessToken() {
   const res = await fetch(TOKEN_URL, {
@@ -135,30 +150,78 @@ function normalizeDeal(item) {
     rating: item.customerReviews?.starRating?.value || null,
     reviewCount: item.customerReviews?.count || null,
     url: item.detailPageURL || `https://www.amazon.com/dp/${item.asin}?tag=${PARTNER_TAG}`,
+    fetchedAt: new Date().toISOString(),
   };
 }
 
 async function fetchAndStoreDeals() {
+  const store = getStore("deals");
+
+  // Figure out which batch to run this time. We store the index of
+  // the NEXT batch to run, so each invocation advances the rotation.
+  let batchIndex = 0;
+  try {
+    const stateResult = await store.get("batch-state", { type: "json" });
+    if (stateResult && typeof stateResult.nextBatchIndex === "number") {
+      batchIndex = stateResult.nextBatchIndex;
+    }
+  } catch {
+    // No state yet — start at batch 0.
+  }
+
+  const batch = BATCHES[batchIndex % BATCHES.length];
+  const nextBatchIndex = (batchIndex + 1) % BATCHES.length;
+
+  console.error(`Running batch ${batchIndex + 1} of ${BATCHES.length}: ${JSON.stringify(batch)}`);
+
   const accessToken = await getAccessToken();
 
-  const allItems = [];
-  for (const bucket of SEARCH_BUCKETS) {
-    const items = await searchItems(accessToken, bucket);
-    allItems.push(...items);
+  const newItems = [];
+  for (const category of batch) {
+    const items = await searchItems(accessToken, category);
+    newItems.push(...items);
     await new Promise((r) => setTimeout(r, 2500));
   }
 
-  console.error(`Total items fetched across all buckets: ${allItems.length}`);
-  if (allItems[0]) {
-    console.error("Sample raw item offersV2.listings[0]:", JSON.stringify(allItems[0].offersV2?.listings?.[0]));
+  console.error(`Batch ${batchIndex + 1} fetched ${newItems.length} raw items.`);
+
+  const normalizedNew = newItems
+    .map(normalizeDeal)
+    .filter((d) => d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT);
+
+  console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals (>= ${MIN_DISCOUNT}% off).`);
+
+  // Load existing accumulated deals so we can merge instead of overwrite.
+  let existingDeals = [];
+  try {
+    const existing = await store.get("latest", { type: "json" });
+    if (existing && Array.isArray(existing.deals)) {
+      existingDeals = existing.deals;
+    }
+  } catch {
+    // No existing data yet — that's fine on first run.
   }
 
-  const normalized = allItems.map(normalizeDeal);
-  console.error(`Discount percents found: ${JSON.stringify(normalized.map((d) => d.discountPercent))}`);
+  // Drop anything older than MAX_AGE_HOURS so stale prices fall off.
+  const cutoff = Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000;
+  const freshExisting = existingDeals.filter((d) => {
+    if (!d.fetchedAt) return true; // keep older records that predate this field
+    return new Date(d.fetchedAt).getTime() >= cutoff;
+  });
 
-  const deals = normalized
-    .filter((d) => d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT)
-    .filter((d, i, arr) => arr.findIndex((x) => x.asin === d.asin) === i)
+  // Merge: new deals replace existing entries with the same ASIN
+  // (price/discount refreshed), everything else stays as-is.
+  const merged = [...freshExisting];
+  for (const deal of normalizedNew) {
+    const idx = merged.findIndex((d) => d.asin === deal.asin);
+    if (idx >= 0) {
+      merged[idx] = deal;
+    } else {
+      merged.push(deal);
+    }
+  }
+
+  const deals = merged
     .sort((a, b) => b.discountPercent - a.discountPercent)
     .slice(0, MAX_RESULTS);
 
@@ -168,14 +231,16 @@ async function fetchAndStoreDeals() {
     minDiscountPercent: MIN_DISCOUNT,
     deals,
     debug: {
-      totalItemsFetched: allItems.length,
-      discountPercentsFound: normalized.map((d) => d.discountPercent),
-      sampleListing: allItems[0]?.offersV2?.listings?.[0] || null,
+      lastBatchIndex: batchIndex,
+      lastBatchCategories: batch,
+      lastBatchRawItems: newItems.length,
+      lastBatchQualifyingDeals: normalizedNew.length,
+      totalAccumulatedDeals: deals.length,
     },
   };
 
-  const store = getStore("deals");
   await store.setJSON("latest", output);
+  await store.setJSON("batch-state", { nextBatchIndex });
 
   return output;
 }
@@ -184,7 +249,7 @@ export default async (req) => {
   try {
     const result = await fetchAndStoreDeals();
     return new Response(
-      JSON.stringify({ ok: true, count: result.deals.length }),
+      JSON.stringify({ ok: true, count: result.deals.length, debug: result.debug }),
       { headers: { "Content-Type": "application/json" } }
     );
   } catch (err) {
@@ -197,5 +262,5 @@ export default async (req) => {
 };
 
 export const config = {
-  schedule: "0 */6 * * *",
+  schedule: "0 * * * *",
 };
