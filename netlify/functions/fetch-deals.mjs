@@ -74,7 +74,6 @@ async function searchItems(accessToken, keywords) {
         "images.primary.large",
         "itemInfo.title",
         "offersV2.listings.price",
-        "offersV2.listings.dealDetails",
         "customerReviews.starRating",
         "customerReviews.count",
       ],
@@ -91,10 +90,10 @@ async function searchItems(accessToken, keywords) {
 function computeDiscountPercent(item) {
   const listing = item.offersV2?.listings?.[0];
   if (!listing) return null;
-  const savingsPercent = listing.dealDetails?.percentageOff;
+  const savingsPercent = listing.savings?.percentage;
   if (typeof savingsPercent === "number") return savingsPercent;
-  const price = listing.price?.amount;
-  const savingsAmount = listing.dealDetails?.savingsAmount?.amount;
+  const price = listing.price?.money?.amount;
+  const savingsAmount = listing.savings?.money?.amount;
   if (typeof price === "number" && typeof savingsAmount === "number") {
     const originalPrice = price + savingsAmount;
     if (originalPrice > 0) return Math.round((savingsAmount / originalPrice) * 100);
@@ -108,7 +107,7 @@ function normalizeDeal(item) {
     asin: item.asin,
     title: item.itemInfo?.title?.displayValue || "Untitled product",
     image: item.images?.primary?.large?.url || null,
-    price: listing?.price?.displayAmount || null,
+    price: listing?.price?.money?.displayAmount || null,
     discountPercent: computeDiscountPercent(item),
     rating: item.customerReviews?.starRating?.value || null,
     reviewCount: item.customerReviews?.count || null,
