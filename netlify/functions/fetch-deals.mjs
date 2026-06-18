@@ -100,7 +100,6 @@ function computeDiscountPercent(item) {
   }
   return null;
 }
-}
 
 function normalizeDeal(item) {
   const listing = item.offersV2?.listings?.[0];
