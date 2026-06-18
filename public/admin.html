@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Submission Review — Deals-aholic</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF8F4;
+    --card: #FFFFFF;
+    --ink: #1C1A17;
+    --ink-soft: #6B6459;
+    --line: #ECE6DB;
+    --brand: #FF8A1E;
+    --green: #1C8C5A;
+    --red: #B3261E;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  .login-screen {
+    max-width: 360px;
+    margin: 100px auto;
+    padding: 32px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+
+  .login-screen h1 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 20px;
+    margin: 0 0 16px;
+  }
+
+  .login-screen input {
+    width: 100%;
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+
+  .login-screen button,
+  .btn {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+  }
+
+  .login-screen button {
+    width: 100%;
+    background: var(--brand);
+    color: #fff;
+  }
+
+  .error-text {
+    color: var(--red);
+    font-size: 13px;
+    margin-top: 8px;
+  }
+
+  .admin-page {
+    display: none;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  .admin-page h1 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 26px;
+    margin: 0 0 4px;
+  }
+
+  .admin-page__subtitle {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 28px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .tab {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    cursor: pointer;
+    color: var(--ink-soft);
+  }
+
+  .tab.active {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+
+  .submission-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 14px;
+    display: flex;
+    gap: 16px;
+  }
+
+  .submission-card img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    flex-shrink: 0;
+  }
+
+  .submission-card__body { flex: 1; min-width: 0; }
+
+  .submission-card__title {
+    font-weight: 700;
+    font-size: 14px;
+    margin: 0 0 4px;
+  }
+
+  .submission-card__meta {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin: 0 0 8px;
+    line-height: 1.5;
+  }
+
+  .submission-card__meta a { color: var(--brand); text-decoration: none; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
+
+  .badge--pending { background: #FFF3DC; color: #92660A; }
+  .badge--approved { background: #E7F5EC; color: var(--green); }
+  .badge--rejected { background: #FCEAE8; color: var(--red); }
+
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+
+  .btn--approve { background: var(--green); color: #fff; }
+  .btn--reject { background: var(--red); color: #fff; }
+  .btn--disabled { background: var(--line); color: var(--ink-soft); cursor: not-allowed; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="login-screen">
+  <h1>Admin Login</h1>
+  <input type="password" id="password-input" placeholder="Admin password">
+  <button onclick="login()">Log in</button>
+  <div class="error-text" id="login-error"></div>
+</div>
+
+<div class="admin-page" id="admin-page">
+  <h1>Seller Submissions</h1>
+  <p class="admin-page__subtitle">Review and approve paid seller deal submissions before they go live.</p>
+
+  <div class="tabs">
+    <div class="tab active" data-status="pending" onclick="setTab('pending')">Pending</div>
+    <div class="tab" data-status="approved" onclick="setTab('approved')">Approved</div>
+    <div class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</div>
+  </div>
+
+  <div id="submissions-list"></div>
+</div>
+
+<script>
+  let adminPassword = '';
+  let allSubmissions = [];
+  let currentTab = 'pending';
+
+  async function login() {
+    const input = document.getElementById('password-input');
+    const password = input.value;
+    const errorEl = document.getElementById('login-error');
+    errorEl.textContent = '';
+
+    try {
+      const res = await fetch('/.netlify/functions/get-submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Login failed.';
+        return;
+      }
+
+      adminPassword = password;
+      allSubmissions = data.submissions || [];
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('admin-page').style.display = 'block';
+      renderList();
+    } catch (err) {
+      errorEl.textContent = 'Could not reach the server. Please try again.';
+    }
+  }
+
+  function setTab(status) {
+    currentTab = status;
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.status === status);
+    });
+    renderList();
+  }
+
+  function renderList() {
+    const container = document.getElementById('submissions-list');
+    const filtered = allSubmissions.filter(s => s.status === currentTab);
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="empty-state">No ' + currentTab + ' submissions.</div>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(s => `
+      <div class="submission-card">
+        ${s.photoUrl ? `<img src="${s.photoUrl}" alt="">` : ''}
+        <div class="submission-card__body">
+          <p class="submission-card__title">${escapeHtml(s.productTitle)}
+            <span class="badge badge--${s.status}">${s.status}</span>
+          </p>
+          <p class="submission-card__meta">
+            Price: ${escapeHtml(s.price)} &middot; Code: ${escapeHtml(s.discountCode)}<br>
+            <a href="${s.productUrl}" target="_blank" rel="noopener">View product link</a><br>
+            Package: ${escapeHtml(s.packageLabel)} (paid $${s.amountPaid || '?'}) &middot;
+            Expires: ${escapeHtml(s.expiresOn)}<br>
+            ${s.sellerEmail ? 'Seller email: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
+            Submitted: ${new Date(s.submittedAt).toLocaleString()}
+          </p>
+          ${s.status === 'pending' ? `
+            <div class="actions">
+              <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">Approve</button>
+              <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">Reject</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function review(submissionId, action) {
+    try {
+      const res = await fetch('/.netlify/functions/review-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword, submissionId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Action failed.');
+        return;
+      }
+      const record = allSubmissions.find(s => s.id === submissionId);
+      if (record) record.status = data.status;
+      renderList();
+    } catch (err) {
+      alert('Could not reach the server. Please try again.');
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  document.getElementById('password-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') login();
+  });
+</script>
+
+</body>
+</html>
