@@ -337,6 +337,7 @@
 
 <nav class="nav">
   <span class="nav__logo">Deals-<span>aholic</span></span>
+  <a href="/submit.html" style="margin-left:auto; font-size:13px; font-weight:700; color:var(--ink); text-decoration:none; border:1px solid var(--line); padding:8px 16px; border-radius:999px;">Sell Here</a>
 </nav>
 
 <div class="social-banner">
@@ -420,7 +421,9 @@
     return `
       <a class="deal-card" href="${deal.url}" target="_blank" rel="nofollow sponsored noopener">
         <div class="deal-card__image-wrap">
-          ${deal.discountPercent ? `<div class="deal-card__badge">${deal.discountPercent}% OFF</div>` : ''}
+          ${deal.sponsored
+            ? `<div class="deal-card__badge" style="background:#6B6459;">SPONSORED</div>`
+            : (deal.discountPercent ? `<div class="deal-card__badge">${deal.discountPercent}% OFF</div>` : '')}
           ${deal.image ? `<img class="deal-card__image" src="${deal.image}" alt="${escapeHtml(deal.title)}" loading="lazy">` : ''}
         </div>
         <div class="deal-card__body">
@@ -430,9 +433,9 @@
             ${original ? `<span class="deal-card__price-original">${original}</span>` : ''}
           </div>
           <div class="deal-card__meta-row">
-            ${deal.rating ? `<span class="deal-card__rating">★ ${deal.rating}${deal.reviewCount ? ` (${deal.reviewCount})` : ''}</span>` : '<span></span>'}
+            ${deal.discountCode ? `<span class="deal-card__rating">Code: ${escapeHtml(deal.discountCode)}</span>` : (deal.rating ? `<span class="deal-card__rating">★ ${deal.rating}${deal.reviewCount ? ` (${deal.reviewCount})` : ''}</span>` : '<span></span>')}
           </div>
-          <span class="deal-card__cta">Go to Amazon</span>
+          <span class="deal-card__cta">${deal.sponsored ? 'View Deal' : 'Go to Amazon'}</span>
         </div>
       </a>
     `;
