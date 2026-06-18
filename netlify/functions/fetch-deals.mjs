@@ -90,15 +90,16 @@ async function searchItems(accessToken, keywords) {
 function computeDiscountPercent(item) {
   const listing = item.offersV2?.listings?.[0];
   if (!listing) return null;
-  const savingsPercent = listing.savings?.percentage;
+  const savingsPercent = listing.price?.savings?.percentage;
   if (typeof savingsPercent === "number") return savingsPercent;
   const price = listing.price?.money?.amount;
-  const savingsAmount = listing.savings?.money?.amount;
+  const savingsAmount = listing.price?.savings?.money?.amount;
   if (typeof price === "number" && typeof savingsAmount === "number") {
     const originalPrice = price + savingsAmount;
     if (originalPrice > 0) return Math.round((savingsAmount / originalPrice) * 100);
   }
   return null;
+}
 }
 
 function normalizeDeal(item) {
