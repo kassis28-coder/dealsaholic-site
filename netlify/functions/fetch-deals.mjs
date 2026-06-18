@@ -118,3 +118,60 @@ function normalizeDeal(item) {
 
 async function fetchAndStoreDeals() {
   const accessToken = await getAccessToken();
+
+  const allItems = [];
+  for (const bucket of SEARCH_BUCKETS) {
+    const items = await searchItems(accessToken, bucket);
+    allItems.push(...items);
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+
+  console.log(`Total items fetched across all buckets: ${allItems.length}`);
+  if (allItems[0]) {
+    console.log("Sample raw item offersV2.listings[0]:", JSON.stringify(allItems[0].offersV2?.listings?.[0]));
+  }
+
+  const normalized = allItems.map(normalizeDeal);
+  console.log(`Discount percents found: ${JSON.stringify(normalized.map((d) => d.discountPercent))}`);
+
+  const deals = normalized
+    .filter((d) => d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT)
+    .filter((d, i, arr) => arr.findIndex((x) => x.asin === d.asin) === i)
+    .sort((a, b) => b.discountPercent - a.discountPercent)
+    .slice(0, MAX_RESULTS);
+
+  const output = {
+    generatedAt: new Date().toISOString(),
+    marketplace: MARKETPLACE,
+    minDiscountPercent: MIN_DISCOUNT,
+    deals,
+  };
+
+  // Netlify Blobs is a simple built-in key/value store — this is
+  // where the daily results get saved so the public site can read
+  // them back via the get-deals function.
+  const store = getStore("deals");
+  await store.setJSON("latest", output);
+
+  return output;
+}
+
+export default async (req) => {
+  try {
+    const result = await fetchAndStoreDeals();
+    return new Response(
+      JSON.stringify({ ok: true, count: result.deals.length }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    console.error("fetch-deals function failed:", err.message);
+    return new Response(
+      JSON.stringify({ ok: false, error: err.message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+};
+
+export const config = {
+  schedule: "@daily",
+};
