@@ -167,6 +167,21 @@
   .badge--pending { background: #FFF3DC; color: #92660A; }
   .badge--approved { background: #E7F5EC; color: var(--green); }
   .badge--rejected { background: #FCEAE8; color: var(--red); }
+  .badge--warning { background: #FCEAE8; color: var(--red); }
+
+  .link-edit-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .link-edit-row input {
+    flex: 1;
+    font-size: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
 
   .actions { display: flex; gap: 8px; margin-top: 10px; }
 
@@ -261,16 +276,22 @@
         <div class="submission-card__body">
           <p class="submission-card__title">${escapeHtml(s.productTitle)}
             <span class="badge badge--${s.status}">${s.status}</span>
+            ${s.needsAffiliateLink ? '<span class="badge badge--warning">NEEDS YOUR AFFILIATE LINK</span>' : ''}
           </p>
           <p class="submission-card__meta">
             Price: ${escapeHtml(s.price)} &middot; Code: ${escapeHtml(s.discountCode)}<br>
-            <a href="${s.productUrl}" target="_blank" rel="noopener">View product link</a><br>
+            <a href="${s.productUrl}" target="_blank" rel="noopener">View current link</a><br>
             Package: ${escapeHtml(s.packageLabel)} (paid $${s.amountPaid || '?'}) &middot;
             Expires: ${escapeHtml(s.expiresOn)}<br>
             ${s.sellerEmail ? 'Seller email: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
             Submitted: ${new Date(s.submittedAt).toLocaleString()}
           </p>
           ${s.status === 'pending' ? `
+            ${s.needsAffiliateLink ? `
+              <div class="link-edit-row">
+                <input type="url" id="link-${s.id}" placeholder="Paste your Walmart/Impact/Mavely affiliate link here">
+              </div>
+            ` : ''}
             <div class="actions">
               <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">Approve</button>
               <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">Reject</button>
@@ -282,11 +303,19 @@
   }
 
   async function review(submissionId, action) {
+    const linkInput = document.getElementById('link-' + submissionId);
+    const updatedUrl = linkInput ? linkInput.value.trim() : '';
+
+    if (action === 'approve' && linkInput && !updatedUrl) {
+      alert('This submission needs your affiliate link before approving. Please paste it in the box first.');
+      return;
+    }
+
     try {
       const res = await fetch('/.netlify/functions/review-submission', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword, submissionId, action }),
+        body: JSON.stringify({ password: adminPassword, submissionId, action, updatedUrl }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -294,7 +323,13 @@
         return;
       }
       const record = allSubmissions.find(s => s.id === submissionId);
-      if (record) record.status = data.status;
+      if (record) {
+        record.status = data.status;
+        if (updatedUrl) {
+          record.productUrl = updatedUrl;
+          record.needsAffiliateLink = false;
+        }
+      }
       renderList();
     } catch (err) {
       alert('Could not reach the server. Please try again.');
