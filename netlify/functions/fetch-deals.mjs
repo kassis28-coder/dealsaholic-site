@@ -66,6 +66,13 @@ const ALL_CATEGORIES = [
   "fitness equipment",
   "outdoor camping gear",
   "pet supplies",
+  "toilet paper",
+  "paper towels",
+  "laundry detergent",
+  "dish soap",
+  "cleaning supplies",
+  "trash bags",
+  "household essentials",
 ];
 
 // Split the 28 categories into 4 batches of 7. Each scheduled run
