@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Submit Your Deal — Deals-aholic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.paypal.com/sdk/js?client-id=AbSxb0XxDxYMd85Qkiz_pW37qxq78aqQOoW09ec04BbyRsHEdLSjAKa90eeL1bBovyVQpVJ5f0LsHNa-&currency=USD"></script>
+<style>
+  :root {
+    --paper: #FAF8F4;
+    --card: #FFFFFF;
+    --ink: #1C1A17;
+    --ink-soft: #6B6459;
+    --line: #ECE6DB;
+    --brand: #FF8A1E;
+    --brand-dark: #D96E0C;
+    --green: #1C8C5A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  .nav {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+  }
+
+  .nav__logo {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 19px;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+  }
+
+  .nav__logo span { color: var(--brand); }
+
+  .page {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  .page__title {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 30px;
+    margin: 0 0 8px;
+  }
+
+  .page__subtitle {
+    font-size: 14px;
+    color: var(--ink-soft);
+    line-height: 1.6;
+    margin: 0 0 32px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+
+  .card h2 {
+    font-size: 16px;
+    margin: 0 0 16px;
+  }
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+
+  input[type="text"],
+  input[type="url"],
+  input[type="number"],
+  input[type="date"],
+  input[type="email"] {
+    width: 100%;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+  .hint {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin: -10px 0 16px;
+  }
+
+  .packages {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .package-option {
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .package-option.selected {
+    border-color: var(--brand);
+    background: #FFF6EC;
+  }
+
+  .package-option__price {
+    font-family: 'Archivo', sans-serif;
+    font-weight: 800;
+    font-size: 20px;
+  }
+
+  .package-option__label {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 2px;
+  }
+
+  #paypal-button-container {
+    margin-top: 16px;
+  }
+
+  .status-msg {
+    font-size: 13px;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  .status-msg.error {
+    background: #FCEAE8;
+    color: #B3261E;
+    display: block;
+  }
+
+  .status-msg.success {
+    background: #E7F5EC;
+    color: var(--green);
+    display: block;
+  }
+
+  .required-note {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav__logo" href="/">Deals-<span>aholic</span></a>
+</nav>
+
+<div class="page">
+  <h1 class="page__title">Submit Your Deal</h1>
+  <p class="page__subtitle">
+    List your product and discount code on Deals-aholic. Choose a package below,
+    fill in your deal details, and complete payment to send it for review.
+    Submissions are checked before going live to keep the site trustworthy for shoppers.
+  </p>
+
+  <div class="card">
+    <h2>1. Choose a package</h2>
+    <div class="packages" id="package-options">
+      <div class="package-option" data-package="single" data-amount="3.00">
+        <div class="package-option__price">$3</div>
+        <div class="package-option__label">1 Post</div>
+      </div>
+      <div class="package-option" data-package="five" data-amount="12.00">
+        <div class="package-option__price">$12</div>
+        <div class="package-option__label">5 Posts</div>
+      </div>
+      <div class="package-option" data-package="ten" data-amount="25.00">
+        <div class="package-option__price">$25</div>
+        <div class="package-option__label">10 Posts</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. Deal details</h2>
+    <p class="required-note">All fields except your email are required.</p>
+
+    <label for="productTitle">Product title</label>
+    <input type="text" id="productTitle" placeholder="e.g. Wireless Earbuds with Charging Case">
+
+    <label for="productUrl">Product link</label>
+    <input type="url" id="productUrl" placeholder="https://...">
+
+    <label for="discountCode">Discount code</label>
+    <input type="text" id="discountCode" placeholder="e.g. SAVE20NOW">
+
+    <label for="price">Sale price (USD)</label>
+    <input type="text" id="price" placeholder="e.g. $19.99">
+
+    <label for="photoUrl">Product photo link</label>
+    <input type="url" id="photoUrl" placeholder="https://... (link to an image of your product)">
+    <p class="hint">Paste a direct link to your product image. We don't host file uploads yet — most product listing pages have a shareable image URL.</p>
+
+    <label for="expiresOn">Deal expires on</label>
+    <input type="date" id="expiresOn">
+    <p class="hint">Your listing will automatically come down after this date.</p>
+
+    <label for="sellerEmail">Your email (optional)</label>
+    <input type="email" id="sellerEmail" placeholder="for confirmation only">
+  </div>
+
+  <div class="card">
+    <h2>3. Pay &amp; submit</h2>
+    <p class="hint">Your listing goes to manual review after payment. We'll only publish it once approved.</p>
+    <div id="paypal-button-container"></div>
+    <div id="status-msg" class="status-msg"></div>
+  </div>
+</div>
+
+<script>
+  let selectedPackage = null;
+  let selectedAmount = null;
+
+  document.querySelectorAll('.package-option').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.package-option').forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedPackage = el.dataset.package;
+      selectedAmount = el.dataset.amount;
+    });
+  });
+
+  function showStatus(message, type) {
+    const el = document.getElementById('status-msg');
+    el.textContent = message;
+    el.className = 'status-msg ' + type;
+  }
+
+  function getSubmissionData() {
+    return {
+      productTitle: document.getElementById('productTitle').value.trim(),
+      productUrl: document.getElementById('productUrl').value.trim(),
+      discountCode: document.getElementById('discountCode').value.trim(),
+      price: document.getElementById('price').value.trim(),
+      photoUrl: document.getElementById('photoUrl').value.trim(),
+      expiresOn: document.getElementById('expiresOn').value,
+      sellerEmail: document.getElementById('sellerEmail').value.trim(),
+    };
+  }
+
+  function validate() {
+    if (!selectedPackage) {
+      showStatus('Please choose a package above.', 'error');
+      return false;
+    }
+    const data = getSubmissionData();
+    const required = ['productTitle', 'productUrl', 'discountCode', 'price', 'expiresOn'];
+    for (const field of required) {
+      if (!data[field]) {
+        showStatus('Please fill in all required fields before paying.', 'error');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (window.paypal) {
+    paypal.Buttons({
+      createOrder: async function () {
+        if (!validate()) {
+          throw new Error('Validation failed');
+        }
+        const res = await fetch('/.netlify/functions/create-paypal-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ package: selectedPackage }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.orderId) {
+          showStatus(data.error || 'Could not start checkout. Please try again.', 'error');
+          throw new Error('Order creation failed');
+        }
+        return data.orderId;
+      },
+      onApprove: async function (data) {
+        const submission = getSubmissionData();
+        const res = await fetch('/.netlify/functions/capture-paypal-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: data.orderID, submission }),
+        });
+        const result = await res.json();
+        if (!res.ok || !result.ok) {
+          showStatus(result.error || 'Payment succeeded but submission failed to save. Please contact support.', 'error');
+          return;
+        }
+        showStatus('Payment received! Your deal is now pending review and will go live once approved.', 'success');
+        document.querySelectorAll('input').forEach(i => i.value = '');
+        document.querySelectorAll('.package-option').forEach(o => o.classList.remove('selected'));
+        selectedPackage = null;
+      },
+      onError: function (err) {
+        console.error(err);
+        showStatus('Something went wrong with PayPal checkout. Please try again.', 'error');
+      },
+    }).render('#paypal-button-container');
+  } else {
+    showStatus('PayPal failed to load. Please refresh the page.', 'error');
+  }
+</script>
+
+</body>
+</html>
