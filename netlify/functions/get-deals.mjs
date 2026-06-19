@@ -39,7 +39,7 @@ approved.push({
         reviewCount: null,
         url: record.productUrl || record.url,
         discountCode: record.discountCode || null,
-        sponsored: true,
+        sponsored: record.sponsored || false,
       });
     }
 
