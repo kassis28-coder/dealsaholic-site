@@ -18,6 +18,7 @@
     --brand-dark: #D96E0C;
     --green: #1C8C5A;
     --red: #B3261E;
+    --blue: #1A73E8;
   }
 
   * { box-sizing: border-box; }
@@ -196,13 +197,64 @@
   .btn--approve { background: var(--green); color: #fff; }
   .btn--reject { background: var(--red); color: #fff; }
   .btn--delete { background: #fff; color: var(--red); border: 1px solid var(--red); }
-  .btn--disabled { background: var(--line); color: var(--ink-soft); cursor: not-allowed; }
+  .btn--edit { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
+  .btn--save { background: var(--blue); color: #fff; }
 
   .empty-state {
     text-align: center;
     padding: 48px 20px;
     color: var(--ink-soft);
     font-size: 14px;
+  }
+
+  .edit-form {
+    background: #f0f7ff;
+    border: 1px solid #c0d8f8;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 12px;
+  }
+
+  .edit-form h3 {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 0 0 12px;
+    color: var(--blue);
+  }
+
+  .edit-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .edit-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .edit-form-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+
+  .edit-form-group input {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    width: 100%;
+  }
+
+  .edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
   }
 
   .create-form {
@@ -277,6 +329,7 @@
 
   @media (max-width: 600px) {
     .form-row { grid-template-columns: 1fr; }
+    .edit-form-row { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -357,6 +410,7 @@
   let adminPassword = '';
   let allSubmissions = [];
   let currentTab = 'pending';
+  let editingId = null;
 
   async function login() {
     const input = document.getElementById('password-input');
@@ -389,6 +443,7 @@
 
   function setTab(status) {
     currentTab = status;
+    editingId = null;
     document.querySelectorAll('.tab').forEach(t => {
       t.classList.toggle('active', t.dataset.status === status);
     });
@@ -403,6 +458,11 @@
     }
   }
 
+  function toggleEdit(id) {
+    editingId = editingId === id ? null : id;
+    renderList();
+  }
+
   function renderList() {
     const container = document.getElementById('submissions-list');
     const filtered = allSubmissions.filter(s => s.status === currentTab);
@@ -412,7 +472,11 @@
       return;
     }
 
-    container.innerHTML = filtered.map(s => `
+    container.innerHTML = filtered.map(s => {
+      const isEditing = editingId === s.id;
+      const expiryDate = s.expiresOn ? s.expiresOn.split('T')[0] : '';
+
+      return `
       <div class="submission-card" id="card-${s.id}">
         ${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="">` : ''}
         <div class="submission-card__body">
@@ -428,6 +492,46 @@
             ${s.sellerEmail ? 'Seller: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
             Created: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
           </p>
+
+          ${isEditing ? `
+          <div class="edit-form">
+            <h3>✏️ Edit Deal</h3>
+            <div class="edit-form-group" style="margin-bottom:10px;">
+              <label>Title</label>
+              <input type="text" id="edit-title-${s.id}" value="${escapeHtml(s.productTitle || s.title || '')}">
+            </div>
+            <div class="edit-form-row">
+              <div class="edit-form-group">
+                <label>Current Price</label>
+                <input type="text" id="edit-price-${s.id}" value="${escapeHtml(s.price || '')}">
+              </div>
+              <div class="edit-form-group">
+                <label>Original Price</label>
+                <input type="text" id="edit-original-${s.id}" value="${escapeHtml(s.originalPrice || '')}">
+              </div>
+            </div>
+            <div class="edit-form-row">
+              <div class="edit-form-group">
+                <label>Discount %</label>
+                <input type="text" id="edit-discount-${s.id}" value="${escapeHtml(s.discount || '')}">
+              </div>
+              <div class="edit-form-group">
+                <label>Discount Code</label>
+                <input type="text" id="edit-code-${s.id}" value="${escapeHtml(s.discountCode || '')}">
+              </div>
+            </div>
+            <div class="edit-form-group" style="margin-bottom:0;">
+              <label>Expires On</label>
+              <input type="date" id="edit-expires-${s.id}" value="${expiryDate}">
+            </div>
+            <div class="edit-actions">
+              <button class="btn btn--save" onclick="saveEdit('${s.id}')">💾 Save Changes</button>
+              <button class="btn btn--edit" onclick="toggleEdit('${s.id}')">Cancel</button>
+              <span id="edit-msg-${s.id}" style="font-size:13px;"></span>
+            </div>
+          </div>
+          ` : ''}
+
           <div class="actions">
             ${s.status === 'pending' ? `
               ${s.needsAffiliateLink ? `
@@ -438,11 +542,64 @@
               <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Approve</button>
               <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">❌ Reject</button>
             ` : ''}
+            <button class="btn btn--edit" onclick="toggleEdit('${s.id}')">✏️ Edit</button>
             <button class="btn btn--delete" onclick="deleteSubmission('${s.id}')">🗑️ Delete</button>
           </div>
         </div>
       </div>
-    `).join('');
+    `}).join('');
+  }
+
+  async function saveEdit(id) {
+    const msgEl = document.getElementById(`edit-msg-${id}`);
+    msgEl.textContent = 'Saving...';
+    msgEl.style.color = 'var(--ink-soft)';
+
+    const title = document.getElementById(`edit-title-${id}`).value.trim();
+    const price = document.getElementById(`edit-price-${id}`).value.trim();
+    const originalPrice = document.getElementById(`edit-original-${id}`).value.trim();
+    const discount = document.getElementById(`edit-discount-${id}`).value.trim();
+    const discountCode = document.getElementById(`edit-code-${id}`).value.trim();
+    const expiresOn = document.getElementById(`edit-expires-${id}`).value.trim();
+
+    try {
+      const res = await fetch('/api/edit-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          password: adminPassword,
+          submissionId: id,
+          title,
+          price,
+          originalPrice,
+          discount,
+          discountCode,
+          expiresOn,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      // Update local data
+      const record = allSubmissions.find(s => s.id === id);
+      if (record) {
+        record.title = title;
+        record.productTitle = title;
+        record.price = price;
+        record.originalPrice = originalPrice;
+        record.discount = discount;
+        record.discountCode = discountCode;
+        record.expiresOn = expiresOn;
+      }
+
+      editingId = null;
+      renderList();
+
+    } catch (err) {
+      msgEl.textContent = '❌ ' + err.message;
+      msgEl.style.color = 'var(--red)';
+    }
   }
 
   async function deleteSubmission(submissionId) {
