@@ -15,6 +15,7 @@
     --ink-soft: #6B6459;
     --line: #ECE6DB;
     --brand: #FF8A1E;
+    --brand-dark: #D96E0C;
     --green: #1C8C5A;
     --red: #B3261E;
   }
@@ -99,6 +100,7 @@
     display: flex;
     gap: 8px;
     margin-bottom: 20px;
+    flex-wrap: wrap;
   }
 
   .tab {
@@ -116,6 +118,12 @@
     background: var(--ink);
     color: #fff;
     border-color: var(--ink);
+  }
+
+  .tab--create.active {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #fff;
   }
 
   .submission-card {
@@ -187,6 +195,7 @@
 
   .btn--approve { background: var(--green); color: #fff; }
   .btn--reject { background: var(--red); color: #fff; }
+  .btn--create { background: var(--brand); color: #fff; }
   .btn--disabled { background: var(--line); color: var(--ink-soft); cursor: not-allowed; }
 
   .empty-state {
@@ -194,6 +203,94 @@
     padding: 48px 20px;
     color: var(--ink-soft);
     font-size: 14px;
+  }
+
+  /* Create Post Form */
+  .create-form {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+  }
+
+  .create-form h2 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 18px;
+    margin: 0 0 20px;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+    width: 100%;
+  }
+
+  .form-group textarea { resize: vertical; min-height: 80px; }
+
+  .form-submit-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 20px;
+  }
+
+  .btn--submit-post {
+    background: var(--brand);
+    color: #fff;
+    font-size: 14px;
+    padding: 12px 28px;
+    border-radius: 999px;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .btn--submit-post:hover { background: var(--brand-dark); }
+
+  .success-msg {
+    color: var(--green);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .error-msg {
+    color: var(--red);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  @media (max-width: 600px) {
+    .form-row { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -207,16 +304,70 @@
 </div>
 
 <div class="admin-page" id="admin-page">
-  <h1>Seller Submissions</h1>
-  <p class="admin-page__subtitle">Review and approve paid seller deal submissions before they go live.</p>
+  <h1>Deals-aholic Admin</h1>
+  <p class="admin-page__subtitle">Manage seller submissions and manually create deal posts.</p>
 
   <div class="tabs">
     <div class="tab active" data-status="pending" onclick="setTab('pending')">Pending</div>
     <div class="tab" data-status="approved" onclick="setTab('approved')">Approved</div>
     <div class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</div>
+    <div class="tab tab--create" data-status="create" onclick="setTab('create')">➕ Create Post</div>
   </div>
 
   <div id="submissions-list"></div>
+  <div id="create-post-form" style="display:none;">
+    <div class="create-form">
+      <h2>➕ Create a New Deal Post</h2>
+
+      <div class="form-group">
+        <label>Product Title *</label>
+        <input type="text" id="cp-title" placeholder="e.g. Sony WH-1000XM5 Headphones">
+      </div>
+
+      <div class="form-group">
+        <label>Amazon Product URL *</label>
+        <input type="url" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
+        <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag will be added automatically</small>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Current Price *</label>
+          <input type="text" id="cp-price" placeholder="$29.99">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Original Price</label>
+          <input type="text" id="cp-original-price" placeholder="$59.99">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Discount %</label>
+          <input type="text" id="cp-discount" placeholder="50">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Discount Code</label>
+          <input type="text" id="cp-code" placeholder="SAVE20">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:14px;">
+        <label>Product Image URL</label>
+        <input type="url" id="cp-image" placeholder="https://m.media-amazon.com/images/I/...">
+      </div>
+
+      <div class="form-group">
+        <label>Expires On</label>
+        <input type="date" id="cp-expires">
+      </div>
+
+      <div class="form-submit-row">
+        <button class="btn--submit-post" onclick="createPost()">🚀 Post Deal Now</button>
+        <span id="create-msg"></span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -258,7 +409,15 @@
     document.querySelectorAll('.tab').forEach(t => {
       t.classList.toggle('active', t.dataset.status === status);
     });
-    renderList();
+
+    if (status === 'create') {
+      document.getElementById('submissions-list').style.display = 'none';
+      document.getElementById('create-post-form').style.display = 'block';
+    } else {
+      document.getElementById('submissions-list').style.display = 'block';
+      document.getElementById('create-post-form').style.display = 'none';
+      renderList();
+    }
   }
 
   function renderList() {
@@ -300,6 +459,70 @@
         </div>
       </div>
     `).join('');
+  }
+
+  async function createPost() {
+    const msgEl = document.getElementById('create-msg');
+    msgEl.textContent = '';
+
+    const title = document.getElementById('cp-title').value.trim();
+    const url = document.getElementById('cp-url').value.trim();
+    const price = document.getElementById('cp-price').value.trim();
+    const originalPrice = document.getElementById('cp-original-price').value.trim();
+    const discount = document.getElementById('cp-discount').value.trim();
+    const discountCode = document.getElementById('cp-code').value.trim();
+    const imageUrl = document.getElementById('cp-image').value.trim();
+    const expiresOn = document.getElementById('cp-expires').value;
+
+    if (!title || !url || !price) {
+      msgEl.className = 'error-msg';
+      msgEl.textContent = 'Title, URL and price are required!';
+      return;
+    }
+
+    // Add affiliate tag to URL
+    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
+    const asin = asinMatch ? asinMatch[1] : null;
+    const affiliateUrl = asin
+      ? `https://www.amazon.com/dp/${asin}?tag=kethya08-20`
+      : url.includes('tag=') ? url : `${url}${url.includes('?') ? '&' : '?'}tag=kethya08-20`;
+
+    msgEl.className = '';
+    msgEl.textContent = 'Posting...';
+
+    try {
+      const res = await fetch('/.netlify/functions/submit-email-deal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: JSON.stringify({
+            title,
+            price,
+            originalPrice,
+            discount,
+            amazonUrl: affiliateUrl,
+            discountCode,
+            imageUrl,
+          }),
+          source: 'admin',
+          auto: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      msgEl.className = 'success-msg';
+      msgEl.textContent = '✅ Deal posted successfully!';
+
+      // Clear form
+      ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-image','cp-expires']
+        .forEach(id => document.getElementById(id).value = '');
+
+    } catch (err) {
+      msgEl.className = 'error-msg';
+      msgEl.textContent = '❌ Error: ' + err.message;
+    }
   }
 
   async function review(submissionId, action) {
