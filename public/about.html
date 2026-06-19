@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About — Deals-aholic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF8F4;
+    --card: #FFFFFF;
+    --ink: #1C1A17;
+    --ink-soft: #6B6459;
+    --line: #ECE6DB;
+    --brand: #FF8A1E;
+    --brand-dark: #D96E0C;
+    --green: #1C8C5A;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); }
+  .top-disclaimer { background: var(--ink); color: #E8E3D9; text-align: center; font-size: 11.5px; padding: 7px 16px; }
+  .nav { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; align-items: center; }
+  .nav__logo { font-family: 'Archivo Black', sans-serif; font-size: 19px; color: var(--ink); text-transform: uppercase; text-decoration: none; }
+  .nav__logo span { color: var(--brand); }
+  .hero-section {
+    background: linear-gradient(135deg, #fff8f0, #fff3e0);
+    border-bottom: 3px solid var(--brand);
+    padding: 60px 24px;
+    text-align: center;
+  }
+  .hero-section h1 { font-family: 'Archivo Black', sans-serif; font-size: 36px; margin: 0 0 16px; }
+  .hero-section p { font-size: 17px; color: var(--ink-soft); max-width: 560px; margin: 0 auto 28px; line-height: 1.7; }
+  .hero-section__cta {
+    display: inline-block;
+    background: var(--brand);
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 13px 32px;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 4px 14px rgba(255,138,30,0.4);
+  }
+  .hero-section__cta:hover { background: var(--brand-dark); }
+  .content { max-width: 780px; margin: 0 auto; padding: 48px 24px 80px; }
+  h2 { font-family: 'Archivo Black', sans-serif; font-size: 24px; margin: 0 0 12px; }
+  p { font-size: 15px; line-height: 1.7; color: var(--ink-soft); margin: 0 0 16px; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    margin: 40px 0;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .stat-card__number {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 32px;
+    color: var(--brand);
+    margin: 0 0 6px;
+  }
+  .stat-card__label {
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin: 24px 0 40px;
+  }
+  .feature {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .feature__icon { font-size: 28px; margin-bottom: 10px; }
+  .feature__title { font-weight: 700; font-size: 15px; margin: 0 0 6px; color: var(--ink); }
+  .feature__text { font-size: 13px; color: var(--ink-soft); margin: 0; line-height: 1.5; }
+  .social-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+  .social-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    padding: 11px 22px;
+    border-radius: 999px;
+    color: #fff;
+  }
+  .social-link--telegram { background: linear-gradient(180deg, #4FB3F5, #2196E0); }
+  .social-link--instagram { background: linear-gradient(135deg, #F58529, #DD2A7B, #8134AF, #515BD4); }
+  .site-footer { text-align: center; padding: 28px 20px; font-size: 12px; color: var(--ink-soft); border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+
+<div class="top-disclaimer">
+  As an Amazon Associate, Deals-aholic earns from qualifying purchases.
+</div>
+
+<nav class="nav">
+  <a href="/" class="nav__logo">Deals-<span>aholic</span></a>
+</nav>
+
+<div class="hero-section">
+  <h1>We're Deal Obsessed 🔥</h1>
+  <p>Deals-aholic is your daily source for the best Amazon deals, discounts, and promo codes — curated automatically and refreshed throughout the day so you never miss a saving.</p>
+  <a href="/" class="hero-section__cta">Browse Today's Deals</a>
+</div>
+
+<div class="content">
+
+  <div class="stats">
+    <div class="stat-card">
+      <p class="stat-card__number">300+</p>
+      <p class="stat-card__label">Deals Updated Daily</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-card__number">20%+</p>
+      <p class="stat-card__label">Minimum Discount</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-card__number">24/7</p>
+      <p class="stat-card__label">Automatic Refresh</p>
+    </div>
+  </div>
+
+  <h2>What We Do</h2>
+  <p>Deals-aholic automatically pulls the best Amazon deals across dozens of categories — from electronics and fashion to home essentials and toys. Every deal shown has been verified to have at least 20% off the original price.</p>
+  <p>Our platform refreshes throughout the day so you always see the most current prices and discounts. No fake deals, no expired coupons — just real savings.</p>
+
+  <div class="features">
+    <div class="feature">
+      <div class="feature__icon">🤖</div>
+      <p class="feature__title">Fully Automated</p>
+      <p class="feature__text">Deals are pulled automatically from Amazon every hour across 35+ categories.</p>
+    </div>
+    <div class="feature">
+      <div class="feature__icon">✅</div>
+      <p class="feature__title">Verified Discounts</p>
+      <p class="feature__text">Every deal shows at least 20% off — no misleading or inflated prices.</p>
+    </div>
+    <div class="feature">
+      <div class="feature__icon">📱</div>
+      <p class="feature__title">Multi-Platform</p>
+      <p class="feature__text">Follow us on Telegram and Instagram to get deals delivered straight to you.</p>
+    </div>
+    <div class="feature">
+      <div class="feature__icon">💰</div>
+      <p class="feature__title">Seller Friendly</p>
+      <p class="feature__text">Are you a seller? Feature your deal and reach thousands of shoppers.</p>
+    </div>
+  </div>
+
+  <h2>Follow Us</h2>
+  <p>Never miss a deal — join our community on Telegram and Instagram!</p>
+  <div class="social-links">
+    <a href="https://t.me/dealsaholic" target="_blank" class="social-link social-link--telegram">📱 Telegram</a>
+    <a href="https://www.instagram.com/deals_aholic" target="_blank" class="social-link social-link--instagram">📸 Instagram</a>
+  </div>
+
+  <br><br>
+  <h2>Contact Us</h2>
+  <p>Have a question, a deal tip, or want to feature your product? Reach out at <a href="mailto:inquiresonthego@gmail.com">inquiresonthego@gmail.com</a></p>
+
+</div>
+
+<footer class="site-footer">
+  © 2025 Deals-aholic. All rights reserved. |
+  <a href="/privacy.html" style="color:inherit;">Privacy Policy</a> |
+  <a href="/about.html" style="color:inherit;">About</a>
+</footer>
+
+</body>
+</html>
