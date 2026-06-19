@@ -250,6 +250,43 @@
     width: 100%;
   }
 
+  .image-upload-area {
+    border: 2px dashed var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+
+  .image-upload-area:hover { border-color: var(--brand); }
+
+  .image-upload-area input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .image-upload-area__text {
+    font-size: 13px;
+    color: var(--ink-soft);
+    pointer-events: none;
+  }
+
+  .image-preview {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    display: none;
+    margin: 10px auto 0;
+  }
+
   .form-submit-row {
     display: flex;
     gap: 12px;
@@ -313,7 +350,7 @@
       <div class="form-group">
         <label>Amazon Product URL *</label>
         <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
-        <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag and product image will be added automatically</small>
+        <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag will be added automatically</small>
       </div>
 
       <div class="form-row">
@@ -339,6 +376,15 @@
       </div>
 
       <div class="form-group" style="margin-top:14px;">
+        <label>Product Image (upload from your computer)</label>
+        <div class="image-upload-area" id="upload-area">
+          <input type="file" id="cp-image-file" accept="image/*" onchange="previewImage(event)">
+          <div class="image-upload-area__text">📁 Click to upload or drag & drop an image</div>
+          <img id="image-preview" class="image-preview" alt="Preview">
+        </div>
+      </div>
+
+      <div class="form-group">
         <label>Expires On (MM/DD/YYYY)</label>
         <input type="text" id="cp-expires" placeholder="06/30/2026">
       </div>
@@ -355,6 +401,24 @@
   let adminPassword = '';
   let allSubmissions = [];
   let currentTab = 'pending';
+  let uploadedImageBase64 = null;
+  let uploadedImageType = null;
+
+  function previewImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    uploadedImageType = file.type;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      uploadedImageBase64 = e.target.result;
+      const preview = document.getElementById('image-preview');
+      preview.src = e.target.result;
+      preview.style.display = 'block';
+      document.querySelector('.image-upload-area__text').textContent = '✅ ' + file.name;
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function login() {
     const input = document.getElementById('password-input');
@@ -412,19 +476,19 @@
 
     container.innerHTML = filtered.map(s => `
       <div class="submission-card">
-        ${s.photoUrl ? `<img src="${s.photoUrl}" alt="">` : ''}
+        ${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="">` : ''}
         <div class="submission-card__body">
-          <p class="submission-card__title">${escapeHtml(s.productTitle)}
+          <p class="submission-card__title">${escapeHtml(s.productTitle || s.title)}
             <span class="badge badge--${s.status}">${s.status}</span>
             ${s.needsAffiliateLink ? '<span class="badge badge--warning">NEEDS YOUR AFFILIATE LINK</span>' : ''}
           </p>
           <p class="submission-card__meta">
             Price: ${escapeHtml(s.price)} &middot; Code: ${escapeHtml(s.discountCode)}<br>
-            <a href="${s.productUrl}" target="_blank" rel="noopener">View current link</a><br>
-            Package: ${escapeHtml(s.packageLabel)} (paid $${s.amountPaid || '?'}) &middot;
+            <a href="${s.productUrl || s.url}" target="_blank" rel="noopener">View current link</a><br>
+            ${s.packageLabel ? `Package: ${escapeHtml(s.packageLabel)} (paid $${s.amountPaid || '?'}) &middot;` : ''}
             Expires: ${escapeHtml(s.expiresOn)}<br>
             ${s.sellerEmail ? 'Seller email: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
-            Submitted: ${new Date(s.submittedAt).toLocaleString()}
+            Submitted: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
           </p>
           ${s.status === 'pending' ? `
             ${s.needsAffiliateLink ? `
@@ -476,6 +540,8 @@
           discount,
           discountCode,
           expiresOn,
+          imageBase64: uploadedImageBase64 || null,
+          imageType: uploadedImageType || null,
         }),
       });
 
@@ -485,8 +551,13 @@
       msgEl.className = 'success-msg';
       msgEl.textContent = '✅ Deal posted successfully!';
 
+      // Reset form
       ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
         .forEach(id => document.getElementById(id).value = '');
+      uploadedImageBase64 = null;
+      uploadedImageType = null;
+      document.getElementById('image-preview').style.display = 'none';
+      document.querySelector('.image-upload-area__text').textContent = '📁 Click to upload or drag & drop an image';
 
     } catch (err) {
       msgEl.className = 'error-msg';
