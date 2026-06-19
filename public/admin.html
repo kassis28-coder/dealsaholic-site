@@ -205,7 +205,6 @@
     font-size: 14px;
   }
 
-  /* Create Post Form */
   .create-form {
     background: var(--card);
     border: 1px solid var(--line);
@@ -277,17 +276,8 @@
 
   .btn--submit-post:hover { background: var(--brand-dark); }
 
-  .success-msg {
-    color: var(--green);
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .error-msg {
-    color: var(--red);
-    font-size: 13px;
-    font-weight: 600;
-  }
+  .success-msg { color: var(--green); font-size: 13px; font-weight: 600; }
+  .error-msg { color: var(--red); font-size: 13px; font-weight: 600; }
 
   @media (max-width: 600px) {
     .form-row { grid-template-columns: 1fr; }
@@ -315,6 +305,7 @@
   </div>
 
   <div id="submissions-list"></div>
+
   <div id="create-post-form" style="display:none;">
     <div class="create-form">
       <h2>➕ Create a New Deal Post</h2>
@@ -326,7 +317,7 @@
 
       <div class="form-group">
         <label>Amazon Product URL *</label>
-        <input type="url" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
+        <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
         <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag will be added automatically</small>
       </div>
 
@@ -341,7 +332,7 @@
         </div>
       </div>
 
-      <div class="form-row">
+      <div class="form-row" style="margin-top:14px;">
         <div class="form-group" style="margin-bottom:0">
           <label>Discount %</label>
           <input type="text" id="cp-discount" placeholder="50">
@@ -354,12 +345,12 @@
 
       <div class="form-group" style="margin-top:14px;">
         <label>Product Image URL</label>
-        <input type="url" id="cp-image" placeholder="https://m.media-amazon.com/images/I/...">
+        <input type="text" id="cp-image" placeholder="https://m.media-amazon.com/images/I/xxxxx.jpg">
       </div>
 
       <div class="form-group">
-        <label>Expires On</label>
-        <input type="date" id="cp-expires">
+        <label>Expires On (MM/DD/YYYY)</label>
+        <input type="text" id="cp-expires" placeholder="06/30/2026">
       </div>
 
       <div class="form-submit-row">
@@ -448,7 +439,7 @@
           ${s.status === 'pending' ? `
             ${s.needsAffiliateLink ? `
               <div class="link-edit-row">
-                <input type="url" id="link-${s.id}" placeholder="Paste your Walmart/Impact/Mavely affiliate link here">
+                <input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here">
               </div>
             ` : ''}
             <div class="actions">
@@ -472,16 +463,30 @@
     const discount = document.getElementById('cp-discount').value.trim();
     const discountCode = document.getElementById('cp-code').value.trim();
     const imageUrl = document.getElementById('cp-image').value.trim();
-    const expiresOn = document.getElementById('cp-expires').value;
+    const expiresRaw = document.getElementById('cp-expires').value.trim();
 
     if (!title || !url || !price) {
       msgEl.className = 'error-msg';
-      msgEl.textContent = 'Title, URL and price are required!';
+      msgEl.textContent = '❌ Title, URL and price are required!';
       return;
     }
 
+    // Convert MM/DD/YYYY to ISO
+    let expiresOn = '';
+    if (expiresRaw) {
+      const parts = expiresRaw.split('/');
+      if (parts.length === 3) {
+        expiresOn = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+      } else {
+        expiresOn = expiresRaw;
+      }
+    } else {
+      // Default 7 days from now
+      expiresOn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    }
+
     // Add affiliate tag to URL
-    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
+    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
     const asin = asinMatch ? asinMatch[1] : null;
     const affiliateUrl = asin
       ? `https://www.amazon.com/dp/${asin}?tag=kethya08-20`
@@ -503,6 +508,7 @@
             amazonUrl: affiliateUrl,
             discountCode,
             imageUrl,
+            expiresOn,
           }),
           source: 'admin',
           auto: true,
@@ -515,7 +521,6 @@
       msgEl.className = 'success-msg';
       msgEl.textContent = '✅ Deal posted successfully!';
 
-      // Clear form
       ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-image','cp-expires']
         .forEach(id => document.getElementById(id).value = '');
 
