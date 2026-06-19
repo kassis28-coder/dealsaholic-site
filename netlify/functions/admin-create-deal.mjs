@@ -6,12 +6,11 @@ export default async (req, context) => {
   try {
     const body = await req.json();
 
-    // Verify admin password
     if (body.password !== process.env.ADMIN_PASSWORD) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
-    let { title, url, price, originalPrice, discount, discountCode, imageUrl, expiresOn } = body;
+    let { title, url, price, originalPrice, discount, discountCode, imageUrl, imageBase64, imageType, expiresOn } = body;
 
     // Extract ASIN from Amazon URL
     const asinMatch = (url || "").match(/\/dp\/([A-Z0-9]{10})/i);
@@ -22,37 +21,24 @@ export default async (req, context) => {
       ? `https://www.amazon.com/dp/${asin}?tag=kethya08-20`
       : url.includes("tag=") ? url : `${url}${url.includes("?") ? "&" : "?"}tag=kethya08-20`;
 
-    // Auto-fetch image from Amazon if not provided
-    if (asin && !imageUrl) {
+    // If image was uploaded as base64, store it in Netlify Blobs
+    if (imageBase64 && imageType) {
       try {
-        const productRes = await fetch(`https://www.amazon.com/dp/${asin}`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "en-US,en;q=0.5",
-          },
+        const { getStore } = await import("@netlify/blobs");
+        const imageStore = getStore("images");
+        const imageId = `img-${Date.now()}`;
+        
+        // Convert base64 to buffer
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        await imageStore.set(imageId, buffer, {
+          metadata: { contentType: imageType }
         });
-
-        if (productRes.ok) {
-          const html = await productRes.text();
-          const patterns = [
-            /"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
-            /"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
-            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\._AC_SL1500_\.jpg/,
-            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\._AC_SY879_\.jpg/,
-            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\.jpg/,
-          ];
-
-          for (const pattern of patterns) {
-            const match = html.match(pattern);
-            if (match) {
-              imageUrl = match[1] || match[0];
-              break;
-            }
-          }
-        }
+        
+        imageUrl = `/.netlify/functions/get-image?id=${imageId}`;
       } catch (e) {
-        console.log("Image fetch failed:", e.message);
+        console.log("Image upload failed:", e.message);
       }
     }
 
