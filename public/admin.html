@@ -195,7 +195,6 @@
 
   .btn--approve { background: var(--green); color: #fff; }
   .btn--reject { background: var(--red); color: #fff; }
-  .btn--create { background: var(--brand); color: #fff; }
   .btn--disabled { background: var(--line); color: var(--ink-soft); cursor: not-allowed; }
 
   .empty-state {
@@ -240,9 +239,7 @@
     letter-spacing: 0.04em;
   }
 
-  .form-group input,
-  .form-group select,
-  .form-group textarea {
+  .form-group input {
     font-family: 'Inter', sans-serif;
     font-size: 14px;
     padding: 10px 12px;
@@ -252,8 +249,6 @@
     color: var(--ink);
     width: 100%;
   }
-
-  .form-group textarea { resize: vertical; min-height: 80px; }
 
   .form-submit-row {
     display: flex;
@@ -318,7 +313,7 @@
       <div class="form-group">
         <label>Amazon Product URL *</label>
         <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
-        <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag will be added automatically</small>
+        <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag and product image will be added automatically</small>
       </div>
 
       <div class="form-row">
@@ -344,11 +339,6 @@
       </div>
 
       <div class="form-group" style="margin-top:14px;">
-        <label>Product Image URL</label>
-        <input type="text" id="cp-image" placeholder="https://m.media-amazon.com/images/I/xxxxx.jpg">
-      </div>
-
-      <div class="form-group">
         <label>Expires On (MM/DD/YYYY)</label>
         <input type="text" id="cp-expires" placeholder="06/30/2026">
       </div>
@@ -462,8 +452,7 @@
     const originalPrice = document.getElementById('cp-original-price').value.trim();
     const discount = document.getElementById('cp-discount').value.trim();
     const discountCode = document.getElementById('cp-code').value.trim();
-    const imageUrl = document.getElementById('cp-image').value.trim();
-    const expiresRaw = document.getElementById('cp-expires').value.trim();
+    const expiresOn = document.getElementById('cp-expires').value.trim();
 
     if (!title || !url || !price) {
       msgEl.className = 'error-msg';
@@ -471,47 +460,22 @@
       return;
     }
 
-    // Convert MM/DD/YYYY to ISO
-    let expiresOn = '';
-    if (expiresRaw) {
-      const parts = expiresRaw.split('/');
-      if (parts.length === 3) {
-        expiresOn = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-      } else {
-        expiresOn = expiresRaw;
-      }
-    } else {
-      // Default 7 days from now
-      expiresOn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    }
-
-    // Add affiliate tag to URL
-    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
-    const asin = asinMatch ? asinMatch[1] : null;
-    const affiliateUrl = asin
-      ? `https://www.amazon.com/dp/${asin}?tag=kethya08-20`
-      : url.includes('tag=') ? url : `${url}${url.includes('?') ? '&' : '?'}tag=kethya08-20`;
-
     msgEl.className = '';
     msgEl.textContent = 'Posting...';
 
     try {
-      const res = await fetch('/.netlify/functions/submit-email-deal', {
+      const res = await fetch('/api/admin-create-deal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: JSON.stringify({
-            title,
-            price,
-            originalPrice,
-            discount,
-            amazonUrl: affiliateUrl,
-            discountCode,
-            imageUrl,
-            expiresOn,
-          }),
-          source: 'admin',
-          auto: true,
+          password: adminPassword,
+          title,
+          url,
+          price,
+          originalPrice,
+          discount,
+          discountCode,
+          expiresOn,
         }),
       });
 
@@ -521,7 +485,7 @@
       msgEl.className = 'success-msg';
       msgEl.textContent = '✅ Deal posted successfully!';
 
-      ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-image','cp-expires']
+      ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
         .forEach(id => document.getElementById(id).value = '');
 
     } catch (err) {
