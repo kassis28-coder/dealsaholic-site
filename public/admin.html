@@ -191,10 +191,11 @@
     border-radius: 6px;
   }
 
-  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
   .btn--approve { background: var(--green); color: #fff; }
   .btn--reject { background: var(--red); color: #fff; }
+  .btn--delete { background: #fff; color: var(--red); border: 1px solid var(--red); }
   .btn--disabled { background: var(--line); color: var(--ink-soft); cursor: not-allowed; }
 
   .empty-state {
@@ -407,7 +408,6 @@
   function previewImage(event) {
     const file = event.target.files[0];
     if (!file) return;
-
     uploadedImageType = file.type;
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -475,7 +475,7 @@
     }
 
     container.innerHTML = filtered.map(s => `
-      <div class="submission-card">
+      <div class="submission-card" id="card-${s.id}">
         ${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="">` : ''}
         <div class="submission-card__body">
           <p class="submission-card__title">${escapeHtml(s.productTitle || s.title)}
@@ -483,27 +483,49 @@
             ${s.needsAffiliateLink ? '<span class="badge badge--warning">NEEDS YOUR AFFILIATE LINK</span>' : ''}
           </p>
           <p class="submission-card__meta">
-            Price: ${escapeHtml(s.price)} &middot; Code: ${escapeHtml(s.discountCode)}<br>
-            <a href="${s.productUrl || s.url}" target="_blank" rel="noopener">View current link</a><br>
-            ${s.packageLabel ? `Package: ${escapeHtml(s.packageLabel)} (paid $${s.amountPaid || '?'}) &middot;` : ''}
+            Price: ${escapeHtml(s.price)} &middot; Code: ${escapeHtml(s.discountCode || 'none')}<br>
+            <a href="${s.productUrl || s.url}" target="_blank" rel="noopener">View link</a><br>
+            ${s.packageLabel ? `Package: ${escapeHtml(s.packageLabel)} &middot;` : ''}
             Expires: ${escapeHtml(s.expiresOn)}<br>
-            ${s.sellerEmail ? 'Seller email: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
-            Submitted: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
+            ${s.sellerEmail ? 'Seller: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
+            Created: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
           </p>
-          ${s.status === 'pending' ? `
-            ${s.needsAffiliateLink ? `
-              <div class="link-edit-row">
-                <input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here">
-              </div>
+          <div class="actions">
+            ${s.status === 'pending' ? `
+              ${s.needsAffiliateLink ? `
+                <div class="link-edit-row">
+                  <input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here">
+                </div>
+              ` : ''}
+              <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Approve</button>
+              <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">❌ Reject</button>
             ` : ''}
-            <div class="actions">
-              <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">Approve</button>
-              <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">Reject</button>
-            </div>
-          ` : ''}
+            <button class="btn btn--delete" onclick="deleteSubmission('${s.id}')">🗑️ Delete</button>
+          </div>
         </div>
       </div>
     `).join('');
+  }
+
+  async function deleteSubmission(submissionId) {
+    if (!confirm('Are you sure you want to delete this post? This cannot be undone.')) return;
+
+    try {
+      const res = await fetch('/api/delete-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword, submissionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Delete failed.');
+        return;
+      }
+      allSubmissions = allSubmissions.filter(s => s.id !== submissionId);
+      renderList();
+    } catch (err) {
+      alert('Could not reach the server. Please try again.');
+    }
   }
 
   async function createPost() {
@@ -551,7 +573,6 @@
       msgEl.className = 'success-msg';
       msgEl.textContent = '✅ Deal posted successfully!';
 
-      // Reset form
       ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
         .forEach(id => document.getElementById(id).value = '');
       uploadedImageBase64 = null;
@@ -570,7 +591,7 @@
     const updatedUrl = linkInput ? linkInput.value.trim() : '';
 
     if (action === 'approve' && linkInput && !updatedUrl) {
-      alert('This submission needs your affiliate link before approving. Please paste it in the box first.');
+      alert('This submission needs your affiliate link before approving.');
       return;
     }
 
