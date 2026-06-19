@@ -1,8 +1,6 @@
 /**
  * Creates a PayPal order for a seller submission package.
- * Called by the public submit.html page when a seller clicks
- * "Pay with PayPal". Returns an order ID that the PayPal button
- * on the page uses to redirect into PayPal's checkout flow.
+ * Returns an approval URL to redirect the seller to PayPal checkout.
  *
  * Reachable at: /.netlify/functions/create-paypal-order
  *
@@ -13,10 +11,9 @@
 
 const CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
-const PAYPAL_API = "https://api-m.paypal.com"; // Live endpoint (not sandbox)
+const PAYPAL_API = "https://api-m.paypal.com";
+const SITE_URL = "https://strong-moonbeam-b8d8e4.netlify.app";
 
-// Package definitions live here, server-side, so a seller can't
-// tamper with the price by editing the page before submitting.
 const PACKAGES = {
   single: { posts: 1, amount: "3.00", label: "1 Post" },
   five: { posts: 5, amount: "12.00", label: "5 Posts" },
@@ -73,6 +70,12 @@ export default async (req) => {
             custom_id: packageKey,
           },
         ],
+        application_context: {
+          return_url: `${SITE_URL}/submit.html`,
+          cancel_url: `${SITE_URL}/submit.html?cancelled=true`,
+          brand_name: "Deals-aholic",
+          user_action: "PAY_NOW",
+        },
       }),
     });
 
@@ -87,7 +90,9 @@ export default async (req) => {
 
     const order = await orderRes.json();
 
-    return new Response(JSON.stringify({ orderId: order.id }), {
+    const approvalUrl = order.links?.find(l => l.rel === "approve")?.href;
+
+    return new Response(JSON.stringify({ orderId: order.id, approvalUrl }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
