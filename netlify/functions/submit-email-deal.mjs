@@ -1,5 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-
 export default async (req, context) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -7,7 +5,7 @@ export default async (req, context) => {
 
   try {
     const body = await req.json();
-    const claudeResponse = body.title; // This is Claude's JSON string from Make
+    const claudeResponse = body.title;
 
     // Parse Claude's extracted data
     let dealData;
@@ -20,7 +18,7 @@ export default async (req, context) => {
 
     // Extract ASIN from Amazon URL
     const amazonUrl = dealData.amazonUrl || "";
-    const asinMatch = amazonUrl.match(/\/dp\/([A-Z0-9]{10})/);
+    const asinMatch = amazonUrl.match(/\/dp\/([A-Z0-9]{10})/i);
     const asin = asinMatch ? asinMatch[1] : null;
 
     let imageUrl = dealData.imageUrl || null;
@@ -28,50 +26,7 @@ export default async (req, context) => {
     let price = dealData.price;
     let originalPrice = dealData.originalPrice;
     let discount = dealData.discount;
-
-    // If we have an ASIN, look up product details from Amazon API
-    if (asin) {
-      try {
-        const tokenRes = await fetch("https://api.amazon.com/auth/o2/token", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "client_credentials",
-            client_id: process.env.AMAZON_CLIENT_ID,
-            client_secret: process.env.AMAZON_CLIENT_SECRET,
-            scope: "advertising::campaign_management",
-          }),
-        });
-
-        const tokenData = await tokenRes.json();
-        const accessToken = tokenData.access_token;
-
-        if (accessToken) {
-          const searchRes = await fetch(
-            `https://affiliate-program.amazon.com/home/search?term=${asin}`,
-            {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }
-          );
-
-          // Try to get image from Amazon product URL directly
-          const productRes = await fetch(`https://www.amazon.com/dp/${asin}`, {
-            headers: {
-              "User-Agent": "Mozilla/5.0",
-              Accept: "text/html",
-            },
-          });
-
-          const html = await productRes.text();
-          const imgMatch = html.match(/https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg/);
-          if (imgMatch) {
-            imageUrl = imgMatch[0];
-          }
-        }
-      } catch (e) {
-        console.log("Amazon API lookup failed, continuing without image:", e.message);
-      }
-    }
+    let expiresOn = dealData.expiresOn || null;
 
     // Build affiliate URL
     const affiliateUrl = asin
@@ -79,6 +34,66 @@ export default async (req, context) => {
       : amazonUrl.includes("tag=")
       ? amazonUrl
       : `${amazonUrl}${amazonUrl.includes("?") ? "&" : "?"}tag=kethya08-20`;
+
+    // Try to get image from Amazon product page
+    if (asin && !imageUrl) {
+      try {
+        const productRes = await fetch(`https://www.amazon.com/dp/${asin}`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "no-cache",
+          },
+        });
+
+        if (productRes.ok) {
+          const html = await productRes.text();
+
+          // Try multiple patterns to find image URL
+          const patterns = [
+            /"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
+            /"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
+            /"main":\{"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
+            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\._AC_SL1500_\.jpg/,
+            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\._AC_SY879_\.jpg/,
+            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\.jpg/,
+          ];
+
+          for (const pattern of patterns) {
+            const match = html.match(pattern);
+            if (match) {
+              imageUrl = match[1] || match[0];
+              // Clean up any truncation
+              if (imageUrl && !imageUrl.endsWith('.jpg')) {
+                imageUrl = imageUrl + '.jpg';
+              }
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.log("Image fetch failed:", e.message);
+      }
+    }
+
+    // Calculate expiry
+    let expiresOnISO;
+    if (expiresOn) {
+      // Handle MM/DD/YYYY or YYYY-MM-DD
+      if (expiresOn.includes('/')) {
+        const parts = expiresOn.split('/');
+        if (parts.length === 3) {
+          expiresOnISO = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}T23:59:59.000Z`;
+        }
+      } else {
+        expiresOnISO = new Date(expiresOn).toISOString();
+      }
+    }
+    if (!expiresOnISO) {
+      expiresOnISO = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
 
     // Save to Netlify Blobs
     const { getStore } = await import("@netlify/blobs");
@@ -94,11 +109,11 @@ export default async (req, context) => {
       url: affiliateUrl,
       imageUrl,
       discountCode: dealData.discountCode || null,
-      source: "email",
+      source: dealData.source || "email",
       status: "approved",
       sponsored: false,
       createdAt: new Date().toISOString(),
-      expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      expiresOn: expiresOnISO,
     };
 
     await store.setJSON(id, submission);
