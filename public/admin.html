@@ -251,43 +251,6 @@
     width: 100%;
   }
 
-  .image-upload-area {
-    border: 2px dashed var(--line);
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.15s;
-    position: relative;
-  }
-
-  .image-upload-area:hover { border-color: var(--brand); }
-
-  .image-upload-area input[type="file"] {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
-    width: 100%;
-    height: 100%;
-  }
-
-  .image-upload-area__text {
-    font-size: 13px;
-    color: var(--ink-soft);
-    pointer-events: none;
-  }
-
-  .image-preview {
-    width: 100px;
-    height: 100px;
-    object-fit: contain;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    display: none;
-    margin: 10px auto 0;
-  }
-
   .form-submit-row {
     display: flex;
     gap: 12px;
@@ -342,6 +305,7 @@
   <div id="create-post-form" style="display:none;">
     <div class="create-form">
       <h2>➕ Create a New Deal Post</h2>
+      <p style="font-size:13px; color:var(--ink-soft); margin:-10px 0 20px;">Product image will be fetched automatically from Amazon.</p>
 
       <div class="form-group">
         <label>Product Title *</label>
@@ -351,17 +315,17 @@
       <div class="form-group">
         <label>Amazon Product URL *</label>
         <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
-        <small style="color:var(--ink-soft); font-size:11px;">Your affiliate tag will be added automatically</small>
+        <small style="color:var(--ink-soft); font-size:11px;">Affiliate tag and product image will be added automatically</small>
       </div>
 
       <div class="form-row">
         <div class="form-group" style="margin-bottom:0">
           <label>Current Price *</label>
-          <input type="text" id="cp-price" placeholder="$29.99">
+          <input type="text" id="cp-price" placeholder="$5.99">
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label>Original Price</label>
-          <input type="text" id="cp-original-price" placeholder="$59.99">
+          <input type="text" id="cp-original-price" placeholder="$14.99">
         </div>
       </div>
 
@@ -376,11 +340,9 @@
         </div>
       </div>
 
-      
-
-      <div class="form-group">
-        <label>Expires On (MM/DD/YYYY)</label>
-        <input type="text" id="cp-expires" placeholder="06/30/2026">
+      <div class="form-group" style="margin-top:14px;">
+        <label>Expires On</label>
+        <input type="date" id="cp-expires">
       </div>
 
       <div class="form-submit-row">
@@ -395,23 +357,6 @@
   let adminPassword = '';
   let allSubmissions = [];
   let currentTab = 'pending';
-  let uploadedImageBase64 = null;
-  let uploadedImageType = null;
-
-  function previewImage(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    uploadedImageType = file.type;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      uploadedImageBase64 = e.target.result;
-      const preview = document.getElementById('image-preview');
-      preview.src = e.target.result;
-      preview.style.display = 'block';
-      document.querySelector('.image-upload-area__text').textContent = '✅ ' + file.name;
-    };
-    reader.readAsDataURL(file);
-  }
 
   async function login() {
     const input = document.getElementById('password-input');
@@ -540,7 +485,7 @@
     }
 
     msgEl.className = '';
-    msgEl.textContent = 'Posting...';
+    msgEl.textContent = '⏳ Posting and fetching image from Amazon...';
 
     try {
       const res = await fetch('/api/admin-create-deal', {
@@ -555,8 +500,6 @@
           discount,
           discountCode,
           expiresOn,
-          imageBase64: uploadedImageBase64 || null,
-          imageType: uploadedImageType || null,
         }),
       });
 
@@ -564,14 +507,10 @@
       if (!res.ok) throw new Error(data.error || 'Failed');
 
       msgEl.className = 'success-msg';
-      msgEl.textContent = '✅ Deal posted successfully!';
+      msgEl.textContent = '✅ Deal posted successfully! Image fetched from Amazon.';
 
       ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
         .forEach(id => document.getElementById(id).value = '');
-      uploadedImageBase64 = null;
-      uploadedImageType = null;
-      document.getElementById('image-preview').style.display = 'none';
-      document.querySelector('.image-upload-area__text').textContent = '📁 Click to upload or drag & drop an image';
 
     } catch (err) {
       msgEl.className = 'error-msg';
