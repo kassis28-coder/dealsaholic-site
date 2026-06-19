@@ -70,7 +70,7 @@ export default async () => {
     return new Response(JSON.stringify(combined), {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "public, max-age=30",
       },
     });
   } catch (err) {
