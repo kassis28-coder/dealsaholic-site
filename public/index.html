@@ -114,6 +114,69 @@
     .social-banner__link { padding: 13px 20px; font-size: 14px; }
   }
 
+  /* ---------- Seller banner ---------- */
+  .seller-banner {
+    background: linear-gradient(135deg, #fff8f0, #fff3e0);
+    border-top: 3px solid var(--brand);
+    border-bottom: 3px solid var(--brand);
+    padding: 22px 24px;
+    text-align: center;
+  }
+
+  .seller-banner__title {
+    margin: 0 0 6px;
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 18px;
+    color: var(--ink);
+  }
+
+  .seller-banner__sub {
+    margin: 0 0 16px;
+    font-size: 14px;
+    color: var(--ink-soft);
+  }
+
+  .seller-banner__cta {
+    display: inline-block;
+    background: var(--brand);
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 13px 32px;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 4px 14px rgba(255, 138, 30, 0.45);
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+
+  .seller-banner__cta:hover {
+    background: var(--brand-dark);
+    transform: translateY(-1px);
+  }
+
+  .seller-banner__packages {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+
+  .seller-banner__package {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .seller-banner__package span {
+    color: var(--brand);
+    font-weight: 800;
+  }
+
   /* ---------- Hero ---------- */
   .hero {
     max-width: 1320px;
@@ -322,6 +385,7 @@
     .deals-feed { padding: 0 16px 40px; }
     .deals-feed__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .filters__updated { margin-left: 0; }
+    .seller-banner__packages { gap: 10px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -337,7 +401,7 @@
 
 <nav class="nav">
   <span class="nav__logo">Deals-<span>aholic</span></span>
-  <a href="/submit.html" style="margin-left:auto; font-size:13px; font-weight:700; color:var(--ink); text-decoration:none; border:1px solid var(--line); padding:8px 16px; border-radius:999px;">Sell Here</a>
+  <a href="/submit.html" style="margin-left:auto; font-size:13px; font-weight:700; color:#fff; text-decoration:none; background:var(--brand); padding:10px 20px; border-radius:999px; box-shadow:0 2px 8px rgba(255,138,30,0.4);">💰 Sell Here</a>
 </nav>
 
 <div class="social-banner">
@@ -351,6 +415,17 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
       Instagram
     </a>
+  </div>
+</div>
+
+<div class="seller-banner">
+  <h2 class="seller-banner__title">📢 Are You a Seller? Get Your Deal in Front of Thousands!</h2>
+  <p class="seller-banner__sub">Feature your Amazon deal on our site and reach real shoppers looking to save. Fast, easy, and affordable.</p>
+  <a href="/submit.html" class="seller-banner__cta">💰 Post Your Deal Now</a>
+  <div class="seller-banner__packages">
+    <div class="seller-banner__package">1 Post — <span>$3</span></div>
+    <div class="seller-banner__package">5 Posts — <span>$12</span></div>
+    <div class="seller-banner__package">10 Posts — <span>$25</span></div>
   </div>
 </div>
 
