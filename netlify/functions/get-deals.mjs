@@ -29,17 +29,16 @@ async function getApprovedSellerDeals() {
 
       const expiresAt = new Date(record.expiresOn).getTime();
       if (!isNaN(expiresAt) && expiresAt < now) continue; // skip expired
-
-      approved.push({
+approved.push({
         asin: record.id,
-        title: record.productTitle,
-        image: record.photoUrl || null,
+        title: record.productTitle || record.title,
+        image: record.photoUrl || record.imageUrl || null,
         price: record.price,
-        discountPercent: null,
+        discountPercent: record.discount ? parseInt(record.discount) : null,
         rating: null,
         reviewCount: null,
-        url: record.productUrl,
-        discountCode: record.discountCode,
+        url: record.productUrl || record.url,
+        discountCode: record.discountCode || null,
         sponsored: true,
       });
     }
