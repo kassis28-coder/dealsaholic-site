@@ -6,7 +6,6 @@
 <title>Submit Your Deal — Deals-aholic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://www.paypal.com/sdk/js?client-id=Ae6DXI-kcsbdaPpwTKFUOR4p6L3WYeHtZArtOkIXDTSBqoV-gMMRxORvvcWsxonDRn_I3yd0NfQvMML6&currency=USD&components=buttons&disable-funding=paylater,venmo,card"></script>
 <style>
   :root {
     --paper: #FAF8F4;
@@ -144,9 +143,20 @@
     margin-top: 2px;
   }
 
-  #paypal-button-container {
-    margin-top: 16px;
+  #pay-btn {
+    width: 100%;
+    background: #FFC439;
+    border: none;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #111;
+    margin-top: 8px;
   }
+
+  #pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .status-msg {
     font-size: 13px;
@@ -239,21 +249,19 @@
   <div class="card">
     <h2>3. Pay &amp; submit</h2>
     <p class="hint">Your listing goes to manual review after payment. We'll only publish it once approved.</p>
-    <div id="paypal-button-container"></div>
+    <button id="pay-btn" onclick="startCheckout()">Pay with PayPal</button>
     <div id="status-msg" class="status-msg"></div>
   </div>
 </div>
 
 <script>
   let selectedPackage = null;
-  let selectedAmount = null;
 
   document.querySelectorAll('.package-option').forEach(el => {
     el.addEventListener('click', () => {
       document.querySelectorAll('.package-option').forEach(o => o.classList.remove('selected'));
       el.classList.add('selected');
       selectedPackage = el.dataset.package;
-      selectedAmount = el.dataset.amount;
     });
   });
 
@@ -291,49 +299,65 @@
     return true;
   }
 
-  if (window.paypal) {
-    paypal.Buttons({
-      fundingSource: paypal.FUNDING.PAYPAL,
-      createOrder: async function () {
-        if (!validate()) {
-          throw new Error('Validation failed');
-        }
-        const res = await fetch('/.netlify/functions/create-paypal-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ package: selectedPackage }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.orderId) {
-          showStatus(data.error || 'Could not start checkout. Please try again.', 'error');
-          throw new Error('Order creation failed');
-        }
-        return data.orderId;
-      },
-      onApprove: async function (data) {
-        const submission = getSubmissionData();
-        const res = await fetch('/.netlify/functions/capture-paypal-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: data.orderID, submission }),
-        });
-        const result = await res.json();
-        if (!res.ok || !result.ok) {
-          showStatus(result.error || 'Payment succeeded but submission failed to save. Please contact support.', 'error');
-          return;
-        }
+  async function startCheckout() {
+    if (!validate()) return;
+
+    const btn = document.getElementById('pay-btn');
+    btn.textContent = 'Connecting to PayPal...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/.netlify/functions/create-paypal-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          package: selectedPackage,
+          submission: getSubmissionData(),
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.approvalUrl) {
+        showStatus(data.error || 'Could not start checkout. Please try again.', 'error');
+        btn.textContent = 'Pay with PayPal';
+        btn.disabled = false;
+        return;
+      }
+
+      sessionStorage.setItem('pendingSubmission', JSON.stringify(getSubmissionData()));
+      sessionStorage.setItem('pendingOrderId', data.orderId);
+      window.location.href = data.approvalUrl;
+
+    } catch (err) {
+      console.error(err);
+      showStatus('Something went wrong. Please try again.', 'error');
+      btn.textContent = 'Pay with PayPal';
+      btn.disabled = false;
+    }
+  }
+
+  // After PayPal redirects back, capture the order
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  if (token) {
+    const submission = JSON.parse(sessionStorage.getItem('pendingSubmission') || '{}');
+    fetch('/.netlify/functions/capture-paypal-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: token, submission }),
+    })
+    .then(r => r.json())
+    .then(result => {
+      if (result.ok) {
         showStatus('Payment received! Your deal is now pending review and will go live once approved.', 'success');
-        document.querySelectorAll('input').forEach(i => i.value = '');
-        document.querySelectorAll('.package-option').forEach(o => o.classList.remove('selected'));
-        selectedPackage = null;
-      },
-      onError: function (err) {
-        console.error(err);
-        showStatus('Something went wrong with PayPal checkout. Please try again.', 'error');
-      },
-    }).render('#paypal-button-container');
-  } else {
-    showStatus('PayPal failed to load. Please refresh the page.', 'error');
+        sessionStorage.removeItem('pendingSubmission');
+        sessionStorage.removeItem('pendingOrderId');
+        document.getElementById('pay-btn').style.display = 'none';
+      } else {
+        showStatus(result.error || 'Payment succeeded but submission failed to save. Please contact support.', 'error');
+      }
+    })
+    .catch(() => showStatus('Could not confirm payment. Please contact support.', 'error'));
   }
 </script>
 
