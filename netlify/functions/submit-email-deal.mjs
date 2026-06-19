@@ -1,3 +1,94 @@
+import { getStore } from "@netlify/blobs";
+
+const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
+const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
+const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
+const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
+
+const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
+const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
+
+async function getAccessToken() {
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "client_credentials",
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      scope: "creatorsapi::default",
+    }),
+  });
+  if (!res.ok) throw new Error(`Token request failed (${res.status})`);
+  const data = await res.json();
+  return data.access_token;
+}
+
+async function getProductImage(asin) {
+  try {
+    const accessToken = await getAccessToken();
+    const res = await fetch(CATALOG_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "x-marketplace": MARKETPLACE,
+      },
+      body: JSON.stringify({
+        keywords: asin,
+        itemCount: 1,
+        partnerTag: PARTNER_TAG,
+        partnerType: "Associates",
+        marketplace: MARKETPLACE,
+        resources: ["images.primary.large"],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const items = data.items || data.searchResult?.items || [];
+    if (items.length > 0) {
+      return items[0].images?.primary?.large?.url || null;
+    }
+    return null;
+  } catch (e) {
+    console.log("Amazon image fetch failed:", e.message);
+    return null;
+  }
+}
+
+function extractAmazonUrl(text) {
+  const patterns = [
+    /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/([A-Z0-9]{10})[^\s]*/gi,
+    /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
+    /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[0];
+  }
+  return null;
+}
+
+function extractASIN(url) {
+  const match = (url || '').match(/\/dp\/([A-Z0-9]{10})/i);
+  return match ? match[1] : null;
+}
+
+function extractPrice(text) {
+  const match = text.match(/\$[\d,.]+/);
+  return match ? match[0] : null;
+}
+
+function extractDiscount(text) {
+  const match = text.match(/(\d+)\s*%\s*off/i);
+  return match ? match[1] : null;
+}
+
+function extractCode(text) {
+  const match = text.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i);
+  return match ? match[1] : null;
+}
+
 export default async (req, context) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -5,115 +96,76 @@ export default async (req, context) => {
 
   try {
     const body = await req.json();
-    const claudeResponse = body.title;
-
-    // Parse Claude's extracted data
-    let dealData;
+    
+    // Handle both old format (title as JSON string from Claude)
+    // and new format (raw email text)
+    let title, price, originalPrice, discount, amazonUrl, discountCode, imageUrl;
+    
+    const rawContent = body.title || body.content || '';
+    
+    // Try to parse as JSON first (Claude's structured response)
+    let parsed = null;
     try {
-      const clean = claudeResponse.replace(/```json|```/g, "").trim();
-      dealData = JSON.parse(clean);
+      const clean = rawContent.replace(/```json|```/g, '').trim();
+      parsed = JSON.parse(clean);
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Failed to parse Claude response" }), { status: 400 });
+      // Not JSON — treat as raw email text
+    }
+    
+    if (parsed) {
+      // Structured data from Claude
+      title = parsed.title;
+      price = parsed.price;
+      originalPrice = parsed.originalPrice;
+      discount = parsed.discount;
+      amazonUrl = parsed.amazonUrl;
+      discountCode = parsed.discountCode;
+      imageUrl = parsed.imageUrl;
+    } else {
+      // Raw email text — extract what we can
+      amazonUrl = extractAmazonUrl(rawContent);
+      price = extractPrice(rawContent);
+      discount = extractDiscount(rawContent);
+      discountCode = extractCode(rawContent);
+      title = rawContent.split('\n')[0].trim().substring(0, 100) || 'Amazon Deal';
     }
 
-    // Extract ASIN from Amazon URL
-    const amazonUrl = dealData.amazonUrl || "";
-    const asinMatch = amazonUrl.match(/\/dp\/([A-Z0-9]{10})/i);
-    const asin = asinMatch ? asinMatch[1] : null;
-
-    let imageUrl = dealData.imageUrl || null;
-    let title = dealData.title;
-    let price = dealData.price;
-    let originalPrice = dealData.originalPrice;
-    let discount = dealData.discount;
-    let expiresOn = dealData.expiresOn || null;
+    // Extract ASIN
+    const asin = extractASIN(amazonUrl);
 
     // Build affiliate URL
     const affiliateUrl = asin
       ? `https://www.amazon.com/dp/${asin}?tag=kethya08-20`
-      : amazonUrl.includes("tag=")
-      ? amazonUrl
-      : `${amazonUrl}${amazonUrl.includes("?") ? "&" : "?"}tag=kethya08-20`;
+      : amazonUrl
+      ? (amazonUrl.includes('tag=') ? amazonUrl : `${amazonUrl}${amazonUrl.includes('?') ? '&' : '?'}tag=kethya08-20`)
+      : null;
 
-    // Try to get image from Amazon product page
+    if (!affiliateUrl) {
+      return new Response(JSON.stringify({ error: "No Amazon URL found in email" }), { status: 400 });
+    }
+
+    // Auto-fetch image from Amazon API
     if (asin && !imageUrl) {
-      try {
-        const productRes = await fetch(`https://www.amazon.com/dp/${asin}`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Cache-Control": "no-cache",
-          },
-        });
-
-        if (productRes.ok) {
-          const html = await productRes.text();
-
-          // Try multiple patterns to find image URL
-          const patterns = [
-            /"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
-            /"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
-            /"main":\{"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+\.jpg)"/,
-            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\._AC_SL1500_\.jpg/,
-            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\._AC_SY879_\.jpg/,
-            /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%+\-_.]+\.jpg/,
-          ];
-
-          for (const pattern of patterns) {
-            const match = html.match(pattern);
-            if (match) {
-              imageUrl = match[1] || match[0];
-              // Clean up any truncation
-              if (imageUrl && !imageUrl.endsWith('.jpg')) {
-                imageUrl = imageUrl + '.jpg';
-              }
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        console.log("Image fetch failed:", e.message);
-      }
-    }
-
-    // Calculate expiry
-    let expiresOnISO;
-    if (expiresOn) {
-      // Handle MM/DD/YYYY or YYYY-MM-DD
-      if (expiresOn.includes('/')) {
-        const parts = expiresOn.split('/');
-        if (parts.length === 3) {
-          expiresOnISO = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}T23:59:59.000Z`;
-        }
-      } else {
-        expiresOnISO = new Date(expiresOn).toISOString();
-      }
-    }
-    if (!expiresOnISO) {
-      expiresOnISO = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      imageUrl = await getProductImage(asin);
     }
 
     // Save to Netlify Blobs
-    const { getStore } = await import("@netlify/blobs");
     const store = getStore("submissions");
-
     const id = `email-${Date.now()}`;
     const submission = {
       id,
-      title,
-      price,
-      originalPrice,
-      discount,
+      title: title || 'Amazon Deal',
+      price: price || null,
+      originalPrice: originalPrice || null,
+      discount: discount || null,
       url: affiliateUrl,
-      imageUrl,
-      discountCode: dealData.discountCode || null,
-      source: dealData.source || "email",
+      imageUrl: imageUrl || null,
+      discountCode: discountCode || null,
+      source: "email",
       status: "approved",
       sponsored: false,
       createdAt: new Date().toISOString(),
-      expiresOn: expiresOnISO,
+      expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     await store.setJSON(id, submission);
