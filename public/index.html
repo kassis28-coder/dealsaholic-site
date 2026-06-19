@@ -29,7 +29,6 @@
     min-height: 100vh;
   }
 
-  /* ---------- Top nav ---------- */
   .nav {
     background: var(--card);
     border-bottom: 1px solid var(--line);
@@ -50,7 +49,6 @@
 
   .nav__logo span { color: var(--brand); }
 
-  /* ---------- Top disclaimer bar ---------- */
   .top-disclaimer {
     background: var(--ink);
     color: #E8E3D9;
@@ -60,7 +58,6 @@
     line-height: 1.4;
   }
 
-  /* ---------- Social banner ---------- */
   .social-banner {
     background: #FBE6BD;
     padding: 18px 20px 22px;
@@ -114,7 +111,6 @@
     .social-banner__link { padding: 13px 20px; font-size: 14px; }
   }
 
-  /* ---------- Seller banner ---------- */
   .seller-banner {
     background: linear-gradient(135deg, #fff8f0, #fff3e0);
     border-top: 3px solid var(--brand);
@@ -154,30 +150,6 @@
     transform: translateY(-1px);
   }
 
-  .seller-banner__packages {
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-    margin-top: 14px;
-    flex-wrap: wrap;
-  }
-
-  .seller-banner__package {
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink);
-  }
-
-  .seller-banner__package span {
-    color: var(--brand);
-    font-weight: 800;
-  }
-
-  /* ---------- Hero ---------- */
   .hero {
     max-width: 1320px;
     margin: 0 auto;
@@ -199,7 +171,6 @@
     line-height: 1.5;
   }
 
-  /* ---------- Filter bar ---------- */
   .filters {
     max-width: 1320px;
     margin: 0 auto;
@@ -233,7 +204,6 @@
     white-space: nowrap;
   }
 
-  /* ---------- Grid ---------- */
   .deals-feed {
     max-width: 1320px;
     margin: 0 auto;
@@ -385,7 +355,6 @@
     .deals-feed { padding: 0 16px 40px; }
     .deals-feed__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .filters__updated { margin-left: 0; }
-    .seller-banner__packages { gap: 10px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -422,11 +391,6 @@
   <h2 class="seller-banner__title">📢 Are You a Seller? Get Your Deal in Front of Thousands!</h2>
   <p class="seller-banner__sub">Feature your Amazon deal on our site and reach real shoppers looking to save. Fast, easy, and affordable.</p>
   <a href="/submit.html" class="seller-banner__cta">💰 Post Your Deal Now</a>
-  <div class="seller-banner__packages">
-    <div class="seller-banner__package">1 Post — <span>$3</span></div>
-    <div class="seller-banner__package">5 Posts — <span>$12</span></div>
-    <div class="seller-banner__package">10 Posts — <span>$25</span></div>
-  </div>
 </div>
 
 <div class="hero">
