@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Deals-aholic — Today's Best Amazon Deals</title>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5899720587294349"
-     crossorigin="anonymous"></script><link rel="preconnect" href="https://fonts.googleapis.com">
+     crossorigin="anonymous"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -403,6 +404,15 @@
   <input type="text" class="filters__search" id="filter-search" placeholder="Search products...">
   <select id="filter-category">
     <option value="">All categories</option>
+    <option value="electronics">📱 Electronics</option>
+    <option value="fashion">👗 Fashion</option>
+    <option value="home">🏠 Home & Kitchen</option>
+    <option value="beauty">🧴 Beauty</option>
+    <option value="toys">🧸 Toys & Games</option>
+    <option value="books">📚 Books</option>
+    <option value="sports">🏋️ Sports & Outdoors</option>
+    <option value="pets">🐾 Pet Supplies</option>
+    <option value="household">🧹 Household</option>
   </select>
   <select id="filter-sort">
     <option value="discount">Biggest discount</option>
@@ -431,6 +441,31 @@
 <script>
   const DEALS_JSON_URL = '/api/deals';
   let allDeals = [];
+
+  // Category detection based on product title keywords
+  function detectCategory(title) {
+    const t = (title || '').toLowerCase();
+
+    if (/headphone|earbud|speaker|tv|laptop|tablet|phone|camera|monitor|keyboard|mouse|charger|cable|battery|bluetooth|wireless|gaming|console|playstation|xbox|nintendo|drone|smart watch|smartwatch|airpod|ipad|iphone|android|pixel|samsung|apple|computer|printer|router|projector|alexa|echo|fire stick/.test(t)) return 'electronics';
+
+    if (/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|tank top|tshirt|t-shirt|clothing|fashion|outfit|apparel|women|mens|ladies|girls|boys|vest|cardigan|romper|jumpsuit/.test(t)) return 'fashion';
+
+    if (/kitchen|cookware|pan|pot|knife|cutting board|blender|air fryer|instant pot|coffee|toaster|microwave|refrigerator|dishwasher|vacuum|mop|broom|furniture|sofa|chair|desk|lamp|pillow|bedding|sheet|towel|curtain|rug|storage|organizer|home decor|candle|frame|mirror|shelf|drawer/.test(t)) return 'home';
+
+    if (/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|beauty|nail|eyeliner|bronzer|highlighter|toner|cleanser|face wash|vitamin c|retinol/.test(t)) return 'beauty';
+
+    if (/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed animal|plush|remote control|rc car|bike|scooter|craft|coloring|educational|learning|blocks/.test(t)) return 'toys';
+
+    if (/book|novel|hardcover|paperback|kindle|audiobook|memoir|biography|fiction|nonfiction|thriller|mystery|romance|fantasy|science fiction|history|cookbook|guide|manual|workbook/.test(t)) return 'books';
+
+    if (/yoga|gym|dumbbell|weight|protein|supplement|hiking|camping|tent|backpack|fishing|hunting|golf|tennis|basketball|football|soccer|cycling|bike|treadmill|resistance band|jump rope|sports|outdoor|fitness|workout|exercise/.test(t)) return 'sports';
+
+    if (/dog|cat|pet|puppy|kitten|bird|fish|aquarium|collar|leash|food bowl|litter|treat|chew|toy for dog|toy for cat|pet bed|crate|cage|grooming/.test(t)) return 'pets';
+
+    if (/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|household|tissue|aluminum foil|zip lock|plastic wrap|storage bag/.test(t)) return 'household';
+
+    return 'other';
+  }
 
   function formatUpdated(iso) {
     try {
@@ -488,11 +523,14 @@
 
   function applyFilters() {
     const search = document.getElementById('filter-search').value.trim().toLowerCase();
+    const category = document.getElementById('filter-category').value;
     const sort = document.getElementById('filter-sort').value;
 
-    let filtered = allDeals.filter(d =>
-      !search || (d.title || '').toLowerCase().includes(search)
-    );
+    let filtered = allDeals.filter(d => {
+      const matchSearch = !search || (d.title || '').toLowerCase().includes(search);
+      const matchCategory = !category || detectCategory(d.title) === category;
+      return matchSearch && matchCategory;
+    });
 
     if (sort === 'price-low') {
       filtered.sort((a, b) => (priceToNumber(a.price) ?? Infinity) - (priceToNumber(b.price) ?? Infinity));
@@ -526,6 +564,7 @@
   }
 
   document.getElementById('filter-search').addEventListener('input', applyFilters);
+  document.getElementById('filter-category').addEventListener('change', applyFilters);
   document.getElementById('filter-sort').addEventListener('change', applyFilters);
 
   fetch(DEALS_JSON_URL)
