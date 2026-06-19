@@ -6,7 +6,7 @@
 <title>Submit Your Deal — Deals-aholic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://www.paypal.com/sdk/js?client-id=Ae6DXI-kcsbdaPpwTKFUOR4p6L3WYeHtZArtOkIXDTSBqoV-gMMRxORvvcWsxonDRn_I3yd0NfQvMML6&currency=USD"></script>
+<script src="https://www.paypal.com/sdk/js?client-id=Ae6DXI-kcsbdaPpwTKFUOR4p6L3WYeHtZArtOkIXDTSBqoV-gMMRxORvvcWsxonDRn_I3yd0NfQvMML6&currency=USD&components=buttons&disable-funding=paylater,venmo,card"></script>
 <style>
   :root {
     --paper: #FAF8F4;
@@ -217,6 +217,7 @@
     <label for="productUrl">Product link</label>
     <input type="url" id="productUrl" placeholder="https://...">
     <p class="hint">Amazon product links work best and are processed automatically. Links from other stores are accepted too, but may take a little longer to go live.</p>
+
     <label for="discountCode">Discount code</label>
     <input type="text" id="discountCode" placeholder="e.g. SAVE20NOW">
 
@@ -292,6 +293,7 @@
 
   if (window.paypal) {
     paypal.Buttons({
+      fundingSource: paypal.FUNDING.PAYPAL,
       createOrder: async function () {
         if (!validate()) {
           throw new Error('Validation failed');
