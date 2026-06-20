@@ -29,8 +29,6 @@ async function getApprovedSellerDeals() {
         createdAt: record.createdAt || null,
       });
     }
-    // Newest first
-    approved.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     return approved;
   } catch {
     return [];
@@ -47,10 +45,20 @@ export default async () => {
       deals: [],
       message: "No deals fetched yet — first scheduled run hasn't completed.",
     };
+
+    // Combine all deals and sort by best discount % first
+    const allDeals = [...sellerDeals, ...(base.deals || [])];
+    allDeals.sort((a, b) => {
+      const aDiscount = a.discountPercent || a.discount || 0;
+      const bDiscount = b.discountPercent || b.discount || 0;
+      return Number(bDiscount) - Number(aDiscount);
+    });
+
     const combined = {
       ...base,
-      deals: [...sellerDeals, ...(base.deals || [])],
+      deals: allDeals,
     };
+
     return new Response(JSON.stringify(combined), {
       headers: {
         "Content-Type": "application/json",
