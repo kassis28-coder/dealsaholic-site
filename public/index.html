@@ -406,7 +406,7 @@
     <option value="">All categories</option>
     <option value="electronics">📱 Electronics</option>
     <option value="fashion">👗 Fashion</option>
-   <option value="home">🏠 Home & Kitchen</option>
+    <option value="home">🏠 Home & Kitchen</option>
     <option value="bedroom">🛏️ Bedroom & Bedding</option>
     <option value="bathroom">🚿 Bathroom</option>
     <option value="furniture">🪑 Furniture</option>
@@ -446,30 +446,34 @@
   const DEALS_JSON_URL = '/api/deals';
   let allDeals = [];
 
-  // Category detection based on product title keywords
   function detectCategory(title) {
     const t = (title || '').toLowerCase();
 
-    if (/headphone|earbud|speaker|tv|laptop|tablet|phone|camera|monitor|keyboard|mouse|charger|cable|battery|bluetooth|wireless|gaming|console|playstation|xbox|nintendo|drone|smart watch|smartwatch|airpod|ipad|iphone|android|pixel|samsung|apple|computer|printer|router|projector|alexa|echo|fire stick/.test(t)) return 'electronics';
+    if (/headphone|earbud|speaker|tv |laptop|tablet|phone|camera|monitor|keyboard|mouse|charger|cable|battery|bluetooth|wireless|gaming|console|playstation|xbox|nintendo|drone|smart watch|smartwatch|airpod|ipad|iphone|android|pixel|samsung|apple mac|computer|printer|router|projector|alexa|echo|fire stick|earphone|usb|hdmi/.test(t)) return 'electronics';
 
-    if (/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|tank top|tshirt|t-shirt|clothing|fashion|outfit|apparel|women|mens|ladies|girls|boys|vest|cardigan|romper|jumpsuit/.test(t)) return 'fashion';
+    if (/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|tank top|tshirt|t-shirt|clothing|fashion|outfit|apparel|womens|mens|ladies|girls|boys|vest|cardigan|romper|jumpsuit|lounge set|two piece set|matching set|palazzo|linen pant/.test(t)) return 'fashion';
 
-    if (/bedroom|bedding|sheet|pillow|comforter|duvet|mattress|blanket|quilt/.test(t)) return 'bedroom';
-if (/bathroom|towel|shower|bath mat|toilet|vanity|soap dispenser|toothbrush/.test(t)) return 'bathroom';
-if (/sofa|couch|sectional|recliner|armchair|ottoman|coffee table|dining table|nightstand|dresser|wardrobe|bookcase|bookshelf|bed frame|headboard|living room furniture|bedroom furniture/.test(t)) return 'furniture';
-if (/air fryer|instant pot|coffee maker|blender|toaster|microwave|refrigerator|dishwasher|stand mixer|food processor|electric kettle|rice cooker|slow cooker|pressure cooker/.test(t)) return 'kitchen';
-if (/kitchen|cookware|pan|pot|knife|cutting board|vacuum|mop|broom|lamp|curtain|rug|storage|organizer|home decor|candle|frame|mirror|shelf|drawer|wall art/.test(t)) return 'home';
-    if (/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|beauty|nail|eyeliner|bronzer|highlighter|toner|cleanser|face wash|vitamin c|retinol/.test(t)) return 'beauty';
+    if (/comforter|bedding|bed sheet|pillowcase|pillow sham|duvet|mattress|blanket|quilt|bed set|bed in a bag|satin pillow|microfiber sheet/.test(t)) return 'bedroom';
 
-    if (/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed animal|plush|remote control|rc car|bike|scooter|craft|coloring|educational|learning|blocks/.test(t)) return 'toys';
+    if (/bath rug|bath mat|shower caddy|bathroom organizer|bathroom accessories|bathroom set|toilet brush|soap dispenser|qtip holder|cotton swab|towel rack|shower shelf|bathroom storage/.test(t)) return 'bathroom';
 
-    if (/book|novel|hardcover|paperback|kindle|audiobook|memoir|biography|fiction|nonfiction|thriller|mystery|romance|fantasy|science fiction|history|cookbook|guide|manual|workbook/.test(t)) return 'books';
+    if (/sofa|couch|sectional|recliner|armchair|ottoman|coffee table|dining table|nightstand|dresser|wardrobe|bookcase|bookshelf|bed frame|headboard|floor lamp|end table|side table|floating shelf|corner shelf|coat rack|tv stand|display shelf|storage tower|chest of drawer/.test(t)) return 'furniture';
 
-    if (/yoga|gym|dumbbell|weight|protein|supplement|hiking|camping|tent|backpack|fishing|hunting|golf|tennis|basketball|football|soccer|cycling|bike|treadmill|resistance band|jump rope|sports|outdoor|fitness|workout|exercise/.test(t)) return 'sports';
+    if (/air fryer|instant pot|coffee maker|blender|toaster oven|microwave|stand mixer|food processor|electric kettle|rice cooker|slow cooker|pressure cooker|ninja kitchen|cookware|pots and pans|nonstick|cutting board|food storage container|vegetable chopper|mandoline|mixing bowl/.test(t)) return 'kitchen';
 
-    if (/dog|cat|pet|puppy|kitten|bird|fish|aquarium|collar|leash|food bowl|litter|treat|chew|toy for dog|toy for cat|pet bed|crate|cage|grooming/.test(t)) return 'pets';
+    if (/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|nail|eyeliner|bronzer|highlighter|toner|cleanser|face wash|vitamin c|retinol|curling|flat iron|hair dryer/.test(t)) return 'beauty';
 
-    if (/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|household|tissue|aluminum foil|zip lock|plastic wrap|storage bag/.test(t)) return 'household';
+    if (/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed animal|plush|remote control|rc car|craft|coloring|educational|learning|blocks|fidget|squishy|archery|bow and arrow/.test(t)) return 'toys';
+
+    if (/book|novel|hardcover|paperback|kindle|audiobook|memoir|biography|fiction|nonfiction|thriller|mystery|romance|fantasy|science fiction|history|cookbook|guide|workbook/.test(t)) return 'books';
+
+    if (/yoga|gym|dumbbell|weight|protein|supplement|hiking|camping|tent|backpack|fishing|hunting|golf|tennis|basketball|football|soccer|cycling|bike|treadmill|resistance band|jump rope|sports|outdoor|fitness|workout|exercise|weighted vest|sunglasses sport/.test(t)) return 'sports';
+
+    if (/dog|cat|pet|puppy|kitten|bird|fish|aquarium|collar|leash|food bowl|litter|treat|chew|pet bed|crate|cage|grooming|pee pad|dog food|cat food/.test(t)) return 'pets';
+
+    if (/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|household|tissue|aluminum foil|zip lock|storage bag|mop|broom|wipes|fabuloso|lysol|clorox/.test(t)) return 'household';
+
+    if (/kitchen|cookware|pan|pot|knife|lamp|curtain|rug|storage|organizer|home decor|candle|frame|mirror|shelf|drawer|wall art|vacuum|closet|under cabinet|over door/.test(t)) return 'home';
 
     return 'other';
   }
