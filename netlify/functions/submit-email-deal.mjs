@@ -141,7 +141,8 @@ export default async (req, context) => {
       : null;
 
     if (!affiliateUrl) {
-      return new Response(JSON.stringify({ error: "No Amazon URL found in email" }), { status: 400 });
+      // Save without Amazon URL for manual review
+      affiliateUrl = null;
     }
 
     // Auto-fetch image from Amazon API
@@ -158,7 +159,7 @@ export default async (req, context) => {
       price: price || null,
       originalPrice: originalPrice || null,
       discount: discount || null,
-      url: affiliateUrl,
+     url: affiliateUrl || '',
       imageUrl: imageUrl || null,
       discountCode: discountCode || null,
       source: "email",
