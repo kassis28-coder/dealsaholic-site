@@ -406,7 +406,11 @@
     <option value="">All categories</option>
     <option value="electronics">📱 Electronics</option>
     <option value="fashion">👗 Fashion</option>
-    <option value="home">🏠 Home & Kitchen</option>
+   <option value="home">🏠 Home & Kitchen</option>
+    <option value="bedroom">🛏️ Bedroom & Bedding</option>
+    <option value="bathroom">🚿 Bathroom</option>
+    <option value="furniture">🪑 Furniture</option>
+    <option value="kitchen">🍳 Kitchen Appliances</option>
     <option value="beauty">🧴 Beauty</option>
     <option value="toys">🧸 Toys & Games</option>
     <option value="books">📚 Books</option>
@@ -450,8 +454,11 @@
 
     if (/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|tank top|tshirt|t-shirt|clothing|fashion|outfit|apparel|women|mens|ladies|girls|boys|vest|cardigan|romper|jumpsuit/.test(t)) return 'fashion';
 
-    if (/kitchen|cookware|pan|pot|knife|cutting board|blender|air fryer|instant pot|coffee|toaster|microwave|refrigerator|dishwasher|vacuum|mop|broom|furniture|sofa|chair|desk|lamp|pillow|bedding|sheet|towel|curtain|rug|storage|organizer|home decor|candle|frame|mirror|shelf|drawer/.test(t)) return 'home';
-
+    if (/bedroom|bedding|sheet|pillow|comforter|duvet|mattress|blanket|quilt/.test(t)) return 'bedroom';
+if (/bathroom|towel|shower|bath mat|toilet|vanity|soap dispenser|toothbrush/.test(t)) return 'bathroom';
+if (/sofa|couch|sectional|recliner|armchair|ottoman|coffee table|dining table|nightstand|dresser|wardrobe|bookcase|bookshelf|bed frame|headboard|living room furniture|bedroom furniture/.test(t)) return 'furniture';
+if (/air fryer|instant pot|coffee maker|blender|toaster|microwave|refrigerator|dishwasher|stand mixer|food processor|electric kettle|rice cooker|slow cooker|pressure cooker/.test(t)) return 'kitchen';
+if (/kitchen|cookware|pan|pot|knife|cutting board|vacuum|mop|broom|lamp|curtain|rug|storage|organizer|home decor|candle|frame|mirror|shelf|drawer|wall art/.test(t)) return 'home';
     if (/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|beauty|nail|eyeliner|bronzer|highlighter|toner|cleanser|face wash|vitamin c|retinol/.test(t)) return 'beauty';
 
     if (/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed animal|plush|remote control|rc car|bike|scooter|craft|coloring|educational|learning|blocks/.test(t)) return 'toys';
