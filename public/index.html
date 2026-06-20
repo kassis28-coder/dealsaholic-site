@@ -474,7 +474,9 @@
 
     if (/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|household|tissue|aluminum foil|zip lock|storage bag|mop|broom|wipes|fabuloso|lysol|clorox/.test(t)) return 'household';
 
-    if (/kitchen|cookware|pan|pot|knife|lamp|curtain|rug|storage|organizer|home decor|candle|frame|mirror|shelf|drawer|wall art|vacuum|closet|under cabinet|over door/.test(t)) return 'home';
+if (/candle|wall art|picture frame|vase|figurine|wreath|decorative|faux plant|artificial tree|olive tree|floor mirror|wall mirror|artwork|tapestry|home decor|wall decor/.test(t)) return 'decor';
+
+    if (/kitchen|cookware|pan|pot|knife|lamp|curtain|rug|storage|organizer|mirror|shelf|drawer|vacuum|closet|under cabinet|over door/.test(t)) return 'home';
 
     return 'other';
   }
