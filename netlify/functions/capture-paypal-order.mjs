@@ -1,15 +1,3 @@
-/**
- * Captures (finalizes) a PayPal order after the seller approves
- * payment on PayPal's side, then saves their submission details
- * as a PENDING entry for the site owner to review.
- *
- * Reachable at: /.netlify/functions/capture-paypal-order
- *
- * Required environment variables:
- *   PAYPAL_CLIENT_ID
- *   PAYPAL_CLIENT_SECRET
- */
-
 import { getStore } from "@netlify/blobs";
 
 const CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
@@ -56,12 +44,37 @@ function addAffiliateTag(url) {
     parsed.searchParams.set("tag", PARTNER_TAG);
     return parsed.toString();
   } catch {
-    return url; // if it's somehow not a valid URL, leave it untouched
+    return url;
   }
 }
 
 function generateSubmissionId() {
   return `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function generateToken() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let token = '';
+  for (let i = 0; i < 12; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+async function sendTokenEmail(sellerEmail, token, credits, packageLabel) {
+  const submitUrl = `https://deals-aholic.com/submit.html?token=${token}`;
+  
+  // Use Gmail via a simple mailto approach - we'll use Netlify's built-in
+  // For now we save the email to be sent via Make webhook
+  const emailStore = getStore("pending-emails");
+  await emailStore.setJSON(`email-${Date.now()}`, {
+    to: sellerEmail,
+    subject: "Your Deals-aholic Submission Link",
+    body: `Thank you for your purchase!\n\nYour package: ${packageLabel}\nCredits: ${credits} post(s)\n\nUse this link to submit your deals:\n${submitUrl}\n\nThis link is unique to you. Each submission uses 1 credit.\n\nThank you,\nDeals-aholic Team`,
+    token,
+    submitUrl,
+    createdAt: new Date().toISOString(),
+  });
 }
 
 export default async (req) => {
@@ -76,8 +89,8 @@ export default async (req) => {
       );
     }
 
-    // Basic validation of required submission fields.
-    const required = ["productTitle", "productUrl", "discountCode", "price", "expiresOn"];
+    // Validate required fields
+    const required = ["productTitle", "productUrl", "discountCode", "price", "expiresOn", "sellerEmail"];
     for (const field of required) {
       if (!submission[field] || String(submission[field]).trim() === "") {
         return new Response(
@@ -89,9 +102,6 @@ export default async (req) => {
 
     const accessToken = await getAccessToken();
 
-    // Capture the order — this is the step that actually finalizes
-    // the payment and moves money. We do NOT save the submission as
-    // pending unless this succeeds.
     const captureRes = await fetch(
       `${PAYPAL_API}/v2/checkout/orders/${orderId}/capture`,
       {
@@ -127,6 +137,22 @@ export default async (req) => {
     const pkg = PACKAGES[packageKey] || { posts: 1, label: "Unknown package" };
     const amountPaid = purchaseUnit?.payments?.captures?.[0]?.amount?.value || null;
 
+    // Generate token for multi-post packages
+    const token = generateToken();
+    const tokenStore = getStore("tokens");
+    await tokenStore.setJSON(`token-${token}`, {
+      token,
+      sellerEmail: submission.sellerEmail,
+      packageType: packageKey,
+      packageLabel: pkg.label,
+      amountPaid,
+      creditsTotal: pkg.posts,
+      creditsUsed: 1, // First post counts as 1 used
+      createdAt: new Date().toISOString(),
+      status: "active",
+    });
+
+    // Save first submission
     const submissionId = generateSubmissionId();
     const productUrl = submission.productUrl;
     const isAmazon = isAmazonUrl(productUrl);
@@ -139,6 +165,7 @@ export default async (req) => {
       packageLabel: pkg.label,
       postsAllowed: pkg.posts,
       amountPaid,
+      token,
       productTitle: submission.productTitle,
       originalUrl: productUrl,
       productUrl: isAmazon ? addAffiliateTag(productUrl) : productUrl,
@@ -153,20 +180,35 @@ export default async (req) => {
     const store = getStore("submissions");
     await store.setJSON(submissionId, record);
 
-    // Maintain an index of all submission IDs so the admin page
-    // can list them without needing to know IDs in advance.
     let index = [];
     try {
       const existingIndex = await store.get("index", { type: "json" });
       if (Array.isArray(existingIndex)) index = existingIndex;
-    } catch {
-      // No index yet — fine on first submission.
-    }
+    } catch {}
     index.push(submissionId);
     await store.setJSON("index", index);
 
+    // Send token email if seller has more posts remaining
+    if (pkg.posts > 1 && submission.sellerEmail) {
+      await sendTokenEmail(
+        submission.sellerEmail,
+        token,
+        pkg.posts - 1, // remaining credits after first post
+        pkg.label
+      );
+    }
+
+    const submitUrl = `https://deals-aholic.com/submit.html?token=${token}`;
+
     return new Response(
-      JSON.stringify({ ok: true, submissionId, status: "pending" }),
+      JSON.stringify({ 
+        ok: true, 
+        submissionId, 
+        status: "pending",
+        token: pkg.posts > 1 ? token : null,
+        submitUrl: pkg.posts > 1 ? submitUrl : null,
+        creditsRemaining: pkg.posts - 1,
+      }),
       { headers: { "Content-Type": "application/json" } }
     );
   } catch (err) {
