@@ -553,8 +553,8 @@
     .then(result => {
       if (result.ok) {
         let msg = '✅ Payment received! Your deal is now pending review.';
-        if (result.creditsRemaining > 0) {
-          msg += ` You have ${result.creditsRemaining} more post${result.creditsRemaining !== 1 ? 's' : ''} remaining. Check your email for your submission link!`;
+        if (result.creditsRemaining > 0 && result.submitUrl) {
+          msg += `\n\n📋 You have ${result.creditsRemaining} more post${result.creditsRemaining !== 1 ? 's' : ''} remaining. Use this link to submit more deals:\n${result.submitUrl}\n\nSave this link! It's unique to you.`;
         }
         showStatus(msg, 'success');
         sessionStorage.removeItem('pendingSubmission');
