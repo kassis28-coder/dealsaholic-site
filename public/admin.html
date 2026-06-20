@@ -127,6 +127,12 @@
     color: #fff;
   }
 
+  .tab--email.active {
+    background: #7B2FBE;
+    border-color: #7B2FBE;
+    color: #fff;
+  }
+
   .submission-card {
     background: var(--card);
     border: 1px solid var(--line);
@@ -177,6 +183,7 @@
   .badge--approved { background: #E7F5EC; color: var(--green); }
   .badge--rejected { background: #FCEAE8; color: var(--red); }
   .badge--warning { background: #FCEAE8; color: var(--red); }
+  .badge--email { background: #F3E8FF; color: #7B2FBE; }
 
   .link-edit-row {
     display: flex;
@@ -350,6 +357,7 @@
     <div class="tab active" data-status="pending" onclick="setTab('pending')">Pending</div>
     <div class="tab" data-status="approved" onclick="setTab('approved')">Approved</div>
     <div class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</div>
+    <div class="tab tab--email" data-status="email" onclick="setTab('email')">📧 Email Deals</div>
     <div class="tab tab--create" data-status="create" onclick="setTab('create')">➕ Create Post</div>
   </div>
 
@@ -465,7 +473,13 @@
 
   function renderList() {
     const container = document.getElementById('submissions-list');
-    const filtered = allSubmissions.filter(s => s.status === currentTab);
+
+    let filtered;
+    if (currentTab === 'email') {
+      filtered = allSubmissions.filter(s => s.source === 'email');
+    } else {
+      filtered = allSubmissions.filter(s => s.status === currentTab && s.source !== 'email');
+    }
 
     if (filtered.length === 0) {
       container.innerHTML = '<div class="empty-state">No ' + currentTab + ' submissions.</div>';
@@ -475,20 +489,21 @@
     container.innerHTML = filtered.map(s => {
       const isEditing = editingId === s.id;
       const expiryDate = s.expiresOn ? s.expiresOn.split('T')[0] : '';
+      const isEmail = s.source === 'email';
 
       return `
       <div class="submission-card" id="card-${s.id}">
-        ${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="">` : ''}
+        ${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="" onerror="this.style.display='none'">` : ''}
         <div class="submission-card__body">
           <p class="submission-card__title">${escapeHtml(s.productTitle || s.title)}
             <span class="badge badge--${s.status}">${s.status}</span>
+            ${isEmail ? '<span class="badge badge--email">📧 email</span>' : ''}
             ${s.needsAffiliateLink ? '<span class="badge badge--warning">NEEDS YOUR AFFILIATE LINK</span>' : ''}
           </p>
           <p class="submission-card__meta">
-            Price: ${escapeHtml(s.price)} &middot; Code: ${escapeHtml(s.discountCode || 'none')}<br>
-            <a href="${s.productUrl || s.url}" target="_blank" rel="noopener">View link</a><br>
-            ${s.packageLabel ? `Package: ${escapeHtml(s.packageLabel)} &middot;` : ''}
-            Expires: ${escapeHtml(s.expiresOn)}<br>
+            Price: ${escapeHtml(s.price || 'N/A')} &middot; Code: ${escapeHtml(s.discountCode || 'none')}<br>
+            <a href="${s.productUrl || s.url || '#'}" target="_blank" rel="noopener">View link</a><br>
+            Expires: ${escapeHtml(s.expiresOn || 'N/A')}<br>
             ${s.sellerEmail ? 'Seller: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
             Created: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
           </p>
@@ -533,7 +548,7 @@
           ` : ''}
 
           <div class="actions">
-            ${s.status === 'pending' ? `
+            ${s.status === 'pending' && !isEmail ? `
               ${s.needsAffiliateLink ? `
                 <div class="link-edit-row">
                   <input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here">
@@ -569,19 +584,13 @@
         body: JSON.stringify({
           password: adminPassword,
           submissionId: id,
-          title,
-          price,
-          originalPrice,
-          discount,
-          discountCode,
-          expiresOn,
+          title, price, originalPrice, discount, discountCode, expiresOn,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
 
-      // Update local data
       const record = allSubmissions.find(s => s.id === id);
       if (record) {
         record.title = title;
@@ -650,13 +659,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: adminPassword,
-          title,
-          url,
-          price,
-          originalPrice,
-          discount,
-          discountCode,
-          expiresOn,
+          title, url, price, originalPrice, discount, discountCode, expiresOn,
         }),
       });
 
