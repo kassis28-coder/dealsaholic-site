@@ -12,14 +12,11 @@ export default async (req, context) => {
     title = url.searchParams.get('title') || '';
   } else if (req.method === 'POST') {
     try {
-      const body = await req.json();
-      emailBody = body.emailBody || body.title || '';
-      title = body.title || '';
+      emailBody = await req.text();
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400 });
+      emailBody = '';
     }
   }
-
   const content = emailBody || title;
 
   // Extract Amazon URL
