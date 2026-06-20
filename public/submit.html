@@ -16,6 +16,7 @@
     --brand: #FF8A1E;
     --brand-dark: #D96E0C;
     --green: #1C8C5A;
+    --red: #B3261E;
   }
 
   * { box-sizing: border-box; }
@@ -77,6 +78,39 @@
   .card h2 {
     font-size: 16px;
     margin: 0 0 16px;
+  }
+
+  .token-banner {
+    background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+    border: 2px solid var(--green);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  .token-banner h2 {
+    font-family: 'Archivo Black', sans-serif;
+    font-size: 20px;
+    color: var(--green);
+    margin: 0 0 8px;
+  }
+
+  .token-banner p {
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  .credits-badge {
+    display: inline-block;
+    background: var(--green);
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 8px 20px;
+    border-radius: 999px;
+    margin: 12px 0 0;
   }
 
   label {
@@ -158,6 +192,23 @@
 
   #pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+  #submit-btn {
+    width: 100%;
+    background: var(--brand);
+    border: none;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #fff;
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  #submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  #submit-btn:hover { background: var(--brand-dark); }
+
   .status-msg {
     font-size: 13px;
     padding: 12px;
@@ -168,7 +219,7 @@
 
   .status-msg.error {
     background: #FCEAE8;
-    color: #B3261E;
+    color: var(--red);
     display: block;
   }
 
@@ -193,13 +244,20 @@
 
 <div class="page">
   <h1 class="page__title">Submit Your Deal</h1>
-  <p class="page__subtitle">
+  <p class="page__subtitle" id="page-subtitle">
     List your product and discount code on Deals-aholic. Choose a package below,
     fill in your deal details, and complete payment to send it for review.
-    Submissions are checked before going live to keep the site trustworthy for shoppers.
   </p>
 
-  <div class="card">
+  <!-- Token banner (shown when seller has a token) -->
+  <div class="token-banner" id="token-banner" style="display:none;">
+    <h2>🎉 Welcome Back!</h2>
+    <p>You have remaining credits from your package.</p>
+    <div class="credits-badge" id="credits-display">Loading...</div>
+  </div>
+
+  <!-- Package selection (hidden when token is present) -->
+  <div class="card" id="package-section">
     <h2>1. Choose a package</h2>
     <div class="packages" id="package-options">
       <div class="package-option" data-package="single" data-amount="3.00">
@@ -218,15 +276,15 @@
   </div>
 
   <div class="card">
-    <h2>2. Deal details</h2>
+    <h2 id="deal-section-title">2. Deal details</h2>
     <p class="required-note">All fields except your email are required.</p>
 
     <label for="productTitle">Product title</label>
     <input type="text" id="productTitle" placeholder="e.g. Wireless Earbuds with Charging Case">
 
-    <label for="productUrl">Product link</label>
-    <input type="url" id="productUrl" placeholder="https://...">
-    <p class="hint">Amazon product links work best and are processed automatically. Links from other stores are accepted too, but may take a little longer to go live.</p>
+    <label for="productUrl">Amazon product link *</label>
+    <input type="url" id="productUrl" placeholder="https://www.amazon.com/dp/...">
+    <p class="hint">Your affiliate tag will be added automatically.</p>
 
     <label for="discountCode">Discount code</label>
     <input type="text" id="discountCode" placeholder="e.g. SAVE20NOW">
@@ -234,28 +292,159 @@
     <label for="price">Sale price (USD)</label>
     <input type="text" id="price" placeholder="e.g. $19.99">
 
-    <label for="photoUrl">Product photo link</label>
-    <input type="url" id="photoUrl" placeholder="https://... (link to an image of your product)">
-    <p class="hint">Paste a direct link to your product image. We don't host file uploads yet — most product listing pages have a shareable image URL.</p>
-
     <label for="expiresOn">Deal expires on</label>
     <input type="date" id="expiresOn">
     <p class="hint">Your listing will automatically come down after this date.</p>
 
-    <label for="sellerEmail">Your email (optional)</label>
-    <input type="email" id="sellerEmail" placeholder="for confirmation only">
+    <label for="sellerEmail">Your email *</label>
+    <input type="email" id="sellerEmail" placeholder="Required — we'll send your submission link here">
+    <p class="hint">Required so we can send you your unique submission link for multi-post packages.</p>
   </div>
 
-  <div class="card">
+  <!-- Payment section (shown when no token) -->
+  <div class="card" id="payment-section">
     <h2>3. Pay &amp; submit</h2>
     <p class="hint">Your listing goes to manual review after payment. We'll only publish it once approved.</p>
     <button id="pay-btn" onclick="startCheckout()">Pay with PayPal</button>
     <div id="status-msg" class="status-msg"></div>
   </div>
+
+  <!-- Token submit section (shown when token is present) -->
+  <div class="card" id="token-submit-section" style="display:none;">
+    <h2>3. Submit your deal</h2>
+    <p class="hint">Your deal will go to review and be published once approved.</p>
+    <button id="submit-btn" onclick="submitWithToken()">🚀 Submit Deal</button>
+    <div id="token-status-msg" class="status-msg"></div>
+  </div>
 </div>
 
 <script>
   let selectedPackage = null;
+  let activeToken = null;
+  let tokenData = null;
+
+  // Check for token in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get('token');
+  const paypalToken = urlParams.get('token');
+
+  async function init() {
+    if (urlToken && !urlParams.get('PayerID')) {
+      // This is a seller token (not PayPal redirect)
+      await loadToken(urlToken);
+    } else if (urlParams.get('PayerID')) {
+      // This is a PayPal redirect
+      handlePayPalReturn();
+    }
+  }
+
+  async function loadToken(token) {
+    try {
+      const res = await fetch(`/api/validate-token?token=${token}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.valid) {
+        showStatus('This link is invalid or has expired. Please purchase a new package.', 'error');
+        return;
+      }
+
+      if (data.creditsRemaining <= 0) {
+        showStatus('You have used all your credits. Please purchase a new package.', 'error');
+        document.getElementById('token-submit-section').style.display = 'none';
+        return;
+      }
+
+      // Valid token with credits!
+      activeToken = token;
+      tokenData = data;
+
+      // Show token UI
+      document.getElementById('token-banner').style.display = 'block';
+      document.getElementById('credits-display').textContent = `${data.creditsRemaining} post${data.creditsRemaining !== 1 ? 's' : ''} remaining`;
+      document.getElementById('package-section').style.display = 'none';
+      document.getElementById('payment-section').style.display = 'none';
+      document.getElementById('token-submit-section').style.display = 'block';
+      document.getElementById('deal-section-title').textContent = '2. Deal details';
+      document.getElementById('page-subtitle').textContent = 'Submit your next deal using your remaining credits.';
+
+      // Pre-fill email if we have it
+      if (data.sellerEmail) {
+        document.getElementById('sellerEmail').value = data.sellerEmail;
+      }
+
+    } catch (err) {
+      showStatus('Could not validate your token. Please try again.', 'error');
+    }
+  }
+
+  async function submitWithToken() {
+    const btn = document.getElementById('submit-btn');
+    const data = getSubmissionData();
+
+    if (!validateSubmission(data)) return;
+
+    btn.textContent = 'Submitting...';
+    btn.disabled = true;
+
+    try {
+      // Use one credit from token
+      const useRes = await fetch('/api/use-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: activeToken }),
+      });
+
+      const useData = await useRes.json();
+      if (!useRes.ok) {
+        showTokenStatus(useData.error || 'Could not use token credit.', 'error');
+        btn.textContent = '🚀 Submit Deal';
+        btn.disabled = false;
+        return;
+      }
+
+      // Save submission
+      const subRes = await fetch('/.netlify/functions/capture-paypal-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: `token-${activeToken}-${Date.now()}`,
+          submission: data,
+          useToken: true,
+        }),
+      });
+
+      const subData = await subRes.json();
+
+      if (subData.ok) {
+        const remaining = useData.creditsRemaining;
+        document.getElementById('credits-display').textContent = `${remaining} post${remaining !== 1 ? 's' : ''} remaining`;
+        
+        showTokenStatus(
+          remaining > 0 
+            ? `✅ Deal submitted! You have ${remaining} credit${remaining !== 1 ? 's' : ''} remaining.`
+            : '✅ Deal submitted! You have used all your credits.',
+          'success'
+        );
+
+        // Clear form
+        ['productTitle', 'productUrl', 'discountCode', 'price', 'expiresOn'].forEach(id => {
+          document.getElementById(id).value = '';
+        });
+
+        btn.textContent = '🚀 Submit Another Deal';
+        btn.disabled = remaining <= 0;
+      } else {
+        showTokenStatus(subData.error || 'Submission failed.', 'error');
+        btn.textContent = '🚀 Submit Deal';
+        btn.disabled = false;
+      }
+
+    } catch (err) {
+      showTokenStatus('Something went wrong. Please try again.', 'error');
+      btn.textContent = '🚀 Submit Deal';
+      btn.disabled = false;
+    }
+  }
 
   document.querySelectorAll('.package-option').forEach(el => {
     el.addEventListener('click', () => {
@@ -271,16 +460,34 @@
     el.className = 'status-msg ' + type;
   }
 
+  function showTokenStatus(message, type) {
+    const el = document.getElementById('token-status-msg');
+    el.textContent = message;
+    el.className = 'status-msg ' + type;
+  }
+
   function getSubmissionData() {
     return {
       productTitle: document.getElementById('productTitle').value.trim(),
       productUrl: document.getElementById('productUrl').value.trim(),
       discountCode: document.getElementById('discountCode').value.trim(),
       price: document.getElementById('price').value.trim(),
-      photoUrl: document.getElementById('photoUrl').value.trim(),
+      photoUrl: '',
       expiresOn: document.getElementById('expiresOn').value,
       sellerEmail: document.getElementById('sellerEmail').value.trim(),
     };
+  }
+
+  function validateSubmission(data) {
+    const required = ['productTitle', 'productUrl', 'discountCode', 'price', 'expiresOn', 'sellerEmail'];
+    for (const field of required) {
+      if (!data[field]) {
+        showTokenStatus('Please fill in all required fields.', 'error');
+        showStatus('Please fill in all required fields.', 'error');
+        return false;
+      }
+    }
+    return true;
   }
 
   function validate() {
@@ -289,14 +496,7 @@
       return false;
     }
     const data = getSubmissionData();
-    const required = ['productTitle', 'productUrl', 'discountCode', 'price', 'expiresOn'];
-    for (const field of required) {
-      if (!data[field]) {
-        showStatus('Please fill in all required fields before paying.', 'error');
-        return false;
-      }
-    }
-    return true;
+    return validateSubmission(data);
   }
 
   async function startCheckout() {
@@ -336,29 +536,39 @@
     }
   }
 
-  // After PayPal redirects back, capture the order
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token');
-  if (token) {
+  function handlePayPalReturn() {
+    const payerID = urlParams.get('PayerID');
+    const orderToken = urlParams.get('token');
+    
+    if (!payerID || !orderToken) return;
+
     const submission = JSON.parse(sessionStorage.getItem('pendingSubmission') || '{}');
+    
     fetch('/.netlify/functions/capture-paypal-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId: token, submission }),
+      body: JSON.stringify({ orderId: orderToken, submission }),
     })
     .then(r => r.json())
     .then(result => {
       if (result.ok) {
-        showStatus('Payment received! Your deal is now pending review and will go live once approved.', 'success');
+        let msg = '✅ Payment received! Your deal is now pending review.';
+        if (result.creditsRemaining > 0) {
+          msg += ` You have ${result.creditsRemaining} more post${result.creditsRemaining !== 1 ? 's' : ''} remaining. Check your email for your submission link!`;
+        }
+        showStatus(msg, 'success');
         sessionStorage.removeItem('pendingSubmission');
         sessionStorage.removeItem('pendingOrderId');
         document.getElementById('pay-btn').style.display = 'none';
       } else {
-        showStatus(result.error || 'Payment succeeded but submission failed to save. Please contact support.', 'error');
+        showStatus(result.error || 'Payment succeeded but submission failed. Please contact support.', 'error');
       }
     })
     .catch(() => showStatus('Could not confirm payment. Please contact support.', 'error'));
   }
+
+  // Initialize
+  init();
 </script>
 
 </body>
