@@ -61,20 +61,24 @@ function generateToken() {
   return token;
 }
 
-async function sendTokenEmail(sellerEmail, token, credits, packageLabel) {
-  const submitUrl = `https://deals-aholic.com/submit.html?token=${token}`;
-  
-  // Use Gmail via a simple mailto approach - we'll use Netlify's built-in
-  // For now we save the email to be sent via Make webhook
-  const emailStore = getStore("pending-emails");
-  await emailStore.setJSON(`email-${Date.now()}`, {
-    to: sellerEmail,
-    subject: "Your Deals-aholic Submission Link",
-    body: `Thank you for your purchase!\n\nYour package: ${packageLabel}\nCredits: ${credits} post(s)\n\nUse this link to submit your deals:\n${submitUrl}\n\nThis link is unique to you. Each submission uses 1 credit.\n\nThank you,\nDeals-aholic Team`,
-    token,
-    submitUrl,
-    createdAt: new Date().toISOString(),
-  });
+async function sendTokenEmail(sellerEmail, token, credits) {
+  try {
+    const res = await fetch(`https://deals-aholic.com/.netlify/functions/send-token-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sellerEmail,
+        token,
+        posts: credits,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error(`Email send failed (${res.status}):`, await res.text());
+    }
+  } catch (err) {
+    console.error('Error sending token email:', err.message);
+  }
 }
 
 export default async (req) => {
@@ -89,7 +93,6 @@ export default async (req) => {
       );
     }
 
-    // Validate required fields
     const required = ["productTitle", "productUrl", "discountCode", "price", "expiresOn", "sellerEmail"];
     for (const field of required) {
       if (!submission[field] || String(submission[field]).trim() === "") {
@@ -137,7 +140,6 @@ export default async (req) => {
     const pkg = PACKAGES[packageKey] || { posts: 1, label: "Unknown package" };
     const amountPaid = purchaseUnit?.payments?.captures?.[0]?.amount?.value || null;
 
-    // Generate token for multi-post packages
     const token = generateToken();
     const tokenStore = getStore("tokens");
     await tokenStore.setJSON(`token-${token}`, {
@@ -147,12 +149,11 @@ export default async (req) => {
       packageLabel: pkg.label,
       amountPaid,
       creditsTotal: pkg.posts,
-      creditsUsed: 1, // First post counts as 1 used
+      creditsUsed: 1,
       createdAt: new Date().toISOString(),
       status: "active",
     });
 
-    // Save first submission
     const submissionId = generateSubmissionId();
     const productUrl = submission.productUrl;
     const isAmazon = isAmazonUrl(productUrl);
@@ -188,13 +189,11 @@ export default async (req) => {
     index.push(submissionId);
     await store.setJSON("index", index);
 
-    // Send token email if seller has more posts remaining
     if (pkg.posts > 1 && submission.sellerEmail) {
       await sendTokenEmail(
         submission.sellerEmail,
         token,
-        pkg.posts - 1, // remaining credits after first post
-        pkg.label
+        pkg.posts - 1
       );
     }
 
