@@ -313,7 +313,7 @@
             ${deal.rating ? `<span class="deal-card__rating">★ ${deal.rating}${deal.reviewCount ? ` (${deal.reviewCount})` : ''}</span>` : '<span></span>'}
           </div>
           ${hasCode ? `<button class="deal-card__code-btn" onclick="copyCode(event, '${escapeHtml(deal.discountCode)}')">📋 Copy Code: <strong>${escapeHtml(deal.discountCode)}</strong></button>` : ''}
-          <span class="deal-card__cta">${deal.sponsored ? 'View Deal' : 'Go to Amazon'}</span>
+         <span class="deal-card__cta">${deal.sponsored ? 'View Deal' : deal.storeType === 'walmart' ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon'}</span>
           ${hasCode && dealId ? `<button class="deal-card__report-btn" onclick="reportExpired(event, '${dealId}', '${dealSource}', '${escapeHtml(deal.discountCode)}', '${productUrl}')">⚠️ Report Expired Code</button>` : ''}
         </div>
       </a>
