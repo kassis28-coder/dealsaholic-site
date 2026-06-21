@@ -25,7 +25,7 @@ async function fetchAmazonMeta(amazonUrl) {
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
 
     return {
-      title: title?.replace(/\s*[|:--].*amazon.*/i, '').trim().substring(0, 150) || null,
+      title: title?.replace(/\s*[|:\-].*amazon.*/i, '').trim().substring(0, 150) || null,
       image: image || null,
       price,
       asin,
