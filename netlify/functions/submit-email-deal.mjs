@@ -1,11 +1,9 @@
 import { getStore } from "@netlify/blobs";
 
 async function followRedirectForAsin(amazonUrl) {
-  // Lightweight: just follow redirects to extract ASIN from final URL
   try {
     const res = await fetch(amazonUrl, {
-      method: 'HEAD',
-      redirect: 'follow',
+      method: 'HEAD', redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
     });
     const finalUrl = res.url || amazonUrl;
@@ -17,9 +15,7 @@ async function followRedirectForAsin(amazonUrl) {
 }
 
 async function fetchAmazonMeta(amazonUrl) {
-  // First get ASIN via redirect (cheap HEAD request) so we always have a CDN image fallback
   const { asin: asinFromRedirect, finalUrl: redirectUrl } = await followRedirectForAsin(amazonUrl);
-
   try {
     const res = await fetch(amazonUrl, {
       headers: {
@@ -29,21 +25,13 @@ async function fetchAmazonMeta(amazonUrl) {
       },
       redirect: 'follow',
     });
-
-    // If Amazon blocks the full fetch, return partial result using CDN image from ASIN
     if (!res.ok) {
       if (!asinFromRedirect) return null;
-      return {
-        title: null, price: null,
-        image: `https://m.media-amazon.com/images/P/${asinFromRedirect}.01._SCLZZZZZZZ_.jpg`,
-        asin: asinFromRedirect, finalUrl: redirectUrl,
-      };
+      return { title: null, price: null, image: `https://m.media-amazon.com/images/P/${asinFromRedirect}.01._SCLZZZZZZZ_.jpg`, asin: asinFromRedirect, finalUrl: redirectUrl };
     }
-
     const finalUrl = res.url;
     const asin = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || asinFromRedirect || null;
     const html = await res.text();
-
     const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
     const image = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
@@ -52,21 +40,13 @@ async function fetchAmazonMeta(amazonUrl) {
     const priceMatch = html.match(/["']priceAmount["']\s*:\s*["']?([\d.]+)["']?/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
-
     return {
-      // Only strip trailing " | Amazon..." or " : Amazon..." or " - Amazon..." suffixes
-      // NOT dashes inside product names like WH-1000XM5
       title: title?.replace(/\s*[|:]\s*amazon\b.*/i, '').replace(/\s{1,2}-\s{1,2}amazon\b.*/i, '').trim().substring(0, 150) || null,
       image, price, asin, finalUrl,
     };
   } catch (e) {
-    // Even on full failure, return CDN image if we got ASIN from the redirect
     if (!asinFromRedirect) return null;
-    return {
-      title: null, price: null,
-      image: `https://m.media-amazon.com/images/P/${asinFromRedirect}.01._SCLZZZZZZZ_.jpg`,
-      asin: asinFromRedirect, finalUrl: redirectUrl,
-    };
+    return { title: null, price: null, image: `https://m.media-amazon.com/images/P/${asinFromRedirect}.01._SCLZZZZZZZ_.jpg`, asin: asinFromRedirect, finalUrl: redirectUrl };
   }
 }
 
@@ -107,20 +87,18 @@ export default async (req, context) => {
 
   const content = (emailBody || title).trim();
 
-  // Parse JSON from Claude AI module (has one extracted deal + optional snippet)
   let claudeData = null;
   let rawSnippet = snippet;
   try {
     const parsed = JSON.parse(content);
     if (parsed && typeof parsed === 'object') {
       if (parsed.title || parsed.amazonUrl) claudeData = parsed;
-      if (parsed.snippet) rawSnippet = parsed.snippet;  // full email HTML passed alongside
+      if (parsed.snippet) rawSnippet = parsed.snippet;
     }
   } catch (e) {}
 
   const plainText = stripHtml(content);
 
-  // Collect ALL Amazon URLs from every available source
   const allUrls = [];
   if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
   extractAmazonUrls(content).forEach(u => allUrls.push(u));
@@ -133,17 +111,13 @@ export default async (req, context) => {
   const uniqueUrls = [...new Set(allUrls)];
   const primaryUrl = uniqueUrls[0] || null;
 
-  // Fetch metadata for primary URL
   let primaryMeta = null;
   if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
-  // Shared fallbacks from Claude + primary URL
-  const sharedPrice = claudeData?.price || primaryMeta?.price
-    || plainText.match(/\$[\d,.]+/)?.[0] || null;
+  const sharedPrice = claudeData?.price || primaryMeta?.price || plainText.match(/\$[\d,.]+/)?.[0] || null;
   const originalPrice = claudeData?.originalPrice || null;
   const discount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
-  const discountCode = claudeData?.discountCode
-    || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
+  const discountCode = claudeData?.discountCode || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
 
   const store = getStore("submissions");
   const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 20) : [null];
@@ -151,26 +125,20 @@ export default async (req, context) => {
   const deals = [];
 
   for (const dealUrl of urlsToProcess) {
-    // Use pre-fetched meta for primary URL, fetch fresh for others
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
     if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
 
     const asin = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
-
     const affiliateUrl = asin
       ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
       : dealUrl
       ? (dealUrl.includes('tag=') ? dealUrl : dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20')
       : '';
-
-    const imageUrl = meta?.image
-      || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
-
+    const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
     const dealTitle = meta?.title
       || (dealUrl === primaryUrl ? claudeData?.title : null)
       || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
       || 'Amazon Deal';
-
     const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -195,13 +163,30 @@ export default async (req, context) => {
     await new Promise(r => setTimeout(r, 10));
   }
 
+  // Build one combined message covering ALL deals — no iterator needed in Make.com
+  const telegramMessage = deals.length === 0 ? null
+    : deals.length === 1
+      ? `🔥 <b>New Deal Alert!</b>\n\n🛍️ <b>${deals[0].title}</b>\n\n💰 <b>${deals[0].price || 'Check link'}</b>\n\n🔗 <a href="${deals[0].url}">👉 Grab this deal!</a>`
+      : `🔥 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
+          `${i + 1}. 🛍️ <b>${d.title}</b>\n   💰 <b>${d.price || 'Check link'}</b>\n   🔗 <a href="${d.url}">Grab deal</a>`
+        ).join('\n\n');
+
+  const facebookMessage = deals.length === 0 ? null
+    : deals.length === 1
+      ? `🔥 New Deal Alert!\n\n🛍️ ${deals[0].title}\n\n💰 ${deals[0].price || 'Check link'}\n\n👉 ${deals[0].url}\n\n#deals #amazon #dealsaholic #shopping #sale`
+      : `🔥 ${deals.length} New Deals Alert!\n\n` + deals.map((d, i) =>
+          `${i + 1}. 🛍️ ${d.title}\n   💰 ${d.price || 'Check link'}\n   👉 ${d.url}`
+        ).join('\n\n') + '\n\n#deals #amazon #dealsaholic #shopping #sale';
+
   return new Response(JSON.stringify({
     success: true,
     count: deals.length,
     ids: savedIds,
-    deals,                         // array — Make.com Iterator uses this
+    deals,
     amazonUrlsFound: uniqueUrls.length,
-    // backward compat: first deal
+    telegramMessage,   // use {{3.telegramMessage}} in Make.com Telegram module
+    facebookMessage,   // use {{3.facebookMessage}} in Make.com Facebook modules
+    // backward compat: first deal fields
     title: deals[0]?.title || null,
     price: deals[0]?.price || null,
     url: deals[0]?.url || null,
