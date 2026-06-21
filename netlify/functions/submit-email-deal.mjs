@@ -14,11 +14,11 @@ async function fetchAmazonMeta(amazonUrl) {
 
     const finalUrl = res.url;
     const asin = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
-
     const html = await res.text();
+
     const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
-    const image = html.match(/<meta[^>]+property=["']og:image["'][^^>+content=["']([^"']+)["']/i)?.[1]
+    const image = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
     const priceMatch = html.match(/["']priceAmount["']\s*:\s*["']?([\d.]+)["']?/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
@@ -34,13 +34,37 @@ async function fetchAmazonMeta(amazonUrl) {
   } catch (e) { return null; }
 }
 
+function extractAmazonUrls(text) {
+  const patterns = [
+    /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
+    /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
+    /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
+  ];
+  const urls = [];
+  for (const pattern of patterns) {
+    [...text.matchAll(new RegExp(pattern.source, 'gi'))].forEach(m => urls.push(m[0]));
+  }
+  return urls;
+}
+
+function stripHtml(html) {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
 export default async (req, context) => {
-  const url = new URL(req.url);
-  let emailBody = '', title = '';
+  const urlObj = new URL(req.url);
+  let emailBody = '', title = '', snippet = '';
 
   if (req.method === 'GET') {
-    emailBody = url.searchParams.get('emailBody') || '';
-    title = url.searchParams.get('title') || '';
+    emailBody = urlObj.searchParams.get('emailBody') || '';
+    title = urlObj.searchParams.get('title') || '';
+    snippet = urlObj.searchParams.get('snippet') || '';
   } else if (req.method === 'POST') {
     try { emailBody = await req.text(); } catch (e) { emailBody = ''; }
   }
@@ -48,80 +72,80 @@ export default async (req, context) => {
   const content = (emailBody || title).trim();
 
   let claudeData = null;
+  let rawSnippet = snippet;
   try {
     const parsed = JSON.parse(content);
-    if (parsed && typeof parsed === 'object' && (parsed.title || parsed.amazonUrl)) claudeData = parsed;
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.title || parsed.amazonUrl) claudeData = parsed;
+      if (parsed.snippet) rawSnippet = parsed.snippet;
+    }
   } catch (e) {}
 
-  const plainText = content
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ').trim();
+  const plainText = stripHtml(content);
 
-  const amazonPatterns = [
-    /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
-    /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
-    /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
-  ];
   const allUrls = [];
-  for (const pattern of amazonPatterns) {
-    [...content.matchAll(new RegExp(pattern.source, 'gi'))].forEach(m => allUrls.push(m[0]));
-    [...plainText.matchAll(new RegExp(pattern.source, 'gi'))].forEach(m => allUrls.push(m[0]));
+  if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
+  extractAmazonUrls(content).forEach(u => allUrls.push(u));
+  extractAmazonUrls(plainText).forEach(u => allUrls.push(u));
+  if (rawSnippet) {
+    extractAmazonUrls(rawSnippet).forEach(u => allUrls.push(u));
+    extractAmazonUrls(stripHtml(rawSnippet)).forEach(u => allUrls.push(u));
   }
-  if (claudeData?.amazonUrl) allUrls.unshift(claudeData.amazonUrl);
+
   const uniqueUrls = [...new Set(allUrls)];
   const primaryUrl = uniqueUrls[0] || null;
 
-  let amazonMeta = null;
-  if (primaryUrl && !claudeData?.imageUrl) {
-    amazonMeta = await fetchAmazonMeta(primaryUrl);
-  }
+  let primaryMeta = null;
+  if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
-  const dealTitle = claudeData?.title || amazonMeta?.title
-    || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
-    || 'Amazon Deal';
-  const price = claudeData?.price || amazonMeta?.price || plainText.match(/\$[\d,.]+/)?.[0] || null;
+  const sharedPrice = claudeData?.price || primaryMeta?.price
+    || plainText.match(/\$[\d,.]+/)?.[0] || null;
   const originalPrice = claudeData?.originalPrice || null;
   const discount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
   const discountCode = claudeData?.discountCode
     || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
 
   const store = getStore("submissions");
-  const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 10) : [null];
+  const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 20) : [null];
   const savedIds = [];
-  let firstImageUrl = null, firstAffiliateUrl = null;
+  const deals = [];
 
   for (const dealUrl of urlsToProcess) {
-    const dealAsin = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
-      || (dealUrl === primaryUrl ? amazonMeta?.asin : null)
-      || null;
+    let meta = dealUrl === primaryUrl ? primaryMeta : null;
+    if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
 
-    const dealAffiliateUrl = dealAsin
-      ? 'https://www.amazon.com/dp/' + dealAsin + '?tag=kethya08-20'
+    const asin = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
+
+    const affiliateUrl = asin
+      ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
       : dealUrl
       ? (dealUrl.includes('tag=') ? dealUrl : dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20')
       : '';
 
-    const imageUrl = (dealUrl === primaryUrl ? amazonMeta?.image : null)
-      || (dealAsin ? 'https://m.media-amazon.com/images/P/' + dealAsin + '.01._SCLZZZZZZZ_.jpg' : null);
+    const imageUrl = meta?.image
+      || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
 
-    if (!firstImageUrl && imageUrl) firstImageUrl = imageUrl;
-    if (!firstAffiliateUrl && dealAffiliateUrl) firstAffiliateUrl = dealAffiliateUrl;
+    const dealTitle = meta?.title
+      || (dealUrl === primaryUrl ? claudeData?.title : null)
+      || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
+      || 'Amazon Deal';
+
+    const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
-      id, title: dealTitle, price: price || null, originalPrice: originalPrice || null,
-      discount: discount || null, url: dealAffiliateUrl, imageUrl,
+      id, title: dealTitle, price: dealPrice || null,
+      originalPrice: originalPrice || null, discount: discount || null,
+      url: affiliateUrl, imageUrl,
       discountCode: discountCode || null, source: "email",
-      status: dealAffiliateUrl ? "approved" : "pending", sponsored: false,
+      status: affiliateUrl ? "approved" : "pending", sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
+
     await store.setJSON(id, submission);
     savedIds.push(id);
+    deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
 
     let index = [];
     try { index = await store.get("index", { type: "json" }) || []; } catch (e) { index = []; }
@@ -131,10 +155,15 @@ export default async (req, context) => {
   }
 
   return new Response(JSON.stringify({
-    success: true, count: savedIds.length, ids: savedIds,
+    success: true,
+    count: deals.length,
+    ids: savedIds,
+    deals,
     amazonUrlsFound: uniqueUrls.length,
-    title: dealTitle, price: price || null,
-    url: firstAffiliateUrl, imageUrl: firstImageUrl,
+    title: deals[0]?.title || null,
+    price: deals[0]?.price || null,
+    url: deals[0]?.url || null,
+    imageUrl: deals[0]?.imageUrl || null,
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 };
 
