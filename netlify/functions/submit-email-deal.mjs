@@ -1,6 +1,25 @@
 import { getStore } from "@netlify/blobs";
 
+async function followRedirectForAsin(amazonUrl) {
+  // Lightweight: just follow redirects to extract ASIN from final URL
+  try {
+    const res = await fetch(amazonUrl, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+    });
+    const finalUrl = res.url || amazonUrl;
+    const asin = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
+    return { asin, finalUrl };
+  } catch (e) {
+    return { asin: null, finalUrl: amazonUrl };
+  }
+}
+
 async function fetchAmazonMeta(amazonUrl) {
+  // First get ASIN via redirect (cheap HEAD request) so we always have a CDN image fallback
+  const { asin: asinFromRedirect, finalUrl: redirectUrl } = await followRedirectForAsin(amazonUrl);
+
   try {
     const res = await fetch(amazonUrl, {
       headers: {
@@ -10,28 +29,43 @@ async function fetchAmazonMeta(amazonUrl) {
       },
       redirect: 'follow',
     });
-    if (!res.ok) return null;
+
+    // If Amazon blocks the full fetch, return partial result using CDN image from ASIN
+    if (!res.ok) {
+      if (!asinFromRedirect) return null;
+      return {
+        title: null, price: null,
+        image: `https://m.media-amazon.com/images/P/${asinFromRedirect}.01._SCLZZZZZZZ_.jpg`,
+        asin: asinFromRedirect, finalUrl: redirectUrl,
+      };
+    }
 
     const finalUrl = res.url;
-    const asin = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
+    const asin = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || asinFromRedirect || null;
     const html = await res.text();
 
     const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
     const image = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
-      || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
+      || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+      || (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);
     const priceMatch = html.match(/["']priceAmount["']\s*:\s*["']?([\d.]+)["']?/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
 
     return {
       title: title?.replace(/\s*[|:\-].*amazon.*/i, '').trim().substring(0, 150) || null,
-      image: image || null,
-      price,
-      asin,
-      finalUrl,
+      image, price, asin, finalUrl,
     };
-  } catch (e) { return null; }
+  } catch (e) {
+    // Even on full failure, return CDN image if we got ASIN from the redirect
+    if (!asinFromRedirect) return null;
+    return {
+      title: null, price: null,
+      image: `https://m.media-amazon.com/images/P/${asinFromRedirect}.01._SCLZZZZZZZ_.jpg`,
+      asin: asinFromRedirect, finalUrl: redirectUrl,
+    };
+  }
 }
 
 function extractAmazonUrls(text) {
@@ -71,18 +105,20 @@ export default async (req, context) => {
 
   const content = (emailBody || title).trim();
 
+  // Parse JSON from Claude AI module (has one extracted deal + optional snippet)
   let claudeData = null;
   let rawSnippet = snippet;
   try {
     const parsed = JSON.parse(content);
     if (parsed && typeof parsed === 'object') {
       if (parsed.title || parsed.amazonUrl) claudeData = parsed;
-      if (parsed.snippet) rawSnippet = parsed.snippet;
+      if (parsed.snippet) rawSnippet = parsed.snippet;  // full email HTML passed alongside
     }
   } catch (e) {}
 
   const plainText = stripHtml(content);
 
+  // Collect ALL Amazon URLs from every available source
   const allUrls = [];
   if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
   extractAmazonUrls(content).forEach(u => allUrls.push(u));
@@ -95,9 +131,11 @@ export default async (req, context) => {
   const uniqueUrls = [...new Set(allUrls)];
   const primaryUrl = uniqueUrls[0] || null;
 
+  // Fetch metadata for primary URL
   let primaryMeta = null;
   if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
+  // Shared fallbacks from Claude + primary URL
   const sharedPrice = claudeData?.price || primaryMeta?.price
     || plainText.match(/\$[\d,.]+/)?.[0] || null;
   const originalPrice = claudeData?.originalPrice || null;
@@ -111,6 +149,7 @@ export default async (req, context) => {
   const deals = [];
 
   for (const dealUrl of urlsToProcess) {
+    // Use pre-fetched meta for primary URL, fetch fresh for others
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
     if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
 
@@ -158,8 +197,9 @@ export default async (req, context) => {
     success: true,
     count: deals.length,
     ids: savedIds,
-    deals,
+    deals,                         // array — Make.com Iterator uses this
     amazonUrlsFound: uniqueUrls.length,
+    // backward compat: first deal
     title: deals[0]?.title || null,
     price: deals[0]?.price || null,
     url: deals[0]?.url || null,
