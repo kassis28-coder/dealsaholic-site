@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -612,9 +612,37 @@
     applyFilters();
   }
 
-  document.getElementById('filter-search').addEventListener('input', applyFilters);
-  document.getElementById('filter-category').addEventListener('change', applyFilters);
-  document.getElementById('filter-sort').addEventListener('change', applyFilters);
+ document.getElementById('filter-search').addEventListener('input', () => {
+  updateURL();
+  applyFilters();
+});
+document.getElementById('filter-category').addEventListener('change', () => {
+  updateURL();
+  applyFilters();
+});
+document.getElementById('filter-sort').addEventListener('change', () => {
+  updateURL();
+  applyFilters();
+});
+
+function updateURL() {
+  const search = document.getElementById('filter-search').value.trim();
+  const category = document.getElementById('filter-category').value;
+  const sort = document.getElementById('filter-sort').value;
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (category) params.set('category', category);
+  if (sort && sort !== 'discount') params.set('sort', sort);
+  const newUrl = params.toString() ? '?' + params.toString() : window.location.pathname;
+  window.history.replaceState({}, '', newUrl);
+}
+
+function loadFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('search')) document.getElementById('filter-search').value = params.get('search');
+  if (params.get('category')) document.getElementById('filter-category').value = params.get('category');
+  if (params.get('sort')) document.getElementById('filter-sort').value = params.get('sort');
+}
 
   fetch(DEALS_JSON_URL)
     .then(res => {
