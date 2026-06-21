@@ -3,7 +3,8 @@ import { getStore } from "@netlify/blobs";
 async function followRedirectForAsin(amazonUrl) {
   try {
     const res = await fetch(amazonUrl, {
-      method: 'HEAD', redirect: 'follow',
+      method: 'HEAD',
+      redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
     });
     const finalUrl = res.url || amazonUrl;
@@ -91,14 +92,21 @@ export default async (req, context) => {
   let rawSnippet = snippet;
   try {
     const parsed = JSON.parse(content);
-    if (parsed && typeof parsed === 'object') {
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       if (parsed.title || parsed.amazonUrl) claudeData = parsed;
       if (parsed.snippet) rawSnippet = parsed.snippet;
+      if (parsed.emailSnippet) rawSnippet = rawSnippet || parsed.emailSnippet;
+      if (parsed.emailBody) {
+        emailBody = parsed.emailBody;
+        try {
+          const inner = JSON.parse(parsed.emailBody);
+          if (inner && typeof inner === 'object' && (inner.title || inner.amazonUrl)) claudeData = inner;
+        } catch (e) {}
+      }
     }
   } catch (e) {}
 
   const plainText = stripHtml(content);
-
   const allUrls = [];
   if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
   extractAmazonUrls(content).forEach(u => allUrls.push(u));
@@ -110,7 +118,6 @@ export default async (req, context) => {
 
   const uniqueUrls = [...new Set(allUrls)];
   const primaryUrl = uniqueUrls[0] || null;
-
   let primaryMeta = null;
   if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
@@ -127,7 +134,6 @@ export default async (req, context) => {
   for (const dealUrl of urlsToProcess) {
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
     if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
-
     const asin = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
     const affiliateUrl = asin
       ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
@@ -140,22 +146,17 @@ export default async (req, context) => {
       || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
       || 'Amazon Deal';
     const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
-
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
-      id, title: dealTitle, price: dealPrice || null,
-      originalPrice: originalPrice || null, discount: discount || null,
-      url: affiliateUrl, imageUrl,
-      discountCode: discountCode || null, source: "email",
-      status: affiliateUrl ? "approved" : "pending", sponsored: false,
+      id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null,
+      discount: discount || null, url: affiliateUrl, imageUrl, discountCode: discountCode || null,
+      source: "email", status: affiliateUrl ? "approved" : "pending", sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
-
     await store.setJSON(id, submission);
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
-
     let index = [];
     try { index = await store.get("index", { type: "json" }) || []; } catch (e) { index = []; }
     index.unshift(id);
@@ -163,34 +164,26 @@ export default async (req, context) => {
     await new Promise(r => setTimeout(r, 10));
   }
 
-  // Build one combined message covering ALL deals — no iterator needed in Make.com
   const telegramMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `🔥 <b>New Deal Alert!</b>\n\n🛍️ <b>${deals[0].title}</b>\n\n💰 <b>${deals[0].price || 'Check link'}</b>\n\n🔗 <a href="${deals[0].url}">👉 Grab this deal!</a>`
+      ? `🔥 <b>New Deal Alert!</b>\n\n🛍️ <b>${deals[0].title || 'Amazon Deal'}</b>\n\n💰 <b>${deals[0].price || 'Check link'}</b>\n\n🔗 <a href="${deals[0].url}">👉 Grab this deal!</a>`
       : `🔥 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
-          `${i + 1}. 🛍️ <b>${d.title}</b>\n   💰 <b>${d.price || 'Check link'}</b>\n   🔗 <a href="${d.url}">Grab deal</a>`
+          `${i + 1}. 🛍️ <b>${d.title || 'Amazon Deal'}</b>\n   💰 <b>${d.price || 'Check link'}</b>\n   🔗 <a href="${d.url}">Grab deal</a>`
         ).join('\n\n');
 
   const facebookMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `🔥 New Deal Alert!\n\n🛍️ ${deals[0].title}\n\n💰 ${deals[0].price || 'Check link'}\n\n👉 ${deals[0].url}\n\n#deals #amazon #dealsaholic #shopping #sale`
+      ? `🔥 New Deal Alert!\n\n🛍️ ${deals[0].title || 'Amazon Deal'}\n\n💰 ${deals[0].price || 'Check link'}\n\n👉 ${deals[0].url}\n\n#deals #amazon #dealsaholic #shopping #sale`
       : `🔥 ${deals.length} New Deals Alert!\n\n` + deals.map((d, i) =>
-          `${i + 1}. 🛍️ ${d.title}\n   💰 ${d.price || 'Check link'}\n   👉 ${d.url}`
+          `${i + 1}. 🛍️ ${d.title || 'Amazon Deal'}\n   💰 ${d.price || 'Check link'}\n   👉 ${d.url}`
         ).join('\n\n') + '\n\n#deals #amazon #dealsaholic #shopping #sale';
 
   return new Response(JSON.stringify({
-    success: true,
-    count: deals.length,
-    ids: savedIds,
-    deals,
+    success: true, count: deals.length, ids: savedIds, deals,
     amazonUrlsFound: uniqueUrls.length,
-    telegramMessage,   // use {{3.telegramMessage}} in Make.com Telegram module
-    facebookMessage,   // use {{3.facebookMessage}} in Make.com Facebook modules
-    // backward compat: first deal fields
-    title: deals[0]?.title || null,
-    price: deals[0]?.price || null,
-    url: deals[0]?.url || null,
-    imageUrl: deals[0]?.imageUrl || null,
+    telegramMessage, facebookMessage,
+    title: deals[0]?.title || null, price: deals[0]?.price || null,
+    url: deals[0]?.url || null, imageUrl: deals[0]?.imageUrl || null,
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 };
 
