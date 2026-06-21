@@ -8,7 +8,41 @@ const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
 
-async function getAccessToken() {
+const WALMART_AFFILIATE = "https://goto.walmart.com/c/1788825/1398372/16662?u=";
+const TEMU_AFFILIATE = "https://temuaffiliateprogram.pxf.io/c/1788825/1580294/18350?u=";
+
+function detectStore(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("amazon.")) return "amazon";
+    if (host.includes("walmart.")) return "walmart";
+    if (host.includes("temu.")) return "temu";
+    if (host.includes("goto.walmart.")) return "walmart_affiliate";
+    if (host.includes("temuaffiliateprogram.")) return "temu_affiliate";
+    return "other";
+  } catch {
+    return "other";
+  }
+}
+
+function buildAffiliateUrl(url, store) {
+  switch (store) {
+    case "amazon": {
+      const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
+      const asin = asinMatch ? asinMatch[1] : null;
+      if (asin) return `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`;
+      return url.includes("tag=") ? url : `${url}${url.includes("?") ? "&" : "?"}tag=${PARTNER_TAG}`;
+    }
+    case "walmart":
+      return `${WALMART_AFFILIATE}${encodeURIComponent(url)}`;
+    case "temu":
+      return `${TEMU_AFFILIATE}${encodeURIComponent(url)}`;
+    default:
+      return url;
+  }
+}
+
+async function getAmazonAccessToken() {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -24,9 +58,9 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-async function getProductImage(asin) {
+async function fetchAmazonImage(asin) {
   try {
-    const accessToken = await getAccessToken();
+    const accessToken = await getAmazonAccessToken();
     const res = await fetch(CATALOG_URL, {
       method: "POST",
       headers: {
@@ -40,21 +74,39 @@ async function getProductImage(asin) {
         partnerTag: PARTNER_TAG,
         partnerType: "Associates",
         marketplace: MARKETPLACE,
-        resources: [
-          "images.primary.large",
-          "itemInfo.title",
-        ],
+        resources: ["images.primary.large", "itemInfo.title"],
       }),
     });
     if (!res.ok) return null;
     const data = await res.json();
     const items = data.items || data.searchResult?.items || [];
-    if (items.length > 0) {
-      return items[0].images?.primary?.large?.url || null;
-    }
-    return null;
+    return items[0]?.images?.primary?.large?.url || null;
   } catch (e) {
     console.log("Amazon image fetch failed:", e.message);
+    return null;
+  }
+}
+
+async function fetchPageImage(url) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch) return ogMatch[1];
+    const twitterMatch = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+    if (twitterMatch) return twitterMatch[1];
+    return null;
+  } catch (e) {
+    console.log("Page image fetch failed:", e.message);
     return null;
   }
 }
@@ -71,26 +123,27 @@ export default async (req, context) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
-    let { title, url, price, originalPrice, discount, discountCode, expiresOn } = body;
+    let { title, url, photoUrl, price, originalPrice, discount, discountCode, expiresOn } = body;
 
-    // Extract ASIN from Amazon URL
-    const asinMatch = (url || "").match(/\/dp\/([A-Z0-9]{10})/i);
-    const asin = asinMatch ? asinMatch[1] : null;
+    const store = detectStore(url);
+    const affiliateUrl = buildAffiliateUrl(url, store);
 
-    // Build affiliate URL
-    const affiliateUrl = asin
-      ? `https://www.amazon.com/dp/${asin}?tag=kethya08-20`
-      : url.includes("tag=") ? url : `${url}${url.includes("?") ? "&" : "?"}tag=kethya08-20`;
+    let imageUrl = photoUrl || null;
 
-    // Auto-fetch image from Amazon API using ASIN
-    let imageUrl = null;
-    if (asin) {
-      console.log("Fetching image for ASIN:", asin);
-      imageUrl = await getProductImage(asin);
-      console.log("Image URL fetched:", imageUrl);
+    if (!imageUrl) {
+      if (store === "amazon") {
+        const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
+        const asin = asinMatch ? asinMatch[1] : null;
+        if (asin) {
+          console.log("Fetching Amazon image for ASIN:", asin);
+          imageUrl = await fetchAmazonImage(asin);
+        }
+      } else if (store === "walmart" || store === "temu") {
+        console.log("Fetching page image for:", url);
+        imageUrl = await fetchPageImage(url);
+      }
     }
 
-    // Handle expiry date MM/DD/YYYY or YYYY-MM-DD
     let expiresOnISO;
     if (expiresOn) {
       if (expiresOn.includes('/')) {
@@ -106,9 +159,7 @@ export default async (req, context) => {
       expiresOnISO = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     }
 
-    // Save to Netlify Blobs
-    const store = getStore("submissions");
-
+    const blobStore = getStore("submissions");
     const id = `admin-${Date.now()}`;
     const submission = {
       id,
@@ -120,21 +171,21 @@ export default async (req, context) => {
       imageUrl: imageUrl || null,
       discountCode: discountCode || null,
       source: "admin",
+      storeType: store,
       status: "approved",
       sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: expiresOnISO,
     };
 
-    await store.setJSON(id, submission);
+    await blobStore.setJSON(id, submission);
 
-    // Update index
     let index = [];
     try {
-      index = await store.get("index", { type: "json" }) || [];
+      index = await blobStore.get("index", { type: "json" }) || [];
     } catch (e) { index = []; }
     index.unshift(id);
-    await store.setJSON("index", index);
+    await blobStore.setJSON("index", index);
 
     return new Response(JSON.stringify({ success: true, id, deal: submission }), {
       status: 200,
