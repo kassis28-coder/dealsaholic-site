@@ -20,324 +20,64 @@
     --red: #B3261E;
     --blue: #1A73E8;
   }
-
   * { box-sizing: border-box; }
-
-  body {
-    margin: 0;
-    background: var(--paper);
-    font-family: 'Inter', sans-serif;
-    color: var(--ink);
-    min-height: 100vh;
-  }
-
-  .login-screen {
-    max-width: 360px;
-    margin: 100px auto;
-    padding: 32px;
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-  }
-
-  .login-screen h1 {
-    font-family: 'Archivo Black', sans-serif;
-    font-size: 20px;
-    margin: 0 0 16px;
-  }
-
-  .login-screen input {
-    width: 100%;
-    font-size: 14px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    margin-bottom: 12px;
-  }
-
-  .login-screen button,
-  .btn {
-    font-family: 'Inter', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    cursor: pointer;
-  }
-
-  .login-screen button {
-    width: 100%;
-    background: var(--brand);
-    color: #fff;
-  }
-
-  .error-text {
-    color: var(--red);
-    font-size: 13px;
-    margin-top: 8px;
-  }
-
-  .admin-page {
-    display: none;
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 32px 24px 80px;
-  }
-
-  .admin-page h1 {
-    font-family: 'Archivo Black', sans-serif;
-    font-size: 26px;
-    margin: 0 0 4px;
-  }
-
-  .admin-page__subtitle {
-    font-size: 13px;
-    color: var(--ink-soft);
-    margin: 0 0 28px;
-  }
-
-  .tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-
-  .tab {
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 16px;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--card);
-    cursor: pointer;
-    color: var(--ink-soft);
-  }
-
-  .tab.active {
-    background: var(--ink);
-    color: #fff;
-    border-color: var(--ink);
-  }
-
-  .tab--create.active {
-    background: var(--brand);
-    border-color: var(--brand);
-    color: #fff;
-  }
-
-  .tab--email.active {
-    background: #7B2FBE;
-    border-color: #7B2FBE;
-    color: #fff;
-  }
-
-  .submission-card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 18px;
-    margin-bottom: 14px;
-    display: flex;
-    gap: 16px;
-  }
-
-  .submission-card img {
-    width: 80px;
-    height: 80px;
-    object-fit: contain;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: #fff;
-    flex-shrink: 0;
-  }
-
+  body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; }
+  .login-screen { max-width: 360px; margin: 100px auto; padding: 32px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .login-screen h1 { font-family: 'Archivo Black', sans-serif; font-size: 20px; margin: 0 0 16px; }
+  .login-screen input { width: 100%; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
+  .login-screen button, .btn { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+  .login-screen button { width: 100%; background: var(--brand); color: #fff; }
+  .error-text { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .admin-page { display: none; max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; }
+  .admin-page h1 { font-family: 'Archivo Black', sans-serif; font-size: 26px; margin: 0 0 4px; }
+  .admin-page__subtitle { font-size: 13px; color: var(--ink-soft); margin: 0 0 28px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tab { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); cursor: pointer; color: var(--ink-soft); }
+  .tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .tab--create.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .tab--email.active { background: #7B2FBE; border-color: #7B2FBE; color: #fff; }
+  .tab--review.active { background: #E1432D; border-color: #E1432D; color: #fff; }
+  .submission-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 14px; display: flex; gap: 16px; }
+  .submission-card img { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; flex-shrink: 0; }
   .submission-card__body { flex: 1; min-width: 0; }
-
-  .submission-card__title {
-    font-weight: 700;
-    font-size: 14px;
-    margin: 0 0 4px;
-  }
-
-  .submission-card__meta {
-    font-size: 12px;
-    color: var(--ink-soft);
-    margin: 0 0 8px;
-    line-height: 1.5;
-  }
-
+  .submission-card__title { font-weight: 700; font-size: 14px; margin: 0 0 4px; }
+  .submission-card__meta { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; line-height: 1.5; }
   .submission-card__meta a { color: var(--brand); text-decoration: none; }
-
-  .badge {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 999px;
-    margin-left: 6px;
-  }
-
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; margin-left: 6px; }
   .badge--pending { background: #FFF3DC; color: #92660A; }
   .badge--approved { background: #E7F5EC; color: var(--green); }
   .badge--rejected { background: #FCEAE8; color: var(--red); }
+  .badge--needs-review { background: #FCEAE8; color: var(--red); }
   .badge--warning { background: #FCEAE8; color: var(--red); }
   .badge--email { background: #F3E8FF; color: #7B2FBE; }
-
-  .link-edit-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
-  .link-edit-row input {
-    flex: 1;
-    font-size: 12px;
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-  }
-
+  .link-edit-row { display: flex; gap: 8px; margin-top: 8px; }
+  .link-edit-row input { flex: 1; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-
   .btn--approve { background: var(--green); color: #fff; }
   .btn--reject { background: var(--red); color: #fff; }
   .btn--delete { background: #fff; color: var(--red); border: 1px solid var(--red); }
   .btn--edit { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
   .btn--save { background: var(--blue); color: #fff; }
-
-  .empty-state {
-    text-align: center;
-    padding: 48px 20px;
-    color: var(--ink-soft);
-    font-size: 14px;
-  }
-
-  .edit-form {
-    background: #f0f7ff;
-    border: 1px solid #c0d8f8;
-    border-radius: 10px;
-    padding: 16px;
-    margin-top: 12px;
-  }
-
-  .edit-form h3 {
-    font-size: 13px;
-    font-weight: 700;
-    margin: 0 0 12px;
-    color: var(--blue);
-  }
-
-  .edit-form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 10px;
-  }
-
-  .edit-form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .edit-form-group label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    text-transform: uppercase;
-  }
-
-  .edit-form-group input {
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    width: 100%;
-  }
-
-  .edit-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-  }
-
-  .create-form {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 24px;
-  }
-
-  .create-form h2 {
-    font-family: 'Archivo Black', sans-serif;
-    font-size: 18px;
-    margin: 0 0 20px;
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-bottom: 14px;
-  }
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 14px;
-  }
-
-  .form-group label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .form-group input {
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--paper);
-    color: var(--ink);
-    width: 100%;
-  }
-
-  .form-submit-row {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    margin-top: 20px;
-  }
-
-  .btn--submit-post {
-    background: var(--brand);
-    color: #fff;
-    font-size: 14px;
-    padding: 12px 28px;
-    border-radius: 999px;
-    border: none;
-    font-weight: 700;
-    cursor: pointer;
-    font-family: 'Inter', sans-serif;
-  }
-
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--ink-soft); font-size: 14px; }
+  .edit-form { background: #f0f7ff; border: 1px solid #c0d8f8; border-radius: 10px; padding: 16px; margin-top: 12px; }
+  .edit-form h3 { font-size: 13px; font-weight: 700; margin: 0 0 12px; color: var(--blue); }
+  .edit-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .edit-form-group { display: flex; flex-direction: column; gap: 4px; }
+  .edit-form-group label { font-size: 11px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; }
+  .edit-form-group input { font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+  .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .create-form { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .create-form h2 { font-family: 'Archivo Black', sans-serif; font-size: 18px; margin: 0 0 20px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .form-group label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .form-group input { font-family: 'Inter', sans-serif; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; }
+  .form-submit-row { display: flex; gap: 12px; align-items: center; margin-top: 20px; }
+  .btn--submit-post { background: var(--brand); color: #fff; font-size: 14px; padding: 12px 28px; border-radius: 999px; border: none; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; }
   .btn--submit-post:hover { background: var(--brand-dark); }
-
   .success-msg { color: var(--green); font-size: 13px; font-weight: 600; }
   .error-msg { color: var(--red); font-size: 13px; font-weight: 600; }
-
-  @media (max-width: 600px) {
-    .form-row { grid-template-columns: 1fr; }
-    .edit-form-row { grid-template-columns: 1fr; }
-  }
+  @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .edit-form-row { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -358,6 +98,7 @@
     <div class="tab" data-status="approved" onclick="setTab('approved')">Approved</div>
     <div class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</div>
     <div class="tab tab--email" data-status="email" onclick="setTab('email')">📧 Email Deals</div>
+    <div class="tab tab--review" data-status="needs-review" onclick="setTab('needs-review')">⚠️ Needs Review</div>
     <div class="tab tab--create" data-status="create" onclick="setTab('create')">➕ Create Post</div>
   </div>
 
@@ -366,17 +107,23 @@
   <div id="create-post-form" style="display:none;">
     <div class="create-form">
       <h2>➕ Create a New Deal Post</h2>
-      <p style="font-size:13px; color:var(--ink-soft); margin:-10px 0 20px;">Product image will be fetched automatically from Amazon.</p>
+      <p style="font-size:13px; color:var(--ink-soft); margin:-10px 0 20px;">Works with Amazon, Walmart, Temu, Mavely, and any other store.</p>
 
       <div class="form-group">
         <label>Product Title *</label>
-        <input type="text" id="cp-title" placeholder="e.g. Sony WH-1000XM5 Headphones">
+        <input type="text" id="cp-title" placeholder="e.g. Michael Kors Handbag">
       </div>
 
       <div class="form-group">
-        <label>Amazon Product URL *</label>
-        <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/XXXXXXXXXX">
-        <small style="color:var(--ink-soft); font-size:11px;">Affiliate tag and product image will be added automatically</small>
+        <label>Product URL *</label>
+        <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/... or walmart.com or temu.com">
+        <small style="color:var(--ink-soft); font-size:11px;">Amazon, Walmart & Temu: affiliate tag added automatically. Other stores: paste your affiliate link directly.</small>
+      </div>
+
+      <div class="form-group">
+        <label>Photo URL <span style="font-weight:400; text-transform:none;">(optional — leave blank to auto-fetch)</span></label>
+        <input type="text" id="cp-photo" placeholder="https://example.com/product-image.jpg">
+        <small style="color:var(--ink-soft); font-size:11px;">For Mavely or other stores where auto-fetch doesn't work, paste a direct image URL here.</small>
       </div>
 
       <div class="form-row">
@@ -425,7 +172,6 @@
     const password = input.value;
     const errorEl = document.getElementById('login-error');
     errorEl.textContent = '';
-
     try {
       const res = await fetch('/.netlify/functions/get-submissions', {
         method: 'POST',
@@ -433,12 +179,7 @@
         body: JSON.stringify({ password }),
       });
       const data = await res.json();
-
-      if (!res.ok) {
-        errorEl.textContent = data.error || 'Login failed.';
-        return;
-      }
-
+      if (!res.ok) { errorEl.textContent = data.error || 'Login failed.'; return; }
       adminPassword = password;
       allSubmissions = data.submissions || [];
       document.getElementById('login-screen').style.display = 'none';
@@ -455,7 +196,6 @@
     document.querySelectorAll('.tab').forEach(t => {
       t.classList.toggle('active', t.dataset.status === status);
     });
-
     if (status === 'create') {
       document.getElementById('submissions-list').style.display = 'none';
       document.getElementById('create-post-form').style.display = 'block';
@@ -473,24 +213,22 @@
 
   function renderList() {
     const container = document.getElementById('submissions-list');
-
     let filtered;
     if (currentTab === 'email') {
       filtered = allSubmissions.filter(s => s.source === 'email');
+    } else if (currentTab === 'needs-review') {
+      filtered = allSubmissions.filter(s => s.status === 'needs-review');
     } else {
       filtered = allSubmissions.filter(s => s.status === currentTab && s.source !== 'email');
     }
-
     if (filtered.length === 0) {
       container.innerHTML = '<div class="empty-state">No ' + currentTab + ' submissions.</div>';
       return;
     }
-
     container.innerHTML = filtered.map(s => {
       const isEditing = editingId === s.id;
       const expiryDate = s.expiresOn ? s.expiresOn.split('T')[0] : '';
       const isEmail = s.source === 'email';
-
       return `
       <div class="submission-card" id="card-${s.id}">
         ${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="" onerror="this.style.display='none'">` : ''}
@@ -499,15 +237,16 @@
             <span class="badge badge--${s.status}">${s.status}</span>
             ${isEmail ? '<span class="badge badge--email">📧 email</span>' : ''}
             ${s.needsAffiliateLink ? '<span class="badge badge--warning">NEEDS YOUR AFFILIATE LINK</span>' : ''}
+            ${s.flagReason ? '<span class="badge badge--needs-review">⚠️ Expired Code Reported</span>' : ''}
           </p>
           <p class="submission-card__meta">
             Price: ${escapeHtml(s.price || 'N/A')} &middot; Code: ${escapeHtml(s.discountCode || 'none')}<br>
             <a href="${s.productUrl || s.url || '#'}" target="_blank" rel="noopener">View link</a><br>
             Expires: ${escapeHtml(s.expiresOn || 'N/A')}<br>
             ${s.sellerEmail ? 'Seller: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
+            ${s.flaggedAt ? 'Flagged: ' + new Date(s.flaggedAt).toLocaleString() + '<br>' : ''}
             Created: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
           </p>
-
           ${isEditing ? `
           <div class="edit-form">
             <h3>✏️ Edit Deal</h3>
@@ -546,65 +285,51 @@
             </div>
           </div>
           ` : ''}
-
           <div class="actions">
             ${s.status === 'pending' && !isEmail ? `
-              ${s.needsAffiliateLink ? `
-                <div class="link-edit-row">
-                  <input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here">
-                </div>
-              ` : ''}
+              ${s.needsAffiliateLink ? `<div class="link-edit-row"><input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here"></div>` : ''}
               <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Approve</button>
               <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">❌ Reject</button>
             ` : ''}
+            ${s.status === 'needs-review' ? `
+              <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Keep Live</button>
+              <button class="btn btn--reject" onclick="deleteSubmission('${s.id}')">🗑️ Remove Deal</button>
+            ` : ''}
             <button class="btn btn--edit" onclick="toggleEdit('${s.id}')">✏️ Edit</button>
-            <button class="btn btn--delete" onclick="deleteSubmission('${s.id}')">🗑️ Delete</button>
+            ${s.status !== 'needs-review' ? `<button class="btn btn--delete" onclick="deleteSubmission('${s.id}')">🗑️ Delete</button>` : ''}
           </div>
         </div>
-      </div>
-    `}).join('');
+      </div>`;
+    }).join('');
   }
 
   async function saveEdit(id) {
     const msgEl = document.getElementById(`edit-msg-${id}`);
     msgEl.textContent = 'Saving...';
     msgEl.style.color = 'var(--ink-soft)';
-
     const title = document.getElementById(`edit-title-${id}`).value.trim();
     const price = document.getElementById(`edit-price-${id}`).value.trim();
     const originalPrice = document.getElementById(`edit-original-${id}`).value.trim();
     const discount = document.getElementById(`edit-discount-${id}`).value.trim();
     const discountCode = document.getElementById(`edit-code-${id}`).value.trim();
     const expiresOn = document.getElementById(`edit-expires-${id}`).value.trim();
-
     try {
       const res = await fetch('/api/edit-submission', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          password: adminPassword,
-          submissionId: id,
-          title, price, originalPrice, discount, discountCode, expiresOn,
-        }),
+        body: JSON.stringify({ password: adminPassword, submissionId: id, title, price, originalPrice, discount, discountCode, expiresOn }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-
       const record = allSubmissions.find(s => s.id === id);
       if (record) {
-        record.title = title;
-        record.productTitle = title;
-        record.price = price;
-        record.originalPrice = originalPrice;
-        record.discount = discount;
-        record.discountCode = discountCode;
+        record.title = title; record.productTitle = title;
+        record.price = price; record.originalPrice = originalPrice;
+        record.discount = discount; record.discountCode = discountCode;
         record.expiresOn = expiresOn;
       }
-
       editingId = null;
       renderList();
-
     } catch (err) {
       msgEl.textContent = '❌ ' + err.message;
       msgEl.style.color = 'var(--red)';
@@ -613,7 +338,6 @@
 
   async function deleteSubmission(submissionId) {
     if (!confirm('Are you sure you want to delete this post? This cannot be undone.')) return;
-
     try {
       const res = await fetch('/api/delete-submission', {
         method: 'POST',
@@ -621,10 +345,7 @@
         body: JSON.stringify({ password: adminPassword, submissionId }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Delete failed.');
-        return;
-      }
+      if (!res.ok) { alert(data.error || 'Delete failed.'); return; }
       allSubmissions = allSubmissions.filter(s => s.id !== submissionId);
       renderList();
     } catch (err) {
@@ -635,43 +356,33 @@
   async function createPost() {
     const msgEl = document.getElementById('create-msg');
     msgEl.textContent = '';
-
     const title = document.getElementById('cp-title').value.trim();
     const url = document.getElementById('cp-url').value.trim();
+    const photoUrl = document.getElementById('cp-photo').value.trim();
     const price = document.getElementById('cp-price').value.trim();
     const originalPrice = document.getElementById('cp-original-price').value.trim();
     const discount = document.getElementById('cp-discount').value.trim();
     const discountCode = document.getElementById('cp-code').value.trim();
     const expiresOn = document.getElementById('cp-expires').value.trim();
-
     if (!title || !url || !price) {
       msgEl.className = 'error-msg';
       msgEl.textContent = '❌ Title, URL and price are required!';
       return;
     }
-
     msgEl.className = '';
-    msgEl.textContent = '⏳ Posting and fetching image from Amazon...';
-
+    msgEl.textContent = photoUrl ? '⏳ Posting deal...' : '⏳ Posting and fetching image...';
     try {
       const res = await fetch('/api/admin-create-deal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          password: adminPassword,
-          title, url, price, originalPrice, discount, discountCode, expiresOn,
-        }),
+        body: JSON.stringify({ password: adminPassword, title, url, photoUrl, price, originalPrice, discount, discountCode, expiresOn }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-
       msgEl.className = 'success-msg';
-      msgEl.textContent = '✅ Deal posted successfully! Image fetched from Amazon.';
-
-      ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
+      msgEl.textContent = '✅ Deal posted successfully!';
+      ['cp-title','cp-url','cp-photo','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
         .forEach(id => document.getElementById(id).value = '');
-
     } catch (err) {
       msgEl.className = 'error-msg';
       msgEl.textContent = '❌ Error: ' + err.message;
@@ -681,12 +392,10 @@
   async function review(submissionId, action) {
     const linkInput = document.getElementById('link-' + submissionId);
     const updatedUrl = linkInput ? linkInput.value.trim() : '';
-
     if (action === 'approve' && linkInput && !updatedUrl) {
       alert('This submission needs your affiliate link before approving.');
       return;
     }
-
     try {
       const res = await fetch('/.netlify/functions/review-submission', {
         method: 'POST',
@@ -694,17 +403,11 @@
         body: JSON.stringify({ password: adminPassword, submissionId, action, updatedUrl }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Action failed.');
-        return;
-      }
+      if (!res.ok) { alert(data.error || 'Action failed.'); return; }
       const record = allSubmissions.find(s => s.id === submissionId);
       if (record) {
         record.status = data.status;
-        if (updatedUrl) {
-          record.productUrl = updatedUrl;
-          record.needsAffiliateLink = false;
-        }
+        if (updatedUrl) { record.productUrl = updatedUrl; record.needsAffiliateLink = false; }
       }
       renderList();
     } catch (err) {
@@ -722,6 +425,5 @@
     if (e.key === 'Enter') login();
   });
 </script>
-
 </body>
 </html>
