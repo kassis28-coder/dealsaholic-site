@@ -77,6 +77,14 @@
   .btn--submit-post:hover { background: var(--brand-dark); }
   .success-msg { color: var(--green); font-size: 13px; font-weight: 600; }
   .error-msg { color: var(--red); font-size: 13px; font-weight: 600; }
+  .image-choice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .image-choice__label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .image-choice__options { display: flex; gap: 16px; }
+  .image-choice__option { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+  .image-choice__input { margin-top: 8px; }
+  .image-preview { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; margin-top: 8px; display: none; }
+  .upload-btn { background: var(--paper); border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; font-size: 13px; color: var(--ink-soft); transition: border-color 0.15s; }
+  .upload-btn:hover { border-color: var(--brand); color: var(--brand); }
   @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .edit-form-row { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -120,10 +128,28 @@
         <small style="color:var(--ink-soft); font-size:11px;">Amazon, Walmart & Temu: affiliate tag added automatically. Other stores: paste your affiliate link directly.</small>
       </div>
 
-      <div class="form-group">
-        <label>Photo URL <span style="font-weight:400; text-transform:none;">(optional — leave blank to auto-fetch)</span></label>
-        <input type="text" id="cp-photo" placeholder="https://example.com/product-image.jpg">
-        <small style="color:var(--ink-soft); font-size:11px;">For Mavely or other stores where auto-fetch doesn't work, paste a direct image URL here.</small>
+      <!-- Image Choice -->
+      <div class="image-choice">
+        <div class="image-choice__label">ADD IMAGE</div>
+        <div class="image-choice__options">
+          <label class="image-choice__option">
+            <input type="radio" name="image-type" value="url" onchange="switchImageType('url')"> Paste image URL
+          </label>
+          <label class="image-choice__option">
+            <input type="radio" name="image-type" value="upload" onchange="switchImageType('upload')"> Upload from computer
+          </label>
+        </div>
+        <div class="image-choice__input" id="image-url-input" style="display:none;">
+          <input type="text" id="cp-photo" placeholder="https://example.com/product-image.jpg" style="width:100%; font-family:Inter,sans-serif; font-size:14px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink);">
+        </div>
+        <div class="image-choice__input" id="image-upload-input" style="display:none;">
+          <div class="upload-btn" onclick="document.getElementById('cp-file').click()">
+            📁 Click to choose image from computer
+          </div>
+          <input type="file" id="cp-file" accept="image/*" style="display:none;" onchange="previewImage(this)">
+          <img id="cp-preview" class="image-preview" alt="Preview">
+          <div id="upload-filename" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+        </div>
       </div>
 
       <div class="form-row">
@@ -166,6 +192,21 @@
   let allSubmissions = [];
   let currentTab = 'pending';
   let editingId = null;
+
+  function switchImageType(type) {
+    document.getElementById('image-url-input').style.display = type === 'url' ? 'block' : 'none';
+    document.getElementById('image-upload-input').style.display = type === 'upload' ? 'block' : 'none';
+  }
+
+  function previewImage(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const preview = document.getElementById('cp-preview');
+    const filename = document.getElementById('upload-filename');
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = 'block';
+    filename.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + 'KB)';
+  }
 
   async function login() {
     const input = document.getElementById('password-input');
@@ -358,19 +399,48 @@
     msgEl.textContent = '';
     const title = document.getElementById('cp-title').value.trim();
     const url = document.getElementById('cp-url').value.trim();
-    const photoUrl = document.getElementById('cp-photo').value.trim();
     const price = document.getElementById('cp-price').value.trim();
     const originalPrice = document.getElementById('cp-original-price').value.trim();
     const discount = document.getElementById('cp-discount').value.trim();
     const discountCode = document.getElementById('cp-code').value.trim();
     const expiresOn = document.getElementById('cp-expires').value.trim();
+
     if (!title || !url || !price) {
       msgEl.className = 'error-msg';
       msgEl.textContent = '❌ Title, URL and price are required!';
       return;
     }
+
+    // Get image
+    let photoUrl = '';
+    const imageType = document.querySelector('input[name="image-type"]:checked')?.value;
+
+    if (imageType === 'url') {
+      photoUrl = document.getElementById('cp-photo').value.trim();
+    } else if (imageType === 'upload') {
+      const fileInput = document.getElementById('cp-file');
+      if (fileInput.files[0]) {
+        msgEl.className = '';
+        msgEl.textContent = '⏳ Uploading image...';
+        const formData = new FormData();
+        formData.append('password', adminPassword);
+        formData.append('image', fileInput.files[0]);
+        try {
+          const uploadRes = await fetch('/api/upload-image', { method: 'POST', body: formData });
+          const uploadData = await uploadRes.json();
+          if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
+          photoUrl = uploadData.imageUrl;
+        } catch (err) {
+          msgEl.className = 'error-msg';
+          msgEl.textContent = '❌ Image upload failed: ' + err.message;
+          return;
+        }
+      }
+    }
+
     msgEl.className = '';
     msgEl.textContent = photoUrl ? '⏳ Posting deal...' : '⏳ Posting and fetching image...';
+
     try {
       const res = await fetch('/api/admin-create-deal', {
         method: 'POST',
@@ -381,8 +451,14 @@
       if (!res.ok) throw new Error(data.error || 'Failed');
       msgEl.className = 'success-msg';
       msgEl.textContent = '✅ Deal posted successfully!';
-      ['cp-title','cp-url','cp-photo','cp-price','cp-original-price','cp-discount','cp-code','cp-expires']
-        .forEach(id => document.getElementById(id).value = '');
+      ['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('cp-photo').value = '';
+      document.getElementById('cp-file').value = '';
+      document.getElementById('cp-preview').style.display = 'none';
+      document.getElementById('upload-filename').textContent = '';
+      document.querySelectorAll('input[name="image-type"]').forEach(r => r.checked = false);
+      document.getElementById('image-url-input').style.display = 'none';
+      document.getElementById('image-upload-input').style.display = 'none';
     } catch (err) {
       msgEl.className = 'error-msg';
       msgEl.textContent = '❌ Error: ' + err.message;
