@@ -1,4 +1,4 @@
-  <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -482,37 +482,41 @@
   const DEALS_JSON_URL = '/api/deals';
   let allDeals = [];
 
+  function updateURL() {
+    const search = document.getElementById('filter-search').value.trim();
+    const category = document.getElementById('filter-category').value;
+    const sort = document.getElementById('filter-sort').value;
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (category) params.set('category', category);
+    if (sort && sort !== 'discount') params.set('sort', sort);
+    const newUrl = params.toString() ? '?' + params.toString() : window.location.pathname;
+    window.history.replaceState({}, '', newUrl);
+  }
+
+  function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('search')) document.getElementById('filter-search').value = params.get('search');
+    if (params.get('category')) document.getElementById('filter-category').value = params.get('category');
+    if (params.get('sort')) document.getElementById('filter-sort').value = params.get('sort');
+  }
+
   function detectCategory(title) {
     const t = (title || '').toLowerCase();
-
     if (/headphone|earbud|speaker|tv |laptop|tablet|phone|camera|monitor|keyboard|mouse|charger|cable|battery|bluetooth|wireless|gaming|console|playstation|xbox|nintendo|drone|smart watch|smartwatch|airpod|ipad|iphone|android|pixel|samsung|apple mac|computer|printer|router|projector|alexa|echo|fire stick|earphone|usb|hdmi/.test(t)) return 'electronics';
-
     if (/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|tank top|tshirt|t-shirt|clothing|fashion|outfit|apparel|womens|mens|ladies|girls|boys|vest|cardigan|romper|jumpsuit|lounge set|two piece set|matching set|palazzo|linen pant/.test(t)) return 'fashion';
-
     if (/comforter|bedding|bed sheet|pillowcase|pillow sham|duvet|mattress|blanket|quilt|bed set|bed in a bag|satin pillow|microfiber sheet/.test(t)) return 'bedroom';
-
     if (/bath rug|bath mat|shower caddy|bathroom organizer|bathroom accessories|bathroom set|toilet brush|soap dispenser|qtip holder|cotton swab|towel rack|shower shelf|bathroom storage/.test(t)) return 'bathroom';
-
     if (/sofa|couch|sectional|recliner|armchair|ottoman|coffee table|dining table|nightstand|dresser|wardrobe|bookcase|bookshelf|bed frame|headboard|floor lamp|end table|side table|floating shelf|corner shelf|coat rack|tv stand|display shelf|storage tower|chest of drawer/.test(t)) return 'furniture';
-
     if (/air fryer|instant pot|coffee maker|blender|toaster oven|microwave|stand mixer|food processor|electric kettle|rice cooker|slow cooker|pressure cooker|ninja kitchen|cookware|pots and pans|nonstick|cutting board|food storage container|vegetable chopper|mandoline|mixing bowl/.test(t)) return 'kitchen';
-
     if (/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|nail|eyeliner|bronzer|highlighter|toner|cleanser|face wash|vitamin c|retinol|curling|flat iron|hair dryer/.test(t)) return 'beauty';
-
     if (/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed animal|plush|remote control|rc car|craft|coloring|educational|learning|blocks|fidget|squishy|archery|bow and arrow/.test(t)) return 'toys';
-
     if (/book|novel|hardcover|paperback|kindle|audiobook|memoir|biography|fiction|nonfiction|thriller|mystery|romance|fantasy|science fiction|history|cookbook|guide|workbook/.test(t)) return 'books';
-
     if (/yoga|gym|dumbbell|weight|protein|supplement|hiking|camping|tent|backpack|fishing|hunting|golf|tennis|basketball|football|soccer|cycling|bike|treadmill|resistance band|jump rope|sports|outdoor|fitness|workout|exercise|weighted vest|sunglasses sport/.test(t)) return 'sports';
-
     if (/dog|cat|pet|puppy|kitten|bird|fish|aquarium|collar|leash|food bowl|litter|treat|chew|pet bed|crate|cage|grooming|pee pad|dog food|cat food/.test(t)) return 'pets';
-
     if (/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|household|tissue|aluminum foil|zip lock|storage bag|mop|broom|wipes|fabuloso|lysol|clorox/.test(t)) return 'household';
-
     if (/candle|wall art|picture frame|vase|figurine|wreath|decorative|faux plant|artificial tree|olive tree|floor mirror|wall mirror|artwork|tapestry|home decor|wall decor/.test(t)) return 'decor';
-
     if (/kitchen|cookware|pan|pot|knife|lamp|curtain|rug|storage|organizer|mirror|shelf|drawer|vacuum|closet|under cabinet|over door/.test(t)) return 'home';
-
     return 'other';
   }
 
@@ -521,9 +525,7 @@
       const d = new Date(iso);
       return 'Updated ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
         ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    } catch {
-      return '';
-    }
+    } catch { return ''; }
   }
 
   function escapeHtml(str) {
@@ -600,49 +602,19 @@
   function renderDeals(data) {
     const updated = document.getElementById('deals-updated');
     updated.textContent = data.generatedAt ? formatUpdated(data.generatedAt) : '';
-
     allDeals = data.deals || [];
-
     if (allDeals.length === 0) {
       document.getElementById('deals-grid').innerHTML =
         '<div class="deals-feed__empty">No deals meet today\'s discount threshold yet — check back soon.</div>';
       return;
     }
-
+    loadFromURL();
     applyFilters();
   }
 
- document.getElementById('filter-search').addEventListener('input', () => {
-  updateURL();
-  applyFilters();
-});
-document.getElementById('filter-category').addEventListener('change', () => {
-  updateURL();
-  applyFilters();
-});
-document.getElementById('filter-sort').addEventListener('change', () => {
-  updateURL();
-  applyFilters();
-});
-
-function updateURL() {
-  const search = document.getElementById('filter-search').value.trim();
-  const category = document.getElementById('filter-category').value;
-  const sort = document.getElementById('filter-sort').value;
-  const params = new URLSearchParams();
-  if (search) params.set('search', search);
-  if (category) params.set('category', category);
-  if (sort && sort !== 'discount') params.set('sort', sort);
-  const newUrl = params.toString() ? '?' + params.toString() : window.location.pathname;
-  window.history.replaceState({}, '', newUrl);
-}
-
-function loadFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('search')) document.getElementById('filter-search').value = params.get('search');
-  if (params.get('category')) document.getElementById('filter-category').value = params.get('category');
-  if (params.get('sort')) document.getElementById('filter-sort').value = params.get('sort');
-}
+  document.getElementById('filter-search').addEventListener('input', () => { updateURL(); applyFilters(); });
+  document.getElementById('filter-category').addEventListener('change', () => { updateURL(); applyFilters(); });
+  document.getElementById('filter-sort').addEventListener('change', () => { updateURL(); applyFilters(); });
 
   fetch(DEALS_JSON_URL)
     .then(res => {
