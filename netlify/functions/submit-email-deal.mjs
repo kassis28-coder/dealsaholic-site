@@ -54,7 +54,9 @@ async function fetchAmazonMeta(amazonUrl) {
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
 
     return {
-      title: title?.replace(/\s*[|:\-].*amazon.*/i, '').trim().substring(0, 150) || null,
+      // Only strip trailing " | Amazon..." or " : Amazon..." or " - Amazon..." suffixes
+      // NOT dashes inside product names like WH-1000XM5
+      title: title?.replace(/\s*[|:]\s*amazon\b.*/i, '').replace(/\s{1,2}-\s{1,2}amazon\b.*/i, '').trim().substring(0, 150) || null,
       image, price, asin, finalUrl,
     };
   } catch (e) {
