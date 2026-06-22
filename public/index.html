@@ -240,11 +240,13 @@
     return isNaN(n) ? null : n;
   }
 
-  function originalPrice(deal) {
+ function originalPrice(deal) {
+    if (deal.originalPrice) return deal.originalPrice.toString().startsWith('$') ? deal.originalPrice : '$' + deal.originalPrice;
     const price = priceToNumber(deal.price);
     if (price === null || !deal.discountPercent) return null;
     const original = price / (1 - deal.discountPercent / 100);
     return '$' + original.toFixed(2);
+  }
   }
 
   function copyCode(e, code) {
