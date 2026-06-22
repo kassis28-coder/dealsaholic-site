@@ -37,7 +37,7 @@ const ALL_CATEGORIES = [
   "womens boots",
   "womens shoes",
   "ankle boots",
-  "sneakers women",
+  "sneakers women","skincare" 
 ];
 
 const BATCH_SIZE = 7;
