@@ -49,13 +49,23 @@ export default async () => {
       deals: [],
       message: "No deals fetched yet — first scheduled run hasn't completed.",
     };
-    const allDeals = [...sellerDeals, ...(base.deals || [])];
+
+    // Filter out flagged/suspicious Amazon deals from public view
+    const amazonDeals = (base.deals || []).filter(d => !d.needsReview);
+
+    // Combine all deals and sort by best discount % first
+    const allDeals = [...sellerDeals, ...amazonDeals];
     allDeals.sort((a, b) => {
       const aDiscount = a.discountPercent || a.discount || 0;
       const bDiscount = b.discountPercent || b.discount || 0;
       return Number(bDiscount) - Number(aDiscount);
     });
-    const combined = { ...base, deals: allDeals };
+
+    const combined = {
+      ...base,
+      deals: allDeals,
+    };
+
     return new Response(JSON.stringify(combined), {
       headers: {
         "Content-Type": "application/json",
