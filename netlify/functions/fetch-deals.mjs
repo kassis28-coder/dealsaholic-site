@@ -6,8 +6,8 @@ const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
 const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
-const MAX_AGE_HOURS = 24;
-const SUSPICIOUS_DISCOUNT = 80; // Flag deals with 80%+ discount for review
+const MAX_AGE_HOURS = 168; // 7 days
+const SUSPICIOUS_DISCOUNT = 85; // Flag deals with 80%+ discount for review
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
@@ -235,10 +235,13 @@ async function fetchAndStoreDeals() {
   const now = Date.now();
   const maxAgeCutoff = now - MAX_AGE_HOURS * 60 * 60 * 1000;
 
-  // Remove deals older than 24 hours
-  const freshExisting = existingDeals.filter((d) => {
-    if (!d.fetchedAt) return true;
-    return new Date(d.fetchedAt).getTime() >= maxAgeCutoff;
+ const freshExisting = existingDeals.filter((d) => {
+    // Remove if expiry date passed
+    if (d.expiresOn && new Date(d.expiresOn).getTime() < now) return false;
+    // Remove if older than 7 days
+    if (d.fetchedAt && new Date(d.fetchedAt).getTime() < maxAgeCutoff) return false;
+    return true;
+  });Cutoff;
   });
 
   // Merge: update existing deals with fresh prices
