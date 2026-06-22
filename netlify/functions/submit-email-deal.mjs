@@ -74,6 +74,16 @@ function stripHtml(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
+function extractJson(text) {
+  if (!text) return text;
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) return text.slice(start, end + 1);
+  return text;
+}
+
 export default async (req, context) => {
   const urlObj = new URL(req.url);
   let emailBody = '', title = '', snippet = '';
@@ -90,8 +100,9 @@ export default async (req, context) => {
 
   let claudeData = null;
   let rawSnippet = snippet;
+  const jsonStr = extractJson(content);
   try {
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(jsonStr);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       if (parsed.title || parsed.amazonUrl) claudeData = parsed;
       if (parsed.snippet) rawSnippet = parsed.snippet;
@@ -99,7 +110,7 @@ export default async (req, context) => {
       if (parsed.emailBody) {
         emailBody = parsed.emailBody;
         try {
-          const inner = JSON.parse(parsed.emailBody);
+          const inner = JSON.parse(extractJson(parsed.emailBody));
           if (inner && typeof inner === 'object' && (inner.title || inner.amazonUrl)) claudeData = inner;
         } catch (e) {}
       }
@@ -166,8 +177,8 @@ export default async (req, context) => {
 
   const telegramMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `🔥 <b>New Deal Alert!</b>\n\n🛍️ <b>${deals[0].title || 'Amazon Deal'}</b>\n\n💰 <b>${deals[0].price || 'Check link'}</b>\n\n🔗 <a href="${deals[0].url}">👉 Grab this deal!</a>`
-      : `🔥 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
+      ? `${deals[0].imageUrl ? `<a href="${deals[0].imageUrl}">​</a>` : ''}🔥 <b>New Deal Alert!</b>\n\n🛍️ <b>${deals[0].title || 'Amazon Deal'}</b>\n\n💰 <b>${deals[0].price || 'Check link'}</b>\n\n🔗 <a href="${deals[0].url}">👉 Grab this deal!</a>`
+      : `${deals[0].imageUrl ? `<a href="${deals[0].imageUrl}">​</a>` : ''}🔥 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
           `${i + 1}. 🛍️ <b>${d.title || 'Amazon Deal'}</b>\n   💰 <b>${d.price || 'Check link'}</b>\n   🔗 <a href="${d.url}">Grab deal</a>`
         ).join('\n\n');
 
