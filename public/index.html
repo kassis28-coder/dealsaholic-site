@@ -241,7 +241,10 @@
   }
 
  function originalPrice(deal) {
-    if (deal.originalPrice) return deal.originalPrice.toString().startsWith('$') ? deal.originalPrice : '$' + deal.originalPrice;
+    if (deal.originalPrice) {
+      const op = String(deal.originalPrice).trim();
+      return op.startsWith('$') ? op : '$' + op;
+    }
     const price = priceToNumber(deal.price);
     if (price === null || !deal.discountPercent) return null;
     const original = price / (1 - deal.discountPercent / 100);
