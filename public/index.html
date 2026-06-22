@@ -240,8 +240,8 @@
     return isNaN(n) ? null : n;
   }
 
- function originalPrice(deal) {
-    if (deal.originalPrice) {
+  function originalPrice(deal) {
+    if (deal.originalPrice && deal.originalPrice !== '' && deal.originalPrice !== '0') {
       const op = String(deal.originalPrice).trim();
       return op.startsWith('$') ? op : '$' + op;
     }
@@ -249,7 +249,6 @@
     if (price === null || !deal.discountPercent) return null;
     const original = price / (1 - deal.discountPercent / 100);
     return '$' + original.toFixed(2);
-  }
   }
 
   function copyCode(e, code) {
@@ -318,7 +317,7 @@
             ${deal.rating ? `<span class="deal-card__rating">★ ${deal.rating}${deal.reviewCount ? ` (${deal.reviewCount})` : ''}</span>` : '<span></span>'}
           </div>
           ${hasCode ? `<button class="deal-card__code-btn" onclick="copyCode(event, '${escapeHtml(deal.discountCode)}')">📋 Copy Code: <strong>${escapeHtml(deal.discountCode)}</strong></button>` : ''}
-         <span class="deal-card__cta">${deal.sponsored ? 'View Deal' : deal.storeType === 'walmart' ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon'}</span>
+          <span class="deal-card__cta">${deal.sponsored ? 'View Deal' : deal.storeType === 'walmart' ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon'}</span>
           ${hasCode && dealId ? `<button class="deal-card__report-btn" onclick="reportExpired(event, '${dealId}', '${dealSource}', '${escapeHtml(deal.discountCode)}', '${productUrl}')">⚠️ Report Expired Code</button>` : ''}
         </div>
       </a>
