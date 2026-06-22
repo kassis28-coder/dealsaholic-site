@@ -1,29 +1,3 @@
-/**
- * Netlify Scheduled Function — runs automatically every hour.
- * Each run only searches a SLICE of categories (one "batch") instead
- * of all 28 at once. This avoids Amazon's rate limit (which was
- * causing 429 ThrottleException errors when all 28 ran back-to-back)
- * and avoids Netlify's function timeout.
- *
- * Results from each batch are MERGED into the existing stored deals
- * rather than replacing them, so the full catalog builds up over a
- * full rotation (4 batches × every hour = full refresh every 4 hours).
- * Deals older than 24 hours are dropped so prices don't go stale.
- *
- * Schedule is configured in netlify.toml, not here.
- *
- * Required environment variables (set in Netlify dashboard under
- * Site configuration → Environment variables):
- *   AMAZON_CLIENT_ID
- *   AMAZON_CLIENT_SECRET
- *   AMAZON_PARTNER_TAG
- *
- * Optional:
- *   AMAZON_MARKETPLACE   (default "www.amazon.com")
- *   DEALS_MIN_DISCOUNT   (default 20)
- *   DEALS_MAX_RESULTS    (default 300)
- */
-
 import { getStore } from "@netlify/blobs";
 
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
@@ -83,8 +57,6 @@ const ALL_CATEGORIES = [
   "household essentials",
 ];
 
-// Split the 28 categories into 4 batches of 7. Each scheduled run
-// only processes one batch, then moves to the next on the following run.
 const BATCH_SIZE = 7;
 const BATCHES = [];
 for (let i = 0; i < ALL_CATEGORIES.length; i += BATCH_SIZE) {
@@ -172,8 +144,6 @@ function normalizeDeal(item) {
 async function fetchAndStoreDeals() {
   const store = getStore("deals");
 
-  // Figure out which batch to run this time. We store the index of
-  // the NEXT batch to run, so each invocation advances the rotation.
   let batchIndex = 0;
   try {
     const stateResult = await store.get("batch-state", { type: "json" });
@@ -181,7 +151,7 @@ async function fetchAndStoreDeals() {
       batchIndex = stateResult.nextBatchIndex;
     }
   } catch {
-    // No state yet — start at batch 0.
+    // No state yet
   }
 
   const batch = BATCHES[batchIndex % BATCHES.length];
@@ -204,9 +174,9 @@ async function fetchAndStoreDeals() {
     .map(normalizeDeal)
     .filter((d) => d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT);
 
-  console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals (>= ${MIN_DISCOUNT}% off).`);
+  console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals.`);
 
-  // Load existing accumulated deals so we can merge instead of overwrite.
+  // Load existing deals
   let existingDeals = [];
   try {
     const existing = await store.get("latest", { type: "json" });
@@ -214,30 +184,37 @@ async function fetchAndStoreDeals() {
       existingDeals = existing.deals;
     }
   } catch {
-    // No existing data yet — that's fine on first run.
+    // No existing data yet
   }
 
-  // Drop anything older than MAX_AGE_HOURS so stale prices fall off.
-  const cutoff = Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000;
+  const now = Date.now();
+  const maxAgeCutoff = now - MAX_AGE_HOURS * 60 * 60 * 1000;
+
+  // Remove deals older than 24 hours
   const freshExisting = existingDeals.filter((d) => {
-    if (!d.fetchedAt) return true; // keep older records that predate this field
-    return new Date(d.fetchedAt).getTime() >= cutoff;
+    if (!d.fetchedAt) return true;
+    return new Date(d.fetchedAt).getTime() >= maxAgeCutoff;
   });
 
-  // Merge: new deals replace existing entries with the same ASIN
-  // (price/discount refreshed), everything else stays as-is.
+  // Merge: update existing deals with fresh prices
   const merged = [...freshExisting];
   for (const deal of normalizedNew) {
     const idx = merged.findIndex((d) => d.asin === deal.asin);
     if (idx >= 0) {
-      merged[idx] = deal;
+      // Update with fresh price and data
+      merged[idx] = { ...merged[idx], ...deal };
     } else {
       merged.push(deal);
     }
   }
 
-  const deals = merged
-    .sort((a, b) => b.discountPercent - a.discountPercent)
+  // Remove deals that dropped below minimum discount after price update
+  const validDeals = merged.filter((d) =>
+    d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT
+  );
+
+  const deals = validDeals
+    .sort((a, b) => (b.discountPercent || 0) - (a.discountPercent || 0))
     .slice(0, MAX_RESULTS);
 
   const output = {
