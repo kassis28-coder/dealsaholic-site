@@ -7,6 +7,7 @@ const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
 const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
 const MAX_AGE_HOURS = 24;
+const SUSPICIOUS_DISCOUNT = 80; // Flag deals with 80%+ discount for review
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
@@ -78,7 +79,6 @@ async function searchItems(accessToken, keywords) {
   return data.items || data.searchResult?.items || [];
 }
 
-// Scrape real price from Amazon product page
 async function scrapeRealPrice(asin) {
   try {
     const url = `https://www.amazon.com/dp/${asin}`;
@@ -87,44 +87,27 @@ async function scrapeRealPrice(asin) {
         'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
       },
       redirect: 'follow',
     });
-
     if (!res.ok) return null;
     const html = await res.text();
-
-    // Try multiple price patterns
     const patterns = [
-      // Main price pattern
       /"priceAmount":([\d.]+)/,
-      // Core price
       /class="a-price-whole">([0-9,]+)<\/span><span[^>]*class="a-price-fraction">(\d+)/,
-      // Deals price
       /"dealPrice":\{"value":([\d.]+)/,
-      // apex price
-      /apexPriceToPay[^>]*>.*?<span[^>]*class="a-offscreen">\\?\$([\d.]+)/,
-      // Generic price
-      /\$\s*([\d]+\.[\d]{2})/,
     ];
-
     for (const pattern of patterns) {
       const match = html.match(pattern);
       if (match) {
         const price = pattern.toString().includes('price-whole')
           ? parseFloat(`${match[1].replace(',', '')}.${match[2]}`)
           : parseFloat(match[1].replace(',', ''));
-        if (!isNaN(price) && price > 0) {
-          return price;
-        }
+        if (!isNaN(price) && price > 0) return price;
       }
     }
-
     return null;
   } catch (err) {
-    console.error(`scrapeRealPrice error for ${asin}:`, err.message);
     return null;
   }
 }
@@ -148,7 +131,8 @@ function normalizeDeal(item) {
   const apiPrice = listing?.price?.money?.amount;
   const apiDisplayPrice = listing?.price?.money?.displayAmount;
   const savingsAmount = listing?.price?.savings?.money?.amount;
-  const originalPrice = apiPrice && savingsAmount ? apiPrice + savingsAmount : null;
+  const originalPriceAmount = apiPrice && savingsAmount ? apiPrice + savingsAmount : null;
+  const discountPercent = computeDiscountPercent(item);
 
   return {
     asin: item.asin,
@@ -156,12 +140,17 @@ function normalizeDeal(item) {
     image: item.images?.primary?.large?.url || null,
     price: apiDisplayPrice || null,
     apiPrice: apiPrice || null,
-    originalPrice: originalPrice ? `$${originalPrice.toFixed(2)}` : null,
-    discountPercent: computeDiscountPercent(item),
+    originalPrice: originalPriceAmount ? `$${originalPriceAmount.toFixed(2)}` : null,
+    discountPercent,
     rating: item.customerReviews?.starRating?.value || null,
     reviewCount: item.customerReviews?.count || null,
     url: item.detailPageURL || `https://www.amazon.com/dp/${item.asin}?tag=${PARTNER_TAG}`,
     fetchedAt: new Date().toISOString(),
+    // Auto-flag suspicious deals
+    needsReview: discountPercent !== null && discountPercent >= SUSPICIOUS_DISCOUNT,
+    flagReason: discountPercent !== null && discountPercent >= SUSPICIOUS_DISCOUNT 
+      ? `High discount (${discountPercent}%) - may be a price glitch` 
+      : null,
   };
 }
 
@@ -198,25 +187,34 @@ async function fetchAndStoreDeals() {
 
   console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals.`);
 
-  // Scrape real prices for up to 10 deals to avoid timeout
-  const dealsToVerify = normalizedNew.slice(0, 10);
-  for (const deal of dealsToVerify) {
+  // Verify prices for top suspicious deals (80%+)
+  const suspiciousDeals = normalizedNew.filter(d => d.needsReview).slice(0, 5);
+  for (const deal of suspiciousDeals) {
     try {
       const realPrice = await scrapeRealPrice(deal.asin);
-      if (realPrice !== null) {
-        const apiPrice = deal.apiPrice;
-        if (apiPrice && Math.abs(realPrice - apiPrice) > 0.50) {
-          console.error(`Price mismatch for ${deal.asin}: API=$${apiPrice}, Real=$${realPrice}`);
-          // Update with real price
+      if (realPrice !== null && deal.apiPrice) {
+        const priceDiff = Math.abs(realPrice - deal.apiPrice) / deal.apiPrice;
+        if (priceDiff > 0.10) {
+          console.error(`Price mismatch for ${deal.asin}: API=$${deal.apiPrice}, Real=$${realPrice}`);
           deal.price = `$${realPrice.toFixed(2)}`;
-          // Recalculate discount with real price
+          // Recalculate discount
           if (deal.originalPrice) {
             const origPrice = parseFloat(deal.originalPrice.replace('$', ''));
             if (origPrice > 0) {
               const newDiscount = Math.round(((origPrice - realPrice) / origPrice) * 100);
               deal.discountPercent = newDiscount;
+              // If still high discount after real price check, keep flagged
+              deal.needsReview = newDiscount >= SUSPICIOUS_DISCOUNT;
+              deal.flagReason = deal.needsReview 
+                ? `High discount (${newDiscount}%) verified - please confirm`
+                : null;
             }
           }
+        } else {
+          // Price matches - it's a real deal!
+          deal.needsReview = false;
+          deal.flagReason = null;
+          console.error(`Price verified for ${deal.asin}: Real deal at $${realPrice}`);
         }
       }
       await new Promise((r) => setTimeout(r, 1000));
@@ -274,6 +272,7 @@ async function fetchAndStoreDeals() {
       lastBatchRawItems: newItems.length,
       lastBatchQualifyingDeals: normalizedNew.length,
       totalAccumulatedDeals: deals.length,
+      suspiciousFlagged: suspiciousDeals.length,
     },
   };
 
