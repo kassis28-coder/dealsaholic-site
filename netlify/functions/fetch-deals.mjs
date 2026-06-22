@@ -12,49 +12,17 @@ const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
 
 const ALL_CATEGORIES = [
-  "deal of the day",
-  "clearance",
-  "today's deals",
-  "electronics",
-  "electronics accessories",
-  "headphones",
-  "home and kitchen",
-  "kitchen gadgets",
-  "small appliances",
-  "best sellers",
-  "home decor",
-  "wall art",
-  "furniture",
-  "storage organization",
-  "bathroom accessories",
-  "bedroom furniture",
-  "bedding sheets",
-  "pillows comforters",
-  "kitchen appliances deals",
-  "living room furniture",
-  "home improvement",
-  "curtains blinds",
-  "beauty",
-  "skincare",
-  "haircare tools",
-  "toys",
-  "toys for kids",
-  "board games",
-  "fashion",
-  "womens clothing",
-  "mens clothing",
-  "shoes",
-  "sports and outdoors",
-  "fitness equipment",
-  "outdoor camping gear",
-  "pet supplies",
-  "toilet paper",
-  "paper towels",
-  "laundry detergent",
-  "dish soap",
-  "cleaning supplies",
-  "trash bags",
-  "household essentials",
+  "deal of the day", "clearance", "today's deals", "electronics",
+  "electronics accessories", "headphones", "home and kitchen", "kitchen gadgets",
+  "small appliances", "best sellers", "home decor", "wall art", "furniture",
+  "storage organization", "bathroom accessories", "bedroom furniture",
+  "bedding sheets", "pillows comforters", "kitchen appliances deals",
+  "living room furniture", "home improvement", "curtains blinds", "beauty",
+  "skincare", "haircare tools", "toys", "toys for kids", "board games",
+  "fashion", "womens clothing", "mens clothing", "shoes", "sports and outdoors",
+  "fitness equipment", "outdoor camping gear", "pet supplies", "toilet paper",
+  "paper towels", "laundry detergent", "dish soap", "cleaning supplies",
+  "trash bags", "household essentials",
 ];
 
 const BATCH_SIZE = 7;
@@ -74,9 +42,7 @@ async function getAccessToken() {
       scope: "creatorsapi::default",
     }),
   });
-  if (!res.ok) {
-    throw new Error(`Token request failed (${res.status}): ${await res.text()}`);
-  }
+  if (!res.ok) throw new Error(`Token request failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   return data.access_token;
 }
@@ -105,11 +71,62 @@ async function searchItems(accessToken, keywords) {
     }),
   });
   if (!res.ok) {
-    console.error(`searchItems("${keywords}") failed (${res.status}): ${await res.text()}`);
+    console.error(`searchItems("${keywords}") failed (${res.status})`);
     return [];
   }
   const data = await res.json();
   return data.items || data.searchResult?.items || [];
+}
+
+// Scrape real price from Amazon product page
+async function scrapeRealPrice(asin) {
+  try {
+    const url = `https://www.amazon.com/dp/${asin}`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+      },
+      redirect: 'follow',
+    });
+
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    // Try multiple price patterns
+    const patterns = [
+      // Main price pattern
+      /"priceAmount":([\d.]+)/,
+      // Core price
+      /class="a-price-whole">([0-9,]+)<\/span><span[^>]*class="a-price-fraction">(\d+)/,
+      // Deals price
+      /"dealPrice":\{"value":([\d.]+)/,
+      // apex price
+      /apexPriceToPay[^>]*>.*?<span[^>]*class="a-offscreen">\\?\$([\d.]+)/,
+      // Generic price
+      /\$\s*([\d]+\.[\d]{2})/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match) {
+        const price = pattern.toString().includes('price-whole')
+          ? parseFloat(`${match[1].replace(',', '')}.${match[2]}`)
+          : parseFloat(match[1].replace(',', ''));
+        if (!isNaN(price) && price > 0) {
+          return price;
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error(`scrapeRealPrice error for ${asin}:`, err.message);
+    return null;
+  }
 }
 
 function computeDiscountPercent(item) {
@@ -128,11 +145,18 @@ function computeDiscountPercent(item) {
 
 function normalizeDeal(item) {
   const listing = item.offersV2?.listings?.[0];
+  const apiPrice = listing?.price?.money?.amount;
+  const apiDisplayPrice = listing?.price?.money?.displayAmount;
+  const savingsAmount = listing?.price?.savings?.money?.amount;
+  const originalPrice = apiPrice && savingsAmount ? apiPrice + savingsAmount : null;
+
   return {
     asin: item.asin,
     title: item.itemInfo?.title?.displayValue || "Untitled product",
     image: item.images?.primary?.large?.url || null,
-    price: listing?.price?.money?.displayAmount || null,
+    price: apiDisplayPrice || null,
+    apiPrice: apiPrice || null,
+    originalPrice: originalPrice ? `$${originalPrice.toFixed(2)}` : null,
     discountPercent: computeDiscountPercent(item),
     rating: item.customerReviews?.starRating?.value || null,
     reviewCount: item.customerReviews?.count || null,
@@ -150,9 +174,7 @@ async function fetchAndStoreDeals() {
     if (stateResult && typeof stateResult.nextBatchIndex === "number") {
       batchIndex = stateResult.nextBatchIndex;
     }
-  } catch {
-    // No state yet
-  }
+  } catch { }
 
   const batch = BATCHES[batchIndex % BATCHES.length];
   const nextBatchIndex = (batchIndex + 1) % BATCHES.length;
@@ -176,6 +198,33 @@ async function fetchAndStoreDeals() {
 
   console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals.`);
 
+  // Scrape real prices for up to 10 deals to avoid timeout
+  const dealsToVerify = normalizedNew.slice(0, 10);
+  for (const deal of dealsToVerify) {
+    try {
+      const realPrice = await scrapeRealPrice(deal.asin);
+      if (realPrice !== null) {
+        const apiPrice = deal.apiPrice;
+        if (apiPrice && Math.abs(realPrice - apiPrice) > 0.50) {
+          console.error(`Price mismatch for ${deal.asin}: API=$${apiPrice}, Real=$${realPrice}`);
+          // Update with real price
+          deal.price = `$${realPrice.toFixed(2)}`;
+          // Recalculate discount with real price
+          if (deal.originalPrice) {
+            const origPrice = parseFloat(deal.originalPrice.replace('$', ''));
+            if (origPrice > 0) {
+              const newDiscount = Math.round(((origPrice - realPrice) / origPrice) * 100);
+              deal.discountPercent = newDiscount;
+            }
+          }
+        }
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    } catch (err) {
+      console.error(`Price verification error: ${err.message}`);
+    }
+  }
+
   // Load existing deals
   let existingDeals = [];
   try {
@@ -183,9 +232,7 @@ async function fetchAndStoreDeals() {
     if (existing && Array.isArray(existing.deals)) {
       existingDeals = existing.deals;
     }
-  } catch {
-    // No existing data yet
-  }
+  } catch { }
 
   const now = Date.now();
   const maxAgeCutoff = now - MAX_AGE_HOURS * 60 * 60 * 1000;
@@ -201,14 +248,13 @@ async function fetchAndStoreDeals() {
   for (const deal of normalizedNew) {
     const idx = merged.findIndex((d) => d.asin === deal.asin);
     if (idx >= 0) {
-      // Update with fresh price and data
       merged[idx] = { ...merged[idx], ...deal };
     } else {
       merged.push(deal);
     }
   }
 
-  // Remove deals that dropped below minimum discount after price update
+  // Remove deals that dropped below minimum discount
   const validDeals = merged.filter((d) =>
     d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT
   );
