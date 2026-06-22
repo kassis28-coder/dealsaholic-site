@@ -47,4 +47,6 @@ export default async (req) => {
   }
 };
 
-export const config = { path: "/api/update-amazon-deal" };
+export const config = {
+  path: "/api/update-amazon-deal",
+};
