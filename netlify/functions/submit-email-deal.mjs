@@ -39,8 +39,21 @@ function stripHtml(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
+function cleanTitle(title) {
+  if (!title) return null;
+  return title
+    .replace(/^amazon\.com\s*[:]\s*/i, '')
+    .replace(/\s*[|:]\s*amazon\.com.*/i, '')
+    .replace(/\s*-\s*amazon\.com.*/i, '')
+    .replace(/^["']|["']$/g, '')
+    .trim()
+    .substring(0, 150);
+}
+
 function parseDealBlocks(text) {
   const deals = [];
+  const seenUrls = new Set();
+
   const blocks = text.split(/(?=\b\d{1,2}[.\u3001\uff0c]\s)/);
 
   for (const block of blocks) {
@@ -51,19 +64,22 @@ function parseDealBlocks(text) {
       || block.match(/https?:\/\/a\.co\/[A-Za-z0-9\/]+/i);
     if (!urlMatch) continue;
 
-    const url = urlMatch[0].replace(/["\u201d]+$/, '');
+    const url = urlMatch[0].replace(/["\u201d"]+$/, '').replace(/\?th=\d+$/, '');
 
-    const titleMatch = block.match(/product\s+name[:\s]+([^\n]{10,150})/i)
-      || block.match(/^\d+[.\u3001]\s*"?([^\n"]{10,150})/i);
-    const title = titleMatch ? titleMatch[1].replace(/"/g, '').trim().substring(0, 150) : null;
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    const titleMatch = block.match(/product\s+name[:\s]+"?([^\n"]{10,200})/i);
+    const rawTitle = titleMatch ? titleMatch[1].trim() : null;
+    const title = cleanTitle(rawTitle);
 
     const dealPriceMatch = block.match(/deal\s+price\s*[:$]?\s*\$?([\d.,]+)/i)
       || block.match(/price\s*[:$]?\s*\$?([\d.,]+)/i)
       || block.match(/\$\s*([\d.,]+)/i);
-    const price = dealPriceMatch ? '$' + dealPriceMatch[1].split('-')[0].trim() : null;
+    const price = dealPriceMatch ? '$' + dealPriceMatch[1].replace(/,$/, '').trim() : null;
 
     const origPriceMatch = block.match(/original\s+price\s*[:$]?\s*\$?([\d.,]+)/i);
-    const originalPrice = origPriceMatch ? '$' + origPriceMatch[1].split('-')[0].trim() : null;
+    const originalPrice = origPriceMatch ? '$' + origPriceMatch[1].replace(/,$/, '').trim() : null;
 
     const discountMatch = block.match(/(\d+)\s*%\s*(?:off|BD|discount)/i);
     const discount = discountMatch ? discountMatch[1] : null;
@@ -76,7 +92,7 @@ function parseDealBlocks(text) {
   return deals;
 }
 
-async function getAsinImageAndTitle(url) {
+async function getAsinAndAffiliate(url) {
   const { asin } = await followRedirectForAsin(url);
   const imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
   const affiliateUrl = asin
@@ -149,7 +165,7 @@ export default async (req, context) => {
   const deals = [];
 
   for (const block of blocksToProcess) {
-    const { asin, imageUrl, affiliateUrl } = await getAsinImageAndTitle(block.url);
+    const { asin, imageUrl, affiliateUrl } = await getAsinAndAffiliate(block.url);
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
