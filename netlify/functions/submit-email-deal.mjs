@@ -201,12 +201,19 @@ export default async (req, context) => {
   } else if (req.method === 'POST') {
     try {
       const raw = await req.text();
-      try {
-        const parsed = JSON.parse(raw);
-        emailBody = parsed.emailBody || parsed.body || '';
-        emailText = parsed.emailText || '';
-      } catch (e) {
-        emailBody = raw;
+      const contentType = req.headers.get('content-type') || '';
+      if (contentType.includes('application/x-www-form-urlencoded')) {
+        const params = new URLSearchParams(raw);
+        emailBody = params.get('emailBody') || '';
+        emailText = params.get('emailText') || '';
+      } else {
+        try {
+          const parsed = JSON.parse(raw);
+          emailBody = parsed.emailBody || parsed.body || '';
+          emailText = parsed.emailText || '';
+        } catch (e) {
+          emailBody = raw;
+        }
       }
     } catch (e) { emailBody = ''; }
   }
