@@ -147,7 +147,8 @@ async function scrapeAmazon(asin) {
     const priceMatch = html.match(/"priceAmount":([\d.]+)/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
-    return { title: cleanTitle(title), price };
+   const image = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
+return { title: cleanTitle(title), price, image };
   } catch (e) {
     return null;
   }
@@ -237,7 +238,7 @@ export default async (req, context) => {
 
   for (const { url, asin } of toProcess) {
     const context = getContextAroundUrl(plainText, url, asin);
-    const imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
+    let imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
     const affiliateUrl = asin
       ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
       : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
@@ -248,15 +249,14 @@ export default async (req, context) => {
     const discount = extractDiscount(context);
     const promoCode = extractPromoCode(context);
 
-   if (asin) {
+  if (asin) {
   const scraped = await scrapeAmazon(asin);
   if (scraped) {
     title = scraped.title || title;
     price = price || scraped.price;
     if (scraped.image) imageUrl = scraped.image;
   }
-    }
-
+}
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
       id, title: title || 'Amazon Deal', price: price || null,
