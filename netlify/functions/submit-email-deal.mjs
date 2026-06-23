@@ -10,12 +10,21 @@ function stripHtml(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
+function decodeHtmlEntities(text) {
+  if (!text) return text;
+  return text
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
 function cleanTitle(title) {
   if (!title) return null;
-  return title
+  return decodeHtmlEntities(title)
     .replace(/^amazon\.com\s*[:]\s*/i, '')
     .replace(/\s*[|:]\s*amazon\.com.*/i, '')
     .replace(/\s*-\s*amazon\.com.*/i, '')
+    .replace(/https?:\/\/\S+/g, '')
     .replace(/^["'\u201c]|["'\u201d]$/g, '')
     .trim()
     .substring(0, 150);
@@ -120,7 +129,7 @@ function extractPromoCode(context) {
 function extractTitleFromContext(context) {
   const patterns = [
     /product\s+name[:\u3001\s]+"?([^\n"]{10,200})/i,
-    /\d+%\s+off\s+([A-Z][^\n]{10,150})/,
+    /\d+%\s+off\s+([A-Z][^{\n}]{10,100})(?:\n|$)/,
     /#\d+\s+([A-Z][^\n]{10,150})/,
   ];
   for (const pat of patterns) {
@@ -134,21 +143,31 @@ async function scrapeAmazon(asin) {
   try {
     const res = await fetch('https://www.amazon.com/dp/' + asin, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
       },
       redirect: 'follow',
     });
     if (!res.ok) return null;
     const html = await res.text();
+
     const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
+
     const priceMatch = html.match(/"priceAmount":([\d.]+)/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
-   const image = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
-return { title: cleanTitle(title), price, image };
+
+    // Try multiple image patterns
+    const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+      || null;
+
+    return { title: cleanTitle(title), price, image };
   } catch (e) {
     return null;
   }
@@ -157,8 +176,6 @@ return { title: cleanTitle(title), price, image };
 async function postToTelegram(deal) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  console.log('Telegram botToken exists:', !!botToken);
-  console.log('Telegram chatId:', chatId);
   if (!botToken || !chatId) return;
 
   const codeLine = deal.promoCode ? '\n\u{1F3F7} Code: ' + deal.promoCode : '';
@@ -173,25 +190,20 @@ async function postToTelegram(deal) {
         body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
       });
       const data = await res.json();
-      console.log('Telegram sendPhoto response:', JSON.stringify(data));
       if (!data.ok) {
-        const res2 = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+        await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
         });
-        const data2 = await res2.json();
-        console.log('Telegram sendMessage response:', JSON.stringify(data2));
       }
     } else {
       const text = caption.length > 4096 ? caption.substring(0, 4093) + '...' : caption;
-      const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text }),
       });
-      const data = await res.json();
-      console.log('Telegram sendMessage response:', JSON.stringify(data));
     }
   } catch (e) {
     console.error('Telegram post failed:', e.message);
@@ -238,7 +250,7 @@ export default async (req, context) => {
 
   for (const { url, asin } of toProcess) {
     const context = getContextAroundUrl(plainText, url, asin);
-    let imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
+    let imageUrl = null;
     const affiliateUrl = asin
       ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
       : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
@@ -249,14 +261,17 @@ export default async (req, context) => {
     const discount = extractDiscount(context);
     const promoCode = extractPromoCode(context);
 
-  if (asin) {
-  const scraped = await scrapeAmazon(asin);
-  if (scraped) {
-    title = scraped.title || title;
-    price = price || scraped.price;
-    if (scraped.image) imageUrl = scraped.image;
-  }
-}
+    if (asin) {
+      const scraped = await scrapeAmazon(asin);
+      if (scraped) {
+        title = scraped.title || title;
+        price = price || scraped.price;
+        imageUrl = scraped.image || ('https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg');
+      } else {
+        imageUrl = 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg';
+      }
+    }
+
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
       id, title: title || 'Amazon Deal', price: price || null,
