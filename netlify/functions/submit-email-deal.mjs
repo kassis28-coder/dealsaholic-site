@@ -156,6 +156,8 @@ async function scrapeAmazon(asin) {
 async function postToTelegram(deal) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
+  console.log('Telegram botToken exists:', !!botToken);
+  console.log('Telegram chatId:', chatId);
   if (!botToken || !chatId) return;
 
   const codeLine = deal.promoCode ? '\n\u{1F3F7} Code: ' + deal.promoCode : '';
@@ -170,20 +172,25 @@ async function postToTelegram(deal) {
         body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
       });
       const data = await res.json();
+      console.log('Telegram sendPhoto response:', JSON.stringify(data));
       if (!data.ok) {
-        await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+        const res2 = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
         });
+        const data2 = await res2.json();
+        console.log('Telegram sendMessage response:', JSON.stringify(data2));
       }
     } else {
       const text = caption.length > 4096 ? caption.substring(0, 4093) + '...' : caption;
-      await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text }),
       });
+      const data = await res.json();
+      console.log('Telegram sendMessage response:', JSON.stringify(data));
     }
   } catch (e) {
     console.error('Telegram post failed:', e.message);
