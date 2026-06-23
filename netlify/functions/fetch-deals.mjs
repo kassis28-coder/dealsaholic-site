@@ -255,8 +255,7 @@ async function fetchAndStoreDeals() {
     if (d.expiresOn && new Date(d.expiresOn).getTime() < now) return false;
     // Remove if older than 7 days
     if (d.fetchedAt && new Date(d.fetchedAt).getTime() < maxAgeCutoff) return false;
-    return true;
-  });Cutoff;
+   return true;
   });
 
   // Merge: update existing deals with fresh prices
