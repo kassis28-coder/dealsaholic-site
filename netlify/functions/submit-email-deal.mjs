@@ -1,34 +1,5 @@
 import { getStore } from "@netlify/blobs";
 
-async function followRedirectForAsin(amazonUrl) {
-  try {
-    const res = await fetch(amazonUrl, {
-      method: 'HEAD',
-      redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
-    });
-    const finalUrl = res.url || amazonUrl;
-    const asin = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
-    return { asin, finalUrl };
-  } catch (e) {
-    return { asin: null, finalUrl: amazonUrl };
-  }
-}
-
-function extractPromoCodeFromText(text) {
-  if (!text) return null;
-  const patterns = [
-    /(?:use|apply|enter|add|with)\s+(?:promo(?:tional)?\s+)?code[:\s]+([A-Z0-9]{4,20})/i,
-    /(?:promo(?:tional)?|coupon|discount)\s+code[:\s]+([A-Z0-9]{4,20})/i,
-    /\bcode[:\s]+([A-Z0-9]{6,20})\b/i,
-  ];
-  for (const pat of patterns) {
-    const m = text.match(pat);
-    if (m) return m[1].toUpperCase();
-  }
-  return null;
-}
-
 function stripHtml(html) {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -45,60 +16,124 @@ function cleanTitle(title) {
     .replace(/^amazon\.com\s*[:]\s*/i, '')
     .replace(/\s*[|:]\s*amazon\.com.*/i, '')
     .replace(/\s*-\s*amazon\.com.*/i, '')
-    .replace(/^["']|["']$/g, '')
+    .replace(/^["'\u201c]|["'\u201d]$/g, '')
     .trim()
     .substring(0, 150);
 }
 
-function parseDealBlocks(text) {
-  const deals = [];
-  const seenUrls = new Set();
-
-  const blocks = text.split(/(?=\b\d{1,2}[.\u3001\uff0c]\s)/);
-
-  for (const block of blocks) {
-    if (block.trim().length < 20) continue;
-
-    const urlMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'\u201c\u201d<>]*/i)
-      || block.match(/https?:\/\/amzn\.to\/[A-Za-z0-9]+/i)
-      || block.match(/https?:\/\/a\.co\/[A-Za-z0-9\/]+/i);
-    if (!urlMatch) continue;
-
-    const url = urlMatch[0].replace(/["\u201d"]+$/, '').replace(/\?th=\d+$/, '');
-
-    if (seenUrls.has(url)) continue;
-    seenUrls.add(url);
-
-    const titleMatch = block.match(/product\s+name[:\s]+"?([^\n"]{10,200})/i);
-    const rawTitle = titleMatch ? titleMatch[1].trim() : null;
-    const title = cleanTitle(rawTitle);
-
-    const dealPriceMatch = block.match(/deal\s+price\s*[:$]?\s*\$?([\d.,]+)/i)
-      || block.match(/price\s*[:$]?\s*\$?([\d.,]+)/i)
-      || block.match(/\$\s*([\d.,]+)/i);
-    const price = dealPriceMatch ? '$' + dealPriceMatch[1].replace(/,$/, '').trim() : null;
-
-    const origPriceMatch = block.match(/original\s+price\s*[:$]?\s*\$?([\d.,]+)/i);
-    const originalPrice = origPriceMatch ? '$' + origPriceMatch[1].replace(/,$/, '').trim() : null;
-
-    const discountMatch = block.match(/(\d+)\s*%\s*(?:off|BD|discount)/i);
-    const discount = discountMatch ? discountMatch[1] : null;
-
-    const code = extractPromoCodeFromText(block);
-
-    deals.push({ url, title, price, originalPrice, discount, code });
+function extractAllAmazonUrls(text) {
+  const seen = new Set();
+  const urls = [];
+  const patterns = [
+    /https?:\/\/(?:www\.)?amazon\.com\/dp\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi,
+    /https?:\/\/(?:www\.)?amazon\.com\/gp\/product\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi,
+    /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
+    /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
+  ];
+  for (const pattern of patterns) {
+    const matches = [...text.matchAll(pattern)];
+    for (const m of matches) {
+      const url = m[0].replace(/["\u201d\u201c']+$/, '');
+      const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+        || url.match(/\/product\/([A-Z0-9]{10})/i)?.[1];
+      const key = asin || url;
+      if (!seen.has(key)) {
+        seen.add(key);
+        urls.push({ url, asin });
+      }
+    }
   }
-
-  return deals;
+  return urls;
 }
 
-async function getAsinAndAffiliate(url) {
-  const { asin } = await followRedirectForAsin(url);
-  const imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
-  const affiliateUrl = asin
-    ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
-    : url.includes('tag=') ? url : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
-  return { asin, imageUrl, affiliateUrl };
+function getContextAroundUrl(text, url, windowSize = 300) {
+  const idx = text.indexOf(url);
+  if (idx === -1) return '';
+  const start = Math.max(0, idx - windowSize);
+  const end = Math.min(text.length, idx + url.length + windowSize);
+  return text.slice(start, end);
+}
+
+function extractPrice(context) {
+  const patterns = [
+    /deal\s+price\s*[:$]?\s*\$?([\d.]+)/i,
+    /\n([\d.]+)(?:-[\d.]+)?\s*\(Reg/i,
+    /price\s*[:$]?\s*\$?([\d.]+)/i,
+    /\$([\d.]+)/,
+    /\b([\d.]+)\s*\(Reg/i,
+  ];
+  for (const pat of patterns) {
+    const m = context.match(pat);
+    if (m && parseFloat(m[1]) > 0) return '$' + m[1];
+  }
+  return null;
+}
+
+function extractOriginalPrice(context) {
+  const patterns = [
+    /\(Reg\.?\s*\$?([\d.]+)/i,
+    /original\s+price\s*[:$]?\s*\$?([\d.]+)/i,
+    /was\s*[:$]?\s*\$?([\d.]+)/i,
+  ];
+  for (const pat of patterns) {
+    const m = context.match(pat);
+    if (m) return '$' + m[1];
+  }
+  return null;
+}
+
+function extractDiscount(context) {
+  const m = context.match(/(\d+)\s*%\s*off/i);
+  return m ? m[1] : null;
+}
+
+function extractPromoCode(context) {
+  const patterns = [
+    /(?:use|apply|enter|add|with)\s+(?:promo(?:tional)?\s+)?code[:\s]+([A-Z0-9]{4,20})/i,
+    /(?:promo(?:tional)?|coupon|discount)\s+code[:\s]+([A-Z0-9]{4,20})/i,
+    /\bcode[:\s]+([A-Z0-9]{6,20})\b/i,
+  ];
+  for (const pat of patterns) {
+    const m = context.match(pat);
+    if (m) return m[1].toUpperCase();
+  }
+  return null;
+}
+
+function extractTitleFromContext(context) {
+  const patterns = [
+    /product\s+name[:\s]+"?([^\n"]{10,150})/i,
+    /\d+%\s+off\s+([A-Z][^\n]{10,120})/,
+    /#\d+\s*\n([^\n]{10,150})/,
+  ];
+  for (const pat of patterns) {
+    const m = context.match(pat);
+    if (m) return cleanTitle(m[1].trim());
+  }
+  return null;
+}
+
+async function scrapeAmazon(asin) {
+  try {
+    const res = await fetch('https://www.amazon.com/dp/' + asin, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
+      || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
+    const priceMatch = html.match(/"priceAmount":([\d.]+)/)
+      || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
+    const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
+    return { title: cleanTitle(title), price };
+  } catch (e) {
+    return null;
+  }
 }
 
 async function postToTelegram(deal) {
@@ -157,29 +192,41 @@ export default async (req, context) => {
   }
 
   const plainText = stripHtml(emailBody || '');
-  const dealBlocks = parseDealBlocks(plainText);
-  const blocksToProcess = dealBlocks.slice(0, 15);
+  const amazonUrls = extractAllAmazonUrls(plainText);
+  const productUrls = amazonUrls.filter(({ url }) => !url.includes('/promocode/'));
+  const toProcess = productUrls.slice(0, 15);
 
   const store = getStore("submissions");
   const savedIds = [];
   const deals = [];
 
-  for (const block of blocksToProcess) {
-    const { asin, imageUrl, affiliateUrl } = await getAsinAndAffiliate(block.url);
+  for (const { url, asin } of toProcess) {
+    const context = getContextAroundUrl(plainText, url);
+    const imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
+    const affiliateUrl = asin
+      ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
+      : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
+
+    let title = extractTitleFromContext(context);
+    let price = extractPrice(context);
+    const originalPrice = extractOriginalPrice(context);
+    const discount = extractDiscount(context);
+    const promoCode = extractPromoCode(context);
+
+    if ((!title || !price) && asin) {
+      const scraped = await scrapeAmazon(asin);
+      if (scraped) {
+        title = title || scraped.title;
+        price = price || scraped.price;
+      }
+    }
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
-      id,
-      title: block.title || 'Amazon Deal',
-      price: block.price || null,
-      originalPrice: block.originalPrice || null,
-      discount: block.discount || null,
-      url: affiliateUrl,
-      imageUrl,
-      discountCode: block.code || null,
-      source: 'email',
-      status: affiliateUrl ? 'approved' : 'pending',
-      sponsored: false,
+      id, title: title || 'Amazon Deal', price: price || null,
+      originalPrice: originalPrice || null, discount: discount || null,
+      url: affiliateUrl, imageUrl, discountCode: promoCode || null,
+      source: 'email', status: 'approved', sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
@@ -187,14 +234,7 @@ export default async (req, context) => {
     await store.setJSON(id, submission);
     savedIds.push(id);
 
-    const dealObj = {
-      id,
-      title: block.title || 'Amazon Deal',
-      price: block.price || null,
-      url: affiliateUrl,
-      imageUrl,
-      promoCode: block.code || null,
-    };
+    const dealObj = { id, title: title || 'Amazon Deal', price, url: affiliateUrl, imageUrl, promoCode };
     deals.push(dealObj);
 
     let index = [];
@@ -207,15 +247,10 @@ export default async (req, context) => {
   }
 
   return new Response(JSON.stringify({
-    success: true,
-    count: deals.length,
-    ids: savedIds,
-    deals,
-    blocksFound: dealBlocks.length,
-    title: deals[0]?.title || null,
-    price: deals[0]?.price || null,
-    url: deals[0]?.url || null,
-    imageUrl: deals[0]?.imageUrl || null,
+    success: true, count: deals.length, ids: savedIds, deals,
+    urlsFound: productUrls.length,
+    title: deals[0]?.title || null, price: deals[0]?.price || null,
+    url: deals[0]?.url || null, imageUrl: deals[0]?.imageUrl || null,
     promoCode: deals[0]?.promoCode || null,
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
