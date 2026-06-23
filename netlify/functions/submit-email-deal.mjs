@@ -248,12 +248,13 @@ export default async (req, context) => {
     const discount = extractDiscount(context);
     const promoCode = extractPromoCode(context);
 
-    if ((!title || !price) && asin) {
-      const scraped = await scrapeAmazon(asin);
-      if (scraped) {
-        title = title || scraped.title;
-        price = price || scraped.price;
-      }
+   if (asin) {
+  const scraped = await scrapeAmazon(asin);
+  if (scraped) {
+    title = scraped.title || title;
+    price = price || scraped.price;
+    if (scraped.image) imageUrl = scraped.image;
+  }
     }
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
