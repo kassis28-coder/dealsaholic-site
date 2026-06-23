@@ -162,9 +162,12 @@ async function scrapeAmazon(asin) {
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
 
     // Try multiple image patterns
-    const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+  const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
       || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
+      || html.match(/"main":\{"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/data-old-hires="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
       || null;
 
     return { title: cleanTitle(title), price, image };
@@ -266,7 +269,7 @@ export default async (req, context) => {
       if (scraped) {
         title = scraped.title || title;
         price = price || scraped.price;
-        imageUrl = scraped.image || ('https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg');
+        imageUrl = scraped.image || null;
       } else {
         imageUrl = 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg';
       }
