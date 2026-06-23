@@ -135,8 +135,8 @@ async function postToTelegram(deal) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!botToken || !chatId) return;
 
-  const codeLine = deal.promoCode ? `\n🏷️ Code: ${deal.promoCode}` : '';
-  const caption = `🔥 New Deal Alert!\n\n🛍️ ${deal.title || 'Amazon Deal'}\n\n💰 ${deal.price || 'Check link'}${codeLine}\n\n👉 ${deal.url}`;
+  const codeLine = deal.promoCode ? `\n\u{1F3F7} Code: ${deal.promoCode}` : '';
+  const caption = `\u{1F525} New Deal Alert!\n\n\u{1F6CD} ${deal.title || 'Amazon Deal'}\n\n\u{1F4B0} ${deal.price || 'Check link'}${codeLine}\n\n\u{1F449} ${deal.url}`;
   const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
 
   try {
