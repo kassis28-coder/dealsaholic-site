@@ -21,8 +21,24 @@ function cleanTitle(title) {
     .substring(0, 150);
 }
 
-function extractAllAmazonUrls(text) {
+function extractUrlsFromHtml(html) {
   const seen = new Set();
+  const urls = [];
+  const hrefPattern = /href=["']([^"']*amazon\.com[^"']*)/gi;
+  let m;
+  while ((m = hrefPattern.exec(html)) !== null) {
+    const url = m[1].replace(/&amp;/g, '&');
+    const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+      || url.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
+    if (!asin) continue;
+    if (seen.has(asin)) continue;
+    seen.add(asin);
+    urls.push({ url: 'https://www.amazon.com/dp/' + asin, asin });
+  }
+  return { urls, seen };
+}
+
+function extractUrlsFromText(text, seen) {
   const urls = [];
   const patterns = [
     /https?:\/\/(?:www\.)?amazon\.com\/dp\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi,
@@ -37,26 +53,27 @@ function extractAllAmazonUrls(text) {
       const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
         || url.match(/\/product\/([A-Z0-9]{10})/i)?.[1];
       const key = asin || url;
-      if (!seen.has(key)) {
-        seen.add(key);
-        urls.push({ url, asin });
-      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      urls.push({ url: asin ? 'https://www.amazon.com/dp/' + asin : url, asin: asin || null });
     }
   }
   return urls;
 }
 
-function getContextAroundUrl(text, url, windowSize = 300) {
-  const idx = text.indexOf(url);
-  if (idx === -1) return '';
+function getContextAroundUrl(text, url, asin, windowSize = 400) {
+  let idx = asin ? text.indexOf(asin) : -1;
+  if (idx === -1) idx = text.indexOf(url);
+  if (idx === -1) return text.substring(0, 800);
   const start = Math.max(0, idx - windowSize);
-  const end = Math.min(text.length, idx + url.length + windowSize);
+  const end = Math.min(text.length, idx + (asin || url).length + windowSize);
   return text.slice(start, end);
 }
 
 function extractPrice(context) {
   const patterns = [
     /deal\s+price\s*[:$]?\s*\$?([\d.]+)/i,
+    /discount\s+price\s*[:$]?\s*\$?([\d.]+)/i,
     /\n([\d.]+)(?:-[\d.]+)?\s*\(Reg/i,
     /price\s*[:$]?\s*\$?([\d.]+)/i,
     /\$([\d.]+)/,
@@ -64,7 +81,7 @@ function extractPrice(context) {
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
-    if (m && parseFloat(m[1]) > 0) return '$' + m[1];
+    if (m && parseFloat(m[1]) > 0 && parseFloat(m[1]) < 10000) return '$' + m[1];
   }
   return null;
 }
@@ -83,7 +100,7 @@ function extractOriginalPrice(context) {
 }
 
 function extractDiscount(context) {
-  const m = context.match(/(\d+)\s*%\s*off/i);
+  const m = context.match(/(\d+)\s*%\s*(?:off|code|discount)/i);
   return m ? m[1] : null;
 }
 
@@ -91,7 +108,7 @@ function extractPromoCode(context) {
   const patterns = [
     /(?:use|apply|enter|add|with)\s+(?:promo(?:tional)?\s+)?code[:\s]+([A-Z0-9]{4,20})/i,
     /(?:promo(?:tional)?|coupon|discount)\s+code[:\s]+([A-Z0-9]{4,20})/i,
-    /\bcode[:\s]+([A-Z0-9]{6,20})\b/i,
+    /\bcode[:\u3001:\s]+([A-Z0-9]{6,20})\b/i,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
@@ -102,9 +119,9 @@ function extractPromoCode(context) {
 
 function extractTitleFromContext(context) {
   const patterns = [
-    /product\s+name[:\s]+"?([^\n"]{10,150})/i,
-    /\d+%\s+off\s+([A-Z][^\n]{10,120})/,
-    /#\d+\s*\n([^\n]{10,150})/,
+    /product\s+name[:\u3001\s]+"?([^\n"]{10,200})/i,
+    /\d+%\s+off\s+([A-Z][^\n]{10,150})/,
+    /#\d+\s+([A-Z][^\n]{10,150})/,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
@@ -175,33 +192,37 @@ async function postToTelegram(deal) {
 
 export default async (req, context) => {
   let emailBody = '';
+  let emailText = '';
 
   if (req.method === 'GET') {
     const urlObj = new URL(req.url);
     emailBody = urlObj.searchParams.get('emailBody') || '';
+    emailText = urlObj.searchParams.get('emailText') || '';
   } else if (req.method === 'POST') {
     try {
-      const text = await req.text();
+      const raw = await req.text();
       try {
-        const parsed = JSON.parse(text);
-        emailBody = parsed.emailBody || parsed.body || text;
+        const parsed = JSON.parse(raw);
+        emailBody = parsed.emailBody || parsed.body || '';
+        emailText = parsed.emailText || '';
       } catch (e) {
-        emailBody = text;
+        emailBody = raw;
       }
     } catch (e) { emailBody = ''; }
   }
 
-  const plainText = stripHtml(emailBody || '');
-  const amazonUrls = extractAllAmazonUrls(plainText);
-  const productUrls = amazonUrls.filter(({ url }) => !url.includes('/promocode/'));
-  const toProcess = productUrls.slice(0, 15);
+  const { urls: htmlUrls, seen } = extractUrlsFromHtml(emailBody);
+  const plainText = stripHtml(emailBody) + ' ' + emailText;
+  const textUrls = extractUrlsFromText(plainText, seen);
+  const allUrls = [...htmlUrls, ...textUrls].filter(({ url }) => !url.includes('/promocode/'));
+  const toProcess = allUrls.slice(0, 15);
 
   const store = getStore("submissions");
   const savedIds = [];
   const deals = [];
 
   for (const { url, asin } of toProcess) {
-    const context = getContextAroundUrl(plainText, url);
+    const context = getContextAroundUrl(plainText, url, asin);
     const imageUrl = asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null;
     const affiliateUrl = asin
       ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
@@ -248,7 +269,7 @@ export default async (req, context) => {
 
   return new Response(JSON.stringify({
     success: true, count: deals.length, ids: savedIds, deals,
-    urlsFound: productUrls.length,
+    urlsFound: allUrls.length,
     title: deals[0]?.title || null, price: deals[0]?.price || null,
     url: deals[0]?.url || null, imageUrl: deals[0]?.imageUrl || null,
     promoCode: deals[0]?.promoCode || null,
