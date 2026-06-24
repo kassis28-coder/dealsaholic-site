@@ -180,6 +180,5 @@ export default async (req, context) => {
 };
 
 export const config = {
-  path: '/api/post-queued-deal',
   schedule: '*/5 * * * *',
 };
