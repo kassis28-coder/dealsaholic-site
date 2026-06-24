@@ -222,7 +222,6 @@ export default async (req, context) => {
       deal.title = scraped.title || deal.title;
       deal.price = deal.price || scraped.price;
       if (scraped.image) {
-        // Upload to R2 for reliable Telegram/Facebook delivery
         const r2Url = await fetchAndUploadImage(scraped.image, deal.asin);
         deal.imageUrl = r2Url || scraped.image;
       }
@@ -240,9 +239,9 @@ export default async (req, context) => {
     title: deal.title,
     price: deal.price || null,
     originalPrice: deal.originalPrice || null,
-    discount: deal.discount || null,
+    discountPercent: deal.discount ? parseInt(deal.discount) : null,
     url: deal.url,
-    imageUrl: deal.imageUrl || null,
+    image: deal.imageUrl || null,
     discountCode: deal.promoCode || null,
     source: 'email',
     store: deal.store || 'amazon',
