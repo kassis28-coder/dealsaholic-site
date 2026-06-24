@@ -1,5 +1,89 @@
 import { getStore } from "@netlify/blobs";
 
+async function sha256hex(data) {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', typeof data === 'string' ? new TextEncoder().encode(data) : data);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmac(key, data) {
+  const cryptoKey = await crypto.subtle.importKey('raw', typeof key === 'string' ? new TextEncoder().encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', cryptoKey, typeof data === 'string' ? new TextEncoder().encode(data) : data);
+}
+
+async function hmacHex(key, data) {
+  const sig = await hmac(key, data);
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getSigningKey(secret, date, region, service) {
+  const kDate = await hmac('AWS4' + secret, date);
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, service);
+  return hmac(kService, 'aws4_request');
+}
+
+async function uploadToR2(imageBuffer, contentType, filename) {
+  try {
+    const endpoint = process.env.R2_ENDPOINT;
+    const bucket = process.env.R2_BUCKET_NAME;
+    const accessKey = process.env.R2_ACCESS_KEY_ID;
+    const secretKey = process.env.R2_SECRET_ACCESS_KEY;
+    const publicUrl = process.env.R2_PUBLIC_URL;
+    if (!endpoint || !bucket || !accessKey || !secretKey) return null;
+
+    const url = `${endpoint}/${bucket}/${filename}`;
+    const date = new Date();
+    const dateStr = date.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0, 15) + 'Z';
+    const dateShort = dateStr.slice(0, 8);
+    const bodyHash = await sha256hex(imageBuffer);
+    const canonicalHeaders = `content-type:${contentType}\nhost:${new URL(endpoint).host}\nx-amz-content-sha256:${bodyHash}\nx-amz-date:${dateStr}\n`;
+    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
+    const canonicalRequest = `PUT\n/${bucket}/${filename}\n\n${canonicalHeaders}\n${signedHeaders}\n${bodyHash}`;
+    const credentialScope = `${dateShort}/auto/s3/aws4_request`;
+    const stringToSign = `AWS4-HMAC-SHA256\n${dateStr}\n${credentialScope}\n${await sha256hex(new TextEncoder().encode(canonicalRequest))}`;
+    const signingKey = await getSigningKey(secretKey, dateShort, 'auto', 's3');
+    const signature = await hmacHex(signingKey, stringToSign);
+    const authorization = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    const uploadRes = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+        'x-amz-content-sha256': bodyHash,
+        'x-amz-date': dateStr,
+        'Authorization': authorization,
+      },
+      body: imageBuffer,
+    });
+
+    if (!uploadRes.ok) return null;
+    return `${publicUrl}/${filename}`;
+  } catch (e) {
+    console.error('R2 upload failed:', e.message);
+    return null;
+  }
+}
+
+async function fetchAndUploadImage(imageUrl, asin) {
+  try {
+    const imgRes = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://www.amazon.com/',
+      }
+    });
+    if (!imgRes.ok) return null;
+    const buffer = await imgRes.arrayBuffer();
+    const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const filename = `deals/${asin}.${ext}`;
+    return await uploadToR2(buffer, contentType, filename);
+  } catch (e) {
+    console.error('fetchAndUploadImage failed:', e.message);
+    return null;
+  }
+}
+
 async function scrapeAmazonImage(asin) {
   try {
     const res = await fetch('https://www.amazon.com/dp/' + asin, {
@@ -46,32 +130,13 @@ async function postToTelegram(deal) {
 
   try {
     if (deal.imageUrl) {
-      let imageSent = false;
-      try {
-        const imgRes = await fetch(deal.imageUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.amazon.com/',
-          }
-        });
-        if (imgRes.ok) {
-          const imgBuffer = await imgRes.arrayBuffer();
-          const formData = new FormData();
-          formData.append('chat_id', chatId);
-          formData.append('caption', safeCaption);
-          formData.append('photo', new Blob([imgBuffer], { type: 'image/jpeg' }), 'deal.jpg');
-          const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-          if (data.ok) imageSent = true;
-        }
-      } catch (e) {
-        console.error('Image fetch/send failed:', e.message);
-      }
-
-      if (!imageSent) {
+      const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
         await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -156,7 +221,11 @@ export default async (req, context) => {
     if (scraped) {
       deal.title = scraped.title || deal.title;
       deal.price = deal.price || scraped.price;
-      deal.imageUrl = scraped.image || deal.imageUrl;
+      if (scraped.image) {
+        // Upload to R2 for reliable Telegram/Facebook delivery
+        const r2Url = await fetchAndUploadImage(scraped.image, deal.asin);
+        deal.imageUrl = r2Url || scraped.image;
+      }
     }
     if (!deal.imageUrl) {
       deal.imageUrl = 'https://images-na.ssl-images-amazon.com/images/P/' + deal.asin + '.01.LZZZZZZZ.jpg';
