@@ -19,17 +19,17 @@ async function getApprovedSellerDeals() {
         id: record.id,
         asin: record.id,
         title: record.productTitle || record.title,
-        image: record.photoUrl || record.imageUrl || null,
+        image: record.image || record.photoUrl || record.imageUrl || null,
         price: record.price,
         originalPrice: record.originalPrice || null,
-        discountPercent: record.discount ? parseInt(record.discount) : null,
+        discountPercent: record.discountPercent || (record.discount ? parseInt(record.discount) : null),
         rating: null,
         reviewCount: null,
         url: record.productUrl || record.url,
         discountCode: record.discountCode || null,
         sponsored: record.sponsored || false,
         source: record.source || 'seller',
-        storeType: record.storeType || 'amazon',
+        storeType: record.storeType || record.store || 'amazon',
         createdAt: record.createdAt || null,
       });
     }
@@ -53,16 +53,13 @@ export default async () => {
     // Filter out flagged/suspicious Amazon deals from public view
     const amazonDeals = (base.deals || []).filter(d => !d.needsReview);
 
-    // Combine all deals and sort by best discount % first
+    // Combine all deals and sort newest first
     const allDeals = [...sellerDeals, ...amazonDeals];
-    allDeals.sort((a, b) => {
-      const aDiscount = a.discountPercent || a.discount || 0;
-      const bDiscount = b.discountPercent || b.discount || 0;
-      return Number(bDiscount) - Number(aDiscount);
-    });
+    allDeals.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
     const combined = {
       ...base,
+      generatedAt: new Date().toISOString(),
       deals: allDeals,
     };
 
