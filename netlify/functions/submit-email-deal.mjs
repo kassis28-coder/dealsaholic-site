@@ -105,7 +105,6 @@ function extractUrlsFromText(text, seen) {
   return urls;
 }
 
-// Get a TIGHT context window around each deal block
 function getContextAroundUrl(text, url, asin, windowSize = 400) {
   let idx = asin ? text.indexOf(asin) : -1;
   if (idx === -1) idx = text.indexOf(url);
@@ -117,20 +116,15 @@ function getContextAroundUrl(text, url, asin, windowSize = 400) {
 
 function extractTitle(context) {
   const patterns = [
-    // "Product name: Title" or "Product name：Title"
     /product\s*name\s*[：:]\s*([^\n]{10,200})/i,
-    // "#1\n60% off TITLE" — Cindy format
     /#[\w\d]+\s*\n\s*[\d]+%\s*off\s+([^\n]{10,150})/i,
-    // "60% off TITLE"
     /[\d]+%\s*off\s+([A-Z][^\n]{10,150})/i,
-    // "#US01\nTITLE" — title on line after number
     /#[\w\d]+\s*\n\s*([A-Z][^\n]{10,150})/,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
     if (m) {
       const raw = m[1].trim();
-      // Stop at newline or price-like content
       const clean = raw.split(/\n/)[0]
         .replace(/\s*\d+%\s*(?:off|prime|code|discount).*/i, '')
         .replace(/\s*(?:original|discount|deal|final|sale)\s*price.*/i, '')
@@ -203,6 +197,26 @@ function extractRating(context) {
   const m = context.match(/([\d.]+)\s*Stars?,\s*(\d+)\s*ratings?/i);
   if (m) return { rating: parseFloat(m[1]), ratingCount: parseInt(m[2]) };
   return { rating: null, ratingCount: null };
+}
+
+function extractExpiryDate(context) {
+  const patterns = [
+    /(?:end|expire[sd]?|expiry)\s*(?:date|day)\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
+    /(?:code\s*)?end\s*(?:date|day)\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
+    /(?:end|expire[sd]?)\s*(?:date|day)\s*[：:\s]+(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/i,
+    /expir\w*\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
+  ];
+  for (const pat of patterns) {
+    const m = context.match(pat);
+    if (m) {
+      try {
+        const d = new Date(m[1]);
+        if (!isNaN(d.getTime())) return d.toISOString();
+      } catch (e) {}
+    }
+  }
+  // Default 7 days
+  return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 }
 
 async function scrapeAmazon(asin) {
@@ -342,8 +356,7 @@ export default async (req, context) => {
   const { urls: htmlUrls, seen } = extractUrlsFromHtml(emailBody);
   const plainText = stripHtml(emailBody) + ' ' + emailText;
   const textUrls = extractUrlsFromText(plainText, seen);
-  // Only process URLs with actual ASINs — skip promocode-only URLs
-  const allUrls = [...htmlUrls, ...textUrls].filter(({ url, asin, itemId }) => {
+  const allUrls = [...htmlUrls, ...textUrls].filter(({ url, asin }) => {
     if (url.includes('/promocode/') && !asin) return false;
     return true;
   });
@@ -375,6 +388,7 @@ export default async (req, context) => {
     const price = extractPrice(ctx);
     const originalPrice = extractOriginalPrice(ctx);
     const promoCode = extractPromoCode(ctx);
+    const expiresOn = extractExpiryDate(ctx);
 
     let affiliateUrl, imageUrl = null;
     let title = titleFromEmail;
@@ -383,9 +397,7 @@ export default async (req, context) => {
       affiliateUrl = 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20';
       const scraped = await scrapeAmazon(asin);
       if (scraped) {
-        // Only use scraped title if email title not found
         if (!title && scraped.title) title = scraped.title;
-        // Only use valid m.media-amazon.com images — no fallback
         if (scraped.image && scraped.image.includes('m.media-amazon.com/images/I/')) {
           const r2Url = await uploadToR2(scraped.image, asin);
           imageUrl = r2Url || scraped.image;
@@ -404,6 +416,7 @@ export default async (req, context) => {
       url: affiliateUrl, imageUrl,
       asin: asin || null, itemId: itemId || null,
       store: dealStore, rating, ratingCount,
+      expiresOn,
       addedAt: new Date().toISOString(),
     };
 
