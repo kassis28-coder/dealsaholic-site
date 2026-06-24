@@ -378,14 +378,11 @@ export default async (req, context) => {
       const scraped = await scrapeAmazon(asin);
       if (scraped) {
         title = scraped.title || title;
-        if (scraped.image) {
-          const r2Url = await uploadToR2(scraped.image, asin);
-          imageUrl = r2Url || scraped.image;
-        }
-      }
-      if (!imageUrl) {
-        imageUrl = 'https://images-na.ssl-images-amazon.com/images/P/' + asin + '.01.LZZZZZZZ.jpg';
-      }
+       if (scraped.image && scraped.image.includes('m.media-amazon.com/images/I/')) {
+  const r2Url = await uploadToR2(scraped.image, asin);
+  imageUrl = r2Url || scraped.image;
+}
+    
     } else if (dealStore === 'walmart' && itemId) {
       affiliateUrl = 'https://www.walmart.com/ip/' + itemId + '?wmlspartner=iplc1788825';
     } else {
