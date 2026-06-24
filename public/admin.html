@@ -479,12 +479,13 @@
     const originalPrice = document.getElementById(`edit-original-${id}`).value.trim();
     const discount = document.getElementById(`edit-discount-${id}`).value.trim();
     const discountCode = document.getElementById(`edit-code-${id}`).value.trim();
-    const expiresOn = document.getElementById(`edit-expires-${id}`).value.trim();
+ const imageUrl = document.getElementById(`edit-image-${id}`).value.trim();
+const expiresOn = document.getElementById(`edit-expires-${id}`).value.trim();
     try {
       const res = await fetch('/api/edit-submission', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword, submissionId: id, title, price, originalPrice, discount, discountCode, expiresOn }),
+        body: JSON.stringify({ password: adminPassword, submissionId: id, title, price, originalPrice, discount, discountCode, expiresOn, imageUrl }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
