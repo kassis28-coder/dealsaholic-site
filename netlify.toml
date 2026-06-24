@@ -4,11 +4,9 @@
 
 [functions]
   node_bundler = "esbuild"
+  scheduler = true
 
-# Makes /.netlify/functions/get-deals also reachable at /api/deals
 [[redirects]]
   from = "/api/deals"
   to = "/.netlify/functions/get-deals"
   status = 200
-[functions]
-  scheduler = true
