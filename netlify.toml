@@ -10,3 +10,5 @@
   from = "/api/deals"
   to = "/.netlify/functions/get-deals"
   status = 200
+[functions]
+  scheduler = true
