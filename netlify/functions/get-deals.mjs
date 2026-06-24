@@ -55,7 +55,7 @@ export default async () => {
 
     // Combine all deals and sort newest first
     const allDeals = [...sellerDeals, ...amazonDeals];
-    allDeals.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    allDeals.sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
 
     const combined = {
       ...base,
