@@ -33,6 +33,18 @@ function cleanTitle(title) {
     .substring(0, 150);
 }
 
+function isAdultContent(title, context) {
+  const blocked = [
+    'lingerie', 'babydoll', 'teddy lingerie', 'sexy', 'erotic',
+    'adult toy', 'vibrator', 'dildo', 'penis', 'thong', 'g-string',
+    'mesh bodysuit', 'nipple', 'fetish', 'bondage', 'sheer mesh',
+    'lace bodysuit', 'plus size lingerie', 'bra panty', 'crotchless',
+    'strip', 'nude', 'explicit', 'sexual', 'kinky', 'naughty',
+  ];
+  const text = ((title || '') + ' ' + (context || '')).toLowerCase();
+  return blocked.some(word => text.includes(word));
+}
+
 function extractUrlsFromHtml(html) {
   const seen = new Set();
   const urls = [];
@@ -164,38 +176,6 @@ function extractTitleFromContext(context) {
   return null;
 }
 
-async function scrapeAmazon(asin) {
-  try {
-    const res = await fetch('https://www.amazon.com/dp/' + asin, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-      },
-      redirect: 'follow',
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
-      || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
-    const priceMatch = html.match(/"priceAmount":([\d.]+)/)
-      || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
-    const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
-    const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/"thumb":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/data-old-hires="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
-      || null;
-    return { title: cleanTitle(title), price, image };
-  } catch (e) {
-    return null;
-  }
-}
-
 export default async (req, context) => {
   let emailBody = '';
   let emailText = '';
@@ -247,15 +227,16 @@ export default async (req, context) => {
     const ctx = getContextAroundUrl(plainText, url, asin);
     const discount = extractDiscount(ctx);
     const { rating, ratingCount } = extractRating(ctx);
+    const title = extractTitleFromContext(ctx);
 
     if (!discount || discount < 50) { skipped.push({ url, reason: 'discount < 50%', discount }); continue; }
     if (ratingCount === 0) { skipped.push({ url, reason: '0 ratings' }); continue; }
     if (rating !== null && rating < 4.0) { skipped.push({ url, reason: 'rating < 4.0', rating }); continue; }
+    if (isAdultContent(title, ctx)) { skipped.push({ url, reason: 'adult content' }); continue; }
 
     const price = extractPrice(ctx);
     const originalPrice = extractOriginalPrice(ctx);
     const promoCode = extractPromoCode(ctx);
-    let title = extractTitleFromContext(ctx);
     let affiliateUrl, imageUrl = null;
 
     if (dealStore === 'amazon' && asin) {
