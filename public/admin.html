@@ -437,10 +437,14 @@
                 <input type="text" id="edit-code-${s.id}" value="${escapeHtml(s.discountCode || '')}">
               </div>
             </div>
-            <div class="edit-form-group" style="margin-bottom:0;">
-              <label>Expires On</label>
-              <input type="date" id="edit-expires-${s.id}" value="${expiryDate}">
-            </div>
+            <div class="edit-form-group" style="margin-bottom:10px;">
+  <label>Image URL</label>
+  <input type="text" id="edit-image-${s.id}" value="${escapeHtml(s.imageUrl || s.photoUrl || '')}" placeholder="https://...">
+</div>
+<div class="edit-form-group" style="margin-bottom:0;">
+  <label>Expires On</label>
+  <input type="date" id="edit-expires-${s.id}" value="${expiryDate}">
+</div>
             <div class="edit-actions">
               <button class="btn btn--save" onclick="saveEdit('${s.id}')">💾 Save Changes</button>
               <button class="btn btn--edit" onclick="toggleEdit('${s.id}')">Cancel</button>
