@@ -29,52 +29,6 @@ async function scrapeAmazonImage(asin) {
   }
 }
 
-async function uploadImageToR2(imageUrl, asin) {
-  try {
-    const R2_ENDPOINT = process.env.R2_ENDPOINT;
-    const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
-    const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
-    const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
-    const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
-
-    if (!R2_ENDPOINT || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return null;
-
-    // Fetch the image
-    const imgRes = await fetch(imageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://www.amazon.com/',
-      }
-    });
-    if (!imgRes.ok) return null;
-
-    const imageBuffer = await imgRes.arrayBuffer();
-    const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
-    const key = 'deals/' + asin + '.' + ext;
-
-    // Upload to R2 using fetch with AWS Signature V4
-    const url = R2_ENDPOINT + '/' + R2_BUCKET_NAME + '/' + key;
-
-    // Simple upload without signature (works if R2 bucket allows public writes via token)
-    const uploadRes = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType,
-        'x-amz-access-key-id': R2_ACCESS_KEY_ID,
-        'Authorization': 'Bearer ' + R2_ACCESS_KEY_ID + ':' + R2_SECRET_ACCESS_KEY,
-      },
-      body: imageBuffer,
-    });
-
-    if (!uploadRes.ok) return null;
-    return R2_PUBLIC_URL + '/' + key;
-  } catch (e) {
-    console.error('R2 upload failed:', e.message);
-    return null;
-  }
-}
-
 async function postToTelegram(deal) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -92,13 +46,32 @@ async function postToTelegram(deal) {
 
   try {
     if (deal.imageUrl) {
-      const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
+      let imageSent = false;
+      try {
+        const imgRes = await fetch(deal.imageUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.amazon.com/',
+          }
+        });
+        if (imgRes.ok) {
+          const imgBuffer = await imgRes.arrayBuffer();
+          const formData = new FormData();
+          formData.append('chat_id', chatId);
+          formData.append('caption', safeCaption);
+          formData.append('photo', new Blob([imgBuffer], { type: 'image/jpeg' }), 'deal.jpg');
+          const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          if (data.ok) imageSent = true;
+        }
+      } catch (e) {
+        console.error('Image fetch/send failed:', e.message);
+      }
+
+      if (!imageSent) {
         await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -178,19 +151,13 @@ export default async (req, context) => {
 
   const deal = queue.shift();
 
-  // Scrape Amazon for image
   if (deal.store === 'amazon' && deal.asin) {
     const scraped = await scrapeAmazonImage(deal.asin);
     if (scraped) {
       deal.title = scraped.title || deal.title;
       deal.price = deal.price || scraped.price;
-      if (scraped.image) {
-        // Upload to R2 so Telegram can access it reliably
-        const r2Url = await uploadImageToR2(scraped.image, deal.asin);
-        deal.imageUrl = r2Url || scraped.image;
-      }
+      deal.imageUrl = scraped.image || deal.imageUrl;
     }
-    // Final fallback
     if (!deal.imageUrl) {
       deal.imageUrl = 'https://images-na.ssl-images-amazon.com/images/P/' + deal.asin + '.01.LZZZZZZZ.jpg';
     }
