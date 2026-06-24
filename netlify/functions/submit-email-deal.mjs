@@ -27,6 +27,10 @@ function cleanTitle(title) {
     .replace(/\s*[|:]\s*walmart\.com.*/i, '')
     .replace(/\s*-\s*amazon\.com.*/i, '')
     .replace(/\s*-\s*walmart\.com.*/i, '')
+    .replace(/\s*original\s+price.*/i, '')
+    .replace(/\s*discount\s+price.*/i, '')
+    .replace(/\s*deal\s+price.*/i, '')
+    .replace(/\s*\d+%\s*(?:off|prime|code).*/i, '')
     .replace(/https?:\/\/\S+/g, '')
     .replace(/^["'\u201c]|["'\u201d]$/g, '')
     .trim()
@@ -101,7 +105,8 @@ function extractUrlsFromText(text, seen) {
   return urls;
 }
 
-function getContextAroundUrl(text, url, asin, windowSize = 600) {
+// Get a TIGHT context window around each deal block
+function getContextAroundUrl(text, url, asin, windowSize = 400) {
   let idx = asin ? text.indexOf(asin) : -1;
   if (idx === -1) idx = text.indexOf(url);
   if (idx === -1) return text.substring(0, 800);
@@ -112,14 +117,28 @@ function getContextAroundUrl(text, url, asin, windowSize = 600) {
 
 function extractTitle(context) {
   const patterns = [
+    // "Product name: Title" or "Product name：Title"
     /product\s*name\s*[：:]\s*([^\n]{10,200})/i,
-    /#[\w\d]+\s*\n\s*[\d]+%\s*(?:off\s+)?([A-Z][^\n]{10,150})/i,
+    // "#1\n60% off TITLE" — Cindy format
+    /#[\w\d]+\s*\n\s*[\d]+%\s*off\s+([^\n]{10,150})/i,
+    // "60% off TITLE"
     /[\d]+%\s*off\s+([A-Z][^\n]{10,150})/i,
+    // "#US01\nTITLE" — title on line after number
     /#[\w\d]+\s*\n\s*([A-Z][^\n]{10,150})/,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
-    if (m) return cleanTitle(m[1].trim());
+    if (m) {
+      const raw = m[1].trim();
+      // Stop at newline or price-like content
+      const clean = raw.split(/\n/)[0]
+        .replace(/\s*\d+%\s*(?:off|prime|code|discount).*/i, '')
+        .replace(/\s*(?:original|discount|deal|final|sale)\s*price.*/i, '')
+        .replace(/\s*\$[\d.]+.*/i, '')
+        .replace(/\s*\(Reg.*/i, '')
+        .trim();
+      if (clean.length >= 5) return cleanTitle(clean);
+    }
   }
   return null;
 }
@@ -323,7 +342,11 @@ export default async (req, context) => {
   const { urls: htmlUrls, seen } = extractUrlsFromHtml(emailBody);
   const plainText = stripHtml(emailBody) + ' ' + emailText;
   const textUrls = extractUrlsFromText(plainText, seen);
-  const allUrls = [...htmlUrls, ...textUrls];
+  // Only process URLs with actual ASINs — skip promocode-only URLs
+  const allUrls = [...htmlUrls, ...textUrls].filter(({ url, asin, itemId }) => {
+    if (url.includes('/promocode/') && !asin) return false;
+    return true;
+  });
 
   const queueStore = getStore("deal-queue");
 
@@ -338,8 +361,6 @@ export default async (req, context) => {
   for (const { url, asin, itemId, store: dealStore } of allUrls) {
     if (added >= MAX_PER_EMAIL) break;
     if (queue.length >= MAX_QUEUE) break;
-
-    if (url.includes('/promocode/') && !asin) continue;
 
     const ctx = getContextAroundUrl(plainText, url, asin);
     const discount = extractDiscount(ctx);
@@ -364,6 +385,7 @@ export default async (req, context) => {
       if (scraped) {
         // Only use scraped title if email title not found
         if (!title && scraped.title) title = scraped.title;
+        // Only use valid m.media-amazon.com images — no fallback
         if (scraped.image && scraped.image.includes('m.media-amazon.com/images/I/')) {
           const r2Url = await uploadToR2(scraped.image, asin);
           imageUrl = r2Url || scraped.image;
