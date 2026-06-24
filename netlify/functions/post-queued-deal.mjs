@@ -29,6 +29,11 @@ async function scrapeAmazonImage(asin) {
   }
 }
 
+function getAmazonFallbackImage(asin) {
+  // Try multiple known working Amazon image URL formats
+  return 'https://images-na.ssl-images-amazon.com/images/P/' + asin + '.01.LZZZZZZZ.jpg';
+}
+
 async function postToTelegram(deal) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -53,6 +58,7 @@ async function postToTelegram(deal) {
       });
       const data = await res.json();
       if (!data.ok) {
+        // Image failed, try without image
         await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -132,12 +138,16 @@ export default async (req, context) => {
 
   const deal = queue.shift();
 
+  // Try to scrape better image for Amazon deals
   if (deal.store === 'amazon' && deal.asin) {
     const scraped = await scrapeAmazonImage(deal.asin);
-    if (scraped) {
+    if (scraped && scraped.image) {
       deal.title = scraped.title || deal.title;
       deal.price = deal.price || scraped.price;
-      deal.imageUrl = scraped.image || deal.imageUrl;
+      deal.imageUrl = scraped.image;
+    } else {
+      // Use reliable fallback image URL
+      deal.imageUrl = getAmazonFallbackImage(deal.asin);
     }
   }
 
@@ -173,6 +183,7 @@ export default async (req, context) => {
   return new Response(JSON.stringify({
     success: true,
     posted: deal.title,
+    imageUrl: deal.imageUrl,
     telegramOk,
     facebookOk,
     queueRemaining: queue.length,
