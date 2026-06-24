@@ -112,13 +112,9 @@ function getContextAroundUrl(text, url, asin, windowSize = 600) {
 
 function extractTitle(context) {
   const patterns = [
-    // Format: "Product name: Title" or "Product name：Title"
     /product\s*name\s*[：:]\s*([^\n]{10,200})/i,
-    // Format: "#1\n60% off Title" or "#US1\n60% off Title"
     /#[\w\d]+\s*\n\s*[\d]+%\s*(?:off\s+)?([A-Z][^\n]{10,150})/i,
-    // Format: "60% off Title" at start of block
     /[\d]+%\s*off\s+([A-Z][^\n]{10,150})/i,
-    // Format: "#1\nTitle" (title on next line after number)
     /#[\w\d]+\s*\n\s*([A-Z][^\n]{10,150})/,
   ];
   for (const pat of patterns) {
@@ -130,11 +126,8 @@ function extractTitle(context) {
 
 function extractPrice(context) {
   const patterns = [
-    // "Deal Price : 19.99" or "Discount price：19.99" or "Final Price : $11.99"
     /(?:deal|discount|final|sale)\s*price\s*[：:]\s*\$?([\d.]+)/i,
-    // "8.88(Reg.21.99)" or "8.88-8.99(Reg"
     /([\d.]+)(?:-[\d.]+)?\s*\(Reg/i,
-    // "$12.49"
     /\$\s*([\d.]+)/,
   ];
   for (const pat of patterns) {
@@ -159,11 +152,8 @@ function extractOriginalPrice(context) {
 
 function extractDiscount(context) {
   const patterns = [
-    // "60% off" or "70%OFF"
     /(\d+)\s*%\s*off/i,
-    // "off：50%" or "Discount：56%"
     /(?:off|discount)\s*[：:]\s*(\d+)\s*%/i,
-    // "50% off Code:"
     /(\d+)\s*%\s*(?:code|discount|coupon|OFF)/i,
   ];
   for (const pat of patterns) {
@@ -175,18 +165,14 @@ function extractDiscount(context) {
 
 function extractPromoCode(context) {
   const patterns = [
-    // "Discount code： E68VLRLF" or "code： J5KU5B33"
     /(?:discount\s*code|promo\s*code|coupon\s*code)\s*[：:\s]+([A-Z0-9]{4,20})/i,
-    // "50% off Code: FYOBL7K9"
     /\d+%\s*off\s+(?:Code|CODE)\s*[：:\s]+([A-Z0-9]{4,20})/i,
-    // "Code :NZOCPLES" or "code: ABC123"
     /\bcode\s*[：:\s]+([A-Z0-9]{4,20})\b/i,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
     if (m) {
       const code = m[1].toUpperCase();
-      // Skip if it looks like an ASIN (all caps 10 chars starting with B0)
       if (code.match(/^B0[A-Z0-9]{8}$/)) continue;
       return code;
     }
@@ -353,7 +339,6 @@ export default async (req, context) => {
     if (added >= MAX_PER_EMAIL) break;
     if (queue.length >= MAX_QUEUE) break;
 
-    // Skip promocode-only URLs — they have no ASIN
     if (url.includes('/promocode/') && !asin) continue;
 
     const ctx = getContextAroundUrl(plainText, url, asin);
@@ -377,12 +362,13 @@ export default async (req, context) => {
       affiliateUrl = 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20';
       const scraped = await scrapeAmazon(asin);
       if (scraped) {
-        title = scraped.title || title;
-       if (scraped.image && scraped.image.includes('m.media-amazon.com/images/I/')) {
-  const r2Url = await uploadToR2(scraped.image, asin);
-  imageUrl = r2Url || scraped.image;
-}
-    
+        // Only use scraped title if email title not found
+        if (!title && scraped.title) title = scraped.title;
+        if (scraped.image && scraped.image.includes('m.media-amazon.com/images/I/')) {
+          const r2Url = await uploadToR2(scraped.image, asin);
+          imageUrl = r2Url || scraped.image;
+        }
+      }
     } else if (dealStore === 'walmart' && itemId) {
       affiliateUrl = 'https://www.walmart.com/ip/' + itemId + '?wmlspartner=iplc1788825';
     } else {
