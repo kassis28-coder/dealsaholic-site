@@ -22,8 +22,11 @@ function cleanTitle(title) {
   if (!title) return null;
   return decodeHtmlEntities(title)
     .replace(/^amazon\.com\s*[:]\s*/i, '')
+    .replace(/^walmart\.com\s*[:]\s*/i, '')
     .replace(/\s*[|:]\s*amazon\.com.*/i, '')
+    .replace(/\s*[|:]\s*walmart\.com.*/i, '')
     .replace(/\s*-\s*amazon\.com.*/i, '')
+    .replace(/\s*-\s*walmart\.com.*/i, '')
     .replace(/https?:\/\/\S+/g, '')
     .replace(/^["'\u201c]|["'\u201d]$/g, '')
     .trim()
@@ -33,16 +36,22 @@ function cleanTitle(title) {
 function extractUrlsFromHtml(html) {
   const seen = new Set();
   const urls = [];
-  const hrefPattern = /href=["']([^"']*amazon\.com[^"']*)/gi;
+  const hrefPattern = /href=["']([^"']*(?:amazon\.com|walmart\.com)[^"']*)/gi;
   let m;
   while ((m = hrefPattern.exec(html)) !== null) {
     const url = m[1].replace(/&amp;/g, '&');
-    const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
-      || url.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
-    if (!asin) continue;
-    if (seen.has(asin)) continue;
-    seen.add(asin);
-    urls.push({ url: 'https://www.amazon.com/dp/' + asin, asin });
+    if (url.includes('amazon.com')) {
+      const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+        || url.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
+      if (!asin || seen.has(asin)) continue;
+      seen.add(asin);
+      urls.push({ url: 'https://www.amazon.com/dp/' + asin, asin, store: 'amazon' });
+    } else if (url.includes('walmart.com/ip/')) {
+      const itemId = url.match(/\/ip\/(?:[^/]+\/)?(\d+)/)?.[1];
+      if (!itemId || seen.has('wmt-' + itemId)) continue;
+      seen.add('wmt-' + itemId);
+      urls.push({ url: 'https://www.walmart.com/ip/' + itemId, asin: null, itemId, store: 'walmart' });
+    }
   }
   return { urls, seen };
 }
@@ -50,21 +59,31 @@ function extractUrlsFromHtml(html) {
 function extractUrlsFromText(text, seen) {
   const urls = [];
   const patterns = [
-    /https?:\/\/(?:www\.)?amazon\.com\/dp\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi,
-    /https?:\/\/(?:www\.)?amazon\.com\/gp\/product\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi,
-    /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
-    /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
+    { pattern: /https?:\/\/(?:www\.)?amazon\.com\/dp\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi, store: 'amazon' },
+    { pattern: /https?:\/\/(?:www\.)?amazon\.com\/gp\/product\/([A-Z0-9]{10})[^\s"'<>\u201d]*/gi, store: 'amazon' },
+    { pattern: /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi, store: 'amazon' },
+    { pattern: /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi, store: 'amazon' },
+    { pattern: /https?:\/\/(?:www\.)?walmart\.com\/ip\/(?:[^/\s]+\/)?(\d{6,12})[^\s"'<>\u201d]*/gi, store: 'walmart' },
   ];
-  for (const pattern of patterns) {
+  for (const { pattern, store } of patterns) {
     const matches = [...text.matchAll(pattern)];
     for (const m of matches) {
       const url = m[0].replace(/["\u201d\u201c']+$/, '');
-      const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
-        || url.match(/\/product\/([A-Z0-9]{10})/i)?.[1];
-      const key = asin || url;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      urls.push({ url: asin ? 'https://www.amazon.com/dp/' + asin : url, asin: asin || null });
+      if (store === 'amazon') {
+        const asin = url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+          || url.match(/\/product\/([A-Z0-9]{10})/i)?.[1];
+        const key = asin || url;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        urls.push({ url: asin ? 'https://www.amazon.com/dp/' + asin : url, asin: asin || null, store: 'amazon' });
+      } else if (store === 'walmart') {
+        const itemId = url.match(/\/ip\/(?:[^/\s]+\/)?(\d{6,12})/)?.[1];
+        if (!itemId) continue;
+        const key = 'wmt-' + itemId;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        urls.push({ url: 'https://www.walmart.com/ip/' + itemId, asin: null, itemId, store: 'walmart' });
+      }
     }
   }
   return urls;
@@ -110,7 +129,7 @@ function extractOriginalPrice(context) {
 
 function extractDiscount(context) {
   const m = context.match(/(\d+)\s*%\s*(?:off|code|discount)/i);
-  return m ? m[1] : null;
+  return m ? parseInt(m[1]) : null;
 }
 
 function extractPromoCode(context) {
@@ -124,6 +143,12 @@ function extractPromoCode(context) {
     if (m) return m[1].toUpperCase();
   }
   return null;
+}
+
+function extractRating(context) {
+  const m = context.match(/([\d.]+)\s*Stars?,\s*(\d+)\s*ratings?/i);
+  if (m) return { rating: parseFloat(m[1]), ratingCount: parseInt(m[2]) };
+  return { rating: null, ratingCount: null };
 }
 
 function extractTitleFromContext(context) {
@@ -153,14 +178,11 @@ async function scrapeAmazon(asin) {
     });
     if (!res.ok) return null;
     const html = await res.text();
-
     const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
-
     const priceMatch = html.match(/"priceAmount":([\d.]+)/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
     const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
-
     const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
       || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
       || html.match(/"thumb":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
@@ -168,47 +190,9 @@ async function scrapeAmazon(asin) {
       || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
       || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
       || null;
-
     return { title: cleanTitle(title), price, image };
   } catch (e) {
     return null;
-  }
-}
-
-async function postToTelegram(deal) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) return;
-
-  const codeLine = deal.promoCode ? '\n\u{1F3F7} Code: ' + deal.promoCode : '';
-  const caption = '\u{1F525} New Deal Alert!\n\n\u{1F6CD} ' + (deal.title || 'Amazon Deal') + '\n\n\u{1F4B0} ' + (deal.price || 'Check link') + codeLine + '\n\n\u{1F449} ' + deal.url;
-  const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
-
-  try {
-    if (deal.imageUrl) {
-      const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
-        });
-      }
-    } else {
-      const text = caption.length > 4096 ? caption.substring(0, 4093) + '...' : caption;
-      await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text }),
-      });
-    }
-  } catch (e) {
-    console.error('Telegram post failed:', e.message);
   }
 }
 
@@ -244,67 +228,68 @@ export default async (req, context) => {
   const plainText = stripHtml(emailBody) + ' ' + emailText;
   const textUrls = extractUrlsFromText(plainText, seen);
   const allUrls = [...htmlUrls, ...textUrls].filter(({ url }) => !url.includes('/promocode/'));
-  const toProcess = allUrls.slice(0, 15);
 
-  const store = getStore("submissions");
-  const savedIds = [];
-  const deals = [];
+  const submissionsStore = getStore("submissions");
+  const queueStore = getStore("deal-queue");
 
-  for (const { url, asin } of toProcess) {
-    const context = getContextAroundUrl(plainText, url, asin);
-    let imageUrl = null;
-    const affiliateUrl = asin
-      ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
-      : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
+  let queue = [];
+  try { queue = await queueStore.get('queue', { type: 'json' }) || []; } catch (e) { queue = []; }
 
-    let title = extractTitleFromContext(context);
-    let price = extractPrice(context);
-    const originalPrice = extractOriginalPrice(context);
-    const discount = extractDiscount(context);
-    const promoCode = extractPromoCode(context);
+  const MAX_QUEUE = 200;
+  const MAX_PER_EMAIL = 50;
+  let added = 0;
+  const skipped = [];
 
-    if (asin) {
-      const scraped = await scrapeAmazon(asin);
-      if (scraped) {
-        title = scraped.title || title;
-        price = price || scraped.price;
-        imageUrl = scraped.image || ('https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg');
-      } else {
-        imageUrl = 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg';
-      }
+  for (const { url, asin, itemId, store: dealStore } of allUrls) {
+    if (added >= MAX_PER_EMAIL) break;
+    if (queue.length >= MAX_QUEUE) break;
+
+    const ctx = getContextAroundUrl(plainText, url, asin);
+    const discount = extractDiscount(ctx);
+    const { rating, ratingCount } = extractRating(ctx);
+
+    if (!discount || discount < 50) { skipped.push({ url, reason: 'discount < 50%', discount }); continue; }
+    if (ratingCount === 0) { skipped.push({ url, reason: '0 ratings' }); continue; }
+    if (rating !== null && rating < 4.0) { skipped.push({ url, reason: 'rating < 4.0', rating }); continue; }
+
+    const price = extractPrice(ctx);
+    const originalPrice = extractOriginalPrice(ctx);
+    const promoCode = extractPromoCode(ctx);
+    let title = extractTitleFromContext(ctx);
+    let affiliateUrl, imageUrl = null;
+
+    if (dealStore === 'amazon' && asin) {
+      affiliateUrl = 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20';
+      imageUrl = 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg';
+    } else if (dealStore === 'walmart' && itemId) {
+      affiliateUrl = 'https://www.walmart.com/ip/' + itemId + '?wmlspartner=iplc1788825';
+    } else {
+      affiliateUrl = url;
     }
 
-    const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    const submission = {
-      id, title: title || 'Amazon Deal', price: price || null,
-      originalPrice: originalPrice || null, discount: discount || null,
-      url: affiliateUrl, imageUrl, discountCode: promoCode || null,
-      source: 'email', status: 'approved', sponsored: false,
-      createdAt: new Date().toISOString(),
-      expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    const queueItem = {
+      id: 'q-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      title: title || (dealStore === 'walmart' ? 'Walmart Deal' : 'Amazon Deal'),
+      price, originalPrice, discount, promoCode,
+      url: affiliateUrl, imageUrl,
+      asin: asin || null, itemId: itemId || null,
+      store: dealStore, rating, ratingCount,
+      addedAt: new Date().toISOString(),
     };
 
-    await store.setJSON(id, submission);
-    savedIds.push(id);
-
-    const dealObj = { id, title: title || 'Amazon Deal', price, url: affiliateUrl, imageUrl, promoCode };
-    deals.push(dealObj);
-
-    let index = [];
-    try { index = await store.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
-    index.unshift(id);
-    await store.setJSON('index', index);
-
-    await postToTelegram(dealObj);
-    await new Promise(r => setTimeout(r, 1000));
+    queue.push(queueItem);
+    added++;
   }
 
+  await queueStore.setJSON('queue', queue);
+
   return new Response(JSON.stringify({
-    success: true, count: deals.length, ids: savedIds, deals,
-    urlsFound: allUrls.length,
-    title: deals[0]?.title || null, price: deals[0]?.price || null,
-    url: deals[0]?.url || null, imageUrl: deals[0]?.imageUrl || null,
-    promoCode: deals[0]?.promoCode || null,
+    success: true,
+    totalFound: allUrls.length,
+    added,
+    skipped: skipped.length,
+    queueLength: queue.length,
+    skipReasons: skipped.slice(0, 10),
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
