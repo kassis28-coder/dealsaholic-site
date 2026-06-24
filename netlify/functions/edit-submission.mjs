@@ -12,7 +12,7 @@ export default async (req, context) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
-    const { submissionId, title, price, originalPrice, discount, discountCode, expiresOn } = body;
+  const { submissionId, title, price, originalPrice, discount, discountCode, expiresOn, imageUrl } = body;
 
     if (!submissionId) {
       return new Response(JSON.stringify({ error: "Missing submissionId" }), { status: 400 });
@@ -43,14 +43,16 @@ export default async (req, context) => {
 
     // Update record
     const updated = {
-      ...record,
-      title: title || record.title || record.productTitle,
-      price: price || record.price,
-      originalPrice: originalPrice || record.originalPrice,
-      discount: discount || record.discount,
-      discountCode: discountCode || record.discountCode,
-      expiresOn: expiresOnISO,
-      updatedAt: new Date().toISOString(),
+  ...record,
+  title: title || record.title || record.productTitle,
+  price: price || record.price,
+  originalPrice: originalPrice || record.originalPrice,
+  discount: discount || record.discount,
+  discountCode: discountCode || record.discountCode,
+  expiresOn: expiresOnISO,
+  imageUrl: imageUrl || record.imageUrl,
+  updatedAt: new Date().toISOString(),
+};
     };
 
     await store.setJSON(submissionId, updated);
