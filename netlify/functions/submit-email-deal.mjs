@@ -105,10 +105,10 @@ function extractUrlsFromText(text, seen) {
   return urls;
 }
 
-function getContextAroundUrl(text, url, asin, windowSize = 400) {
+function getContextAroundUrl(text, url, asin, windowSize = 600) {
   let idx = asin ? text.indexOf(asin) : -1;
   if (idx === -1) idx = text.indexOf(url);
-  if (idx === -1) return text.substring(0, 800);
+  if (idx === -1) return text.substring(0, 1000);
   const start = Math.max(0, idx - windowSize);
   const end = Math.min(text.length, idx + (asin || url).length + windowSize);
   return text.slice(start, end);
@@ -116,20 +116,24 @@ function getContextAroundUrl(text, url, asin, windowSize = 400) {
 
 function extractTitle(context) {
   const patterns = [
-    /product\s*name\s*[：:]\s*([^\n]{10,200})/i,
-    /#[\w\d]+\s*\n\s*[\d]+%\s*off\s+([^\n]{10,150})/i,
-    /[\d]+%\s*off\s+([A-Z][^\n]{10,150})/i,
-    /#[\w\d]+\s*\n\s*([A-Z][^\n]{10,150})/,
+    // "Product name: TITLE" format
+    /product\s*name\s*[：:]\s*([^\n\r]{5,200})/i,
+    // "#1\n60% off TITLE" format
+    /#[\w\d]+\s*[\n\r]+\s*[\d]+%\s*off\s+([^\n\r]{5,150})/i,
+    /[\d]+%\s*off\s+([A-Z][^\n\r]{5,150})/i,
+    // "#US01\nTITLE" format
+    /#[\w\d]+\s*[\n\r]+\s*([A-Z][^\n\r]{5,150})/,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
     if (m) {
-      const raw = m[1].trim();
-      const clean = raw.split(/\n/)[0]
+      const raw = m[1].trim().split(/[\n\r]/)[0];
+      const clean = raw
         .replace(/\s*\d+%\s*(?:off|prime|code|discount).*/i, '')
         .replace(/\s*(?:original|discount|deal|final|sale)\s*price.*/i, '')
         .replace(/\s*\$[\d.]+.*/i, '')
         .replace(/\s*\(Reg.*/i, '')
+        .replace(/\s*discount\s*:.*/i, '')
         .trim();
       if (clean.length >= 5) return cleanTitle(clean);
     }
@@ -139,13 +143,20 @@ function extractTitle(context) {
 
 function extractPrice(context) {
   const patterns = [
+    // "Discount price: 20" or "Deal price: $20"
     /(?:deal|discount|final|sale)\s*price\s*[：:]\s*\$?([\d.]+)/i,
-    /([\d.]+)(?:-[\d.]+)?\s*\(Reg/i,
+    // "price(Reg.xx)" format
+    /\$?([\d.]+)\s*\(Reg/i,
+    // plain "$20"
     /\$\s*([\d.]+)/,
+    // plain number after price label
+    /price\s*[：:]\s*([\d.]+)/i,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
-    if (m && parseFloat(m[1]) > 0 && parseFloat(m[1]) < 10000) return '$' + parseFloat(m[1]).toFixed(2);
+    if (m && parseFloat(m[1]) > 0 && parseFloat(m[1]) < 10000) {
+      return '$' + parseFloat(m[1]).toFixed(2);
+    }
   }
   return null;
 }
@@ -158,15 +169,17 @@ function extractOriginalPrice(context) {
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
-    if (m) return '$' + m[1];
+    if (m) return '$' + parseFloat(m[1]).toFixed(2);
   }
   return null;
 }
 
 function extractDiscount(context) {
   const patterns = [
+    // "Discount:50%code" or "Discount:50%" 
+    /discount\s*[：:]\s*(\d+)\s*%/i,
     /(\d+)\s*%\s*off/i,
-    /(?:off|discount)\s*[：:]\s*(\d+)\s*%/i,
+    /off\s*[：:]\s*(\d+)\s*%/i,
     /(\d+)\s*%\s*(?:code|discount|coupon|OFF)/i,
   ];
   for (const pat of patterns) {
@@ -178,15 +191,25 @@ function extractDiscount(context) {
 
 function extractPromoCode(context) {
   const patterns = [
-    /(?:discount\s*code|promo\s*code|coupon\s*code)\s*[：:\s]+([A-Z0-9]{4,20})/i,
-    /\d+%\s*off\s+(?:Code|CODE)\s*[：:\s]+([A-Z0-9]{4,20})/i,
+    // "Discount code: OFLO45VW"
+    /discount\s*code\s*[：:\s]+([A-Z0-9]{4,20})/i,
+    // "Promo code: XXXX"
+    /promo\s*code\s*[：:\s]+([A-Z0-9]{4,20})/i,
+    // "Coupon code: XXXX"
+    /coupon\s*code\s*[：:\s]+([A-Z0-9]{4,20})/i,
+    // "Code: XXXX"
     /\bcode\s*[：:\s]+([A-Z0-9]{4,20})\b/i,
+    // "50%OFF Code: XXXX"
+    /\d+%\s*(?:off\s*)?(?:code|CODE)\s*[：:\s]+([A-Z0-9]{4,20})/i,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
     if (m) {
-      const code = m[1].toUpperCase();
+      const code = m[1].trim().toUpperCase();
+      // Skip if it looks like an ASIN
       if (code.match(/^B0[A-Z0-9]{8}$/)) continue;
+      // Skip generic words
+      if (['DEAL', 'CODE', 'PROMO', 'SALE', 'OFF', 'DISCOUNT', 'COUPON', 'FREE'].includes(code)) continue;
       return code;
     }
   }
@@ -201,8 +224,8 @@ function extractRating(context) {
 
 function extractExpiryDate(context) {
   const patterns = [
-    /(?:end|expire[sd]?|expiry)\s*(?:date|day)\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
-    /(?:code\s*)?end\s*(?:date|day)\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
+    // "Code End Day: 2026-7-0823:59PDT" 
+    /(?:code\s*end\s*day|end\s*day|expire[sd]?|expiry)\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
     /(?:end|expire[sd]?)\s*(?:date|day)\s*[：:\s]+(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/i,
     /expir\w*\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
   ];
@@ -210,12 +233,13 @@ function extractExpiryDate(context) {
     const m = context.match(pat);
     if (m) {
       try {
-        const d = new Date(m[1]);
+        // Handle "2026-7-0823:59PDT" by extracting just the date part
+        const datePart = m[1].replace(/(\d{4}-\d{1,2}-\d{2})\d+.*/, '$1');
+        const d = new Date(datePart);
         if (!isNaN(d.getTime())) return d.toISOString();
       } catch (e) {}
     }
   }
-  // Default 7 days
   return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -223,10 +247,9 @@ async function scrapeAmazon(asin) {
   try {
     const res = await fetch('https://www.amazon.com/dp/' + asin, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
         'Cache-Control': 'no-cache',
       },
       redirect: 'follow',
@@ -242,9 +265,18 @@ async function scrapeAmazon(asin) {
       || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
       || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
       || null;
+
+    // If scrape blocked, try widget URL
+    if (!image) {
+      const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
+      return { title: cleanTitle(title), image: widgetUrl };
+    }
+
     return { title: cleanTitle(title), image };
   } catch (e) {
-    return null;
+    // Fallback to widget URL
+    const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
+    return { title: null, image: widgetUrl };
   }
 }
 
@@ -398,7 +430,8 @@ export default async (req, context) => {
       const scraped = await scrapeAmazon(asin);
       if (scraped) {
         if (!title && scraped.title) title = scraped.title;
-        if (scraped.image && scraped.image.includes('m.media-amazon.com/images/I/')) {
+        if (scraped.image) {
+          // Try R2 upload first, fall back to direct URL
           const r2Url = await uploadToR2(scraped.image, asin);
           imageUrl = r2Url || scraped.image;
         }
