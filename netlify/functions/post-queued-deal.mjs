@@ -84,33 +84,44 @@ async function fetchAndUploadImage(imageUrl, asin) {
   }
 }
 
-async function scrapeAmazonImage(asin) {
+async function getAmazonImage(asin) {
+  // Try scraping first
   try {
     const res = await fetch('https://www.amazon.com/dp/' + asin, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Cache-Control': 'no-cache',
       },
       redirect: 'follow',
     });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
-    const priceMatch = html.match(/"priceAmount":([\d.]+)/) || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
-    const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
-    const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/"thumb":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/data-old-hires="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
-      || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
-      || null;
-    return { title, price, image };
+    if (res.ok) {
+      const html = await res.text();
+      const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
+      const priceMatch = html.match(/"priceAmount":([\d.]+)/) || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
+      const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
+      const image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+        || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+        || html.match(/"thumb":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+        || html.match(/data-old-hires="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+        || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+        || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
+        || null;
+      if (image) return { title, price, image };
+    }
   } catch (e) {
-    return null;
+    console.error('Scrape failed:', e.message);
   }
+
+  // Fallback: use Amazon widget image URL
+  const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
+  try {
+    const testRes = await fetch(widgetUrl, { method: 'HEAD' });
+    if (testRes.ok) return { title: null, price: null, image: widgetUrl };
+  } catch (e) {}
+
+  return null;
 }
 
 async function postToTelegram(deal) {
@@ -137,19 +148,13 @@ async function postToTelegram(deal) {
       });
       const data = await res.json();
       if (!data.ok) {
-        await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
-        });
+        console.error('Telegram sendPhoto failed:', JSON.stringify(data));
+        return false;
       }
     } else {
-      const text = caption.length > 4096 ? caption.substring(0, 4093) + '...' : caption;
-      await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text }),
-      });
+      // No image — skip posting
+      console.log('No image for deal, skipping Telegram post:', deal.url);
+      return false;
     }
     return true;
   } catch (e) {
@@ -188,11 +193,7 @@ async function postToFacebook(deal) {
         });
       }
     } else {
-      await fetch('https://graph.facebook.com/v19.0/' + pageId + '/feed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, link: deal.url, access_token: pageToken }),
-      });
+      return false;
     }
     return true;
   } catch (e) {
@@ -217,46 +218,60 @@ export default async (req, context) => {
   const deal = queue.shift();
 
   if (deal.store === 'amazon' && deal.asin) {
-    const scraped = await scrapeAmazonImage(deal.asin);
+    const scraped = await getAmazonImage(deal.asin);
     if (scraped) {
       deal.title = scraped.title || deal.title;
       deal.price = deal.price || scraped.price;
       if (scraped.image) {
+        // Try to upload to R2 first for reliable delivery
         const r2Url = await fetchAndUploadImage(scraped.image, deal.asin);
         deal.imageUrl = r2Url || scraped.image;
       }
     }
-    if (!deal.imageUrl) {
-      deal.imageUrl = 'https://images-na.ssl-images-amazon.com/images/P/' + deal.asin + '.01.LZZZZZZZ.jpg';
-    }
+  }
+
+  // If no image found, put deal back at front of queue and skip for now
+  if (!deal.imageUrl) {
+    console.log('No image found for deal, requeueing:', deal.url);
+    queue.unshift(deal);
+    await queueStore.setJSON('queue', queue);
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'No image found, deal requeued',
+      url: deal.url,
+      queueRemaining: queue.length,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
   const telegramOk = await postToTelegram(deal);
   const facebookOk = await postToFacebook(deal);
 
-  const submission = {
-    id: deal.id,
-    title: deal.title,
-    price: deal.price || null,
-    originalPrice: deal.originalPrice || null,
-    discountPercent: deal.discount ? parseInt(deal.discount) : null,
-    url: deal.url,
-    image: deal.imageUrl || null,
-    discountCode: deal.promoCode || null,
-    source: 'email',
-    store: deal.store || 'amazon',
-    status: 'approved',
-    sponsored: false,
-    createdAt: new Date().toISOString(),
-    expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  };
+  // Only save to submissions if posted successfully
+  if (telegramOk) {
+    const submission = {
+      id: deal.id,
+      title: deal.title,
+      price: deal.price || null,
+      originalPrice: deal.originalPrice || null,
+      discountPercent: deal.discount ? parseInt(deal.discount) : null,
+      url: deal.url,
+      image: deal.imageUrl || null,
+      discountCode: deal.promoCode || null,
+      source: 'email',
+      store: deal.store || 'amazon',
+      status: 'approved',
+      sponsored: false,
+      createdAt: new Date().toISOString(),
+      expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    };
 
-  await submissionsStore.setJSON(deal.id, submission);
+    await submissionsStore.setJSON(deal.id, submission);
 
-  let index = [];
-  try { index = await submissionsStore.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
-  index.unshift(deal.id);
-  await submissionsStore.setJSON('index', index);
+    let index = [];
+    try { index = await submissionsStore.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
+    index.unshift(deal.id);
+    await submissionsStore.setJSON('index', index);
+  }
 
   await queueStore.setJSON('queue', queue);
 
