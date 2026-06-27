@@ -6,7 +6,7 @@ const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
 const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
-const MAX_AGE_HOURS = 168; // 7 days
+const MAX_AGE_HOURS = 72; // 3 days
 const SUSPICIOUS_DISCOUNT = 85; // Flag deals with 80%+ discount for review
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
@@ -316,5 +316,5 @@ export default async (req) => {
 };
 
 export const config = {
-  schedule: "0 * * * *",
+  schedule: "*/30 * * * *",
 };
