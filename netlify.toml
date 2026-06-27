@@ -9,3 +9,8 @@
   from = "/api/deals"
   to = "/.netlify/functions/get-deals"
   status = 200
+
+[[redirects]]
+  from = "/go"
+  to = "/.netlify/functions/go"
+  status = 200
