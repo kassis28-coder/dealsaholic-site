@@ -196,16 +196,15 @@
     const asin = deal.asin || originalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1];
     const params = new URLSearchParams();
     if (asin) params.set('asin', asin);
-    else if (originalUrl) params.set('url', encodeURIComponent(originalUrl));
-    if (deal.title) params.set('title', encodeURIComponent(deal.title));
-    if (deal.price) params.set('price', encodeURIComponent(deal.price));
-    if (deal.originalPrice) params.set('original', encodeURIComponent(deal.originalPrice));
+    else if (originalUrl) params.set('url', originalUrl);
+    if (deal.title) params.set('title', deal.title);
+    if (deal.price) params.set('price', deal.price);
+    if (deal.originalPrice) params.set('original', deal.originalPrice);
     if (deal.discountPercent) params.set('discount', deal.discountPercent);
-    if (deal.image) params.set('image', encodeURIComponent(deal.image));
-    if (deal.discountCode) params.set('code', encodeURIComponent(deal.discountCode));
+    if (deal.image) params.set('image', deal.image);
+    if (deal.discountCode) params.set('code', deal.discountCode);
     if (deal.storeType) params.set('store', deal.storeType);
     return '/deal.html?' + params.toString();
-  }
   }
 
   function updateURL() {
@@ -330,7 +329,7 @@
     const dealUrl = buildDealUrl(deal);
     const storeLabel = deal.sponsored ? 'View Deal' : deal.storeType === 'walmart' ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon';
     return `
-      <a class="deal-card" href="${dealUrl}" target="_blank" rel="nofollow sponsored noopener">
+      <a class="deal-card" href="${dealUrl}">
         <div class="deal-card__image-wrap">
           ${deal.sponsored ? `<div class="deal-card__badge" style="background:#6B6459;">SPONSORED</div>` : (deal.discountPercent ? `<div class="deal-card__badge">${deal.discountPercent}% OFF</div>` : '')}
           ${deal.image ? `<img class="deal-card__image" src="${deal.image}" alt="${escapeHtml(deal.title)}" loading="lazy">` : ''}
