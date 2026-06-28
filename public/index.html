@@ -193,16 +193,19 @@
 
   function buildDealUrl(deal) {
     const originalUrl = deal.url || deal.productUrl || '';
-    // Extract ASIN from Amazon URLs
     const asin = deal.asin || originalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1];
-    if (asin && originalUrl.includes('amazon.com')) {
-      return '/go?asin=' + asin;
-    }
-    // For non-Amazon links, pass through redirect
-    if (originalUrl) {
-      return '/go?url=' + encodeURIComponent(originalUrl);
-    }
-    return originalUrl;
+    const params = new URLSearchParams();
+    if (asin) params.set('asin', asin);
+    else if (originalUrl) params.set('url', encodeURIComponent(originalUrl));
+    if (deal.title) params.set('title', encodeURIComponent(deal.title));
+    if (deal.price) params.set('price', encodeURIComponent(deal.price));
+    if (deal.originalPrice) params.set('original', encodeURIComponent(deal.originalPrice));
+    if (deal.discountPercent) params.set('discount', deal.discountPercent);
+    if (deal.image) params.set('image', encodeURIComponent(deal.image));
+    if (deal.discountCode) params.set('code', encodeURIComponent(deal.discountCode));
+    if (deal.storeType) params.set('store', deal.storeType);
+    return '/deal.html?' + params.toString();
+  }
   }
 
   function updateURL() {
