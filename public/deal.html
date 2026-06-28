@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deal — Deals-aholic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAF8F4;
+    --card: #FFFFFF;
+    --ink: #1C1A17;
+    --ink-soft: #6B6459;
+    --line: #ECE6DB;
+    --brand: #FF8A1E;
+    --brand-dark: #D96E0C;
+    --green: #1C8C5A;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
+  .nav { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; align-items: center; }
+  .nav__logo { font-family: 'Archivo Black', sans-serif; font-size: 19px; color: var(--ink); text-transform: uppercase; letter-spacing: -0.01em; text-decoration: none; }
+  .nav__logo span { color: var(--brand); }
+  .container { max-width: 480px; margin: 0 auto; padding: 32px 24px; flex: 1; }
+  .deal-image { width: 100%; max-width: 280px; display: block; margin: 0 auto 24px; border-radius: 12px; background: #fff; padding: 16px; border: 1px solid var(--line); }
+  .deal-title { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 16px; text-align: center; }
+  .deal-price-row { display: flex; align-items: baseline; gap: 12px; justify-content: center; margin-bottom: 8px; }
+  .deal-price { font-family: 'Archivo Black', sans-serif; font-size: 32px; color: var(--ink); }
+  .deal-price-original { font-size: 18px; color: var(--ink-soft); text-decoration: line-through; }
+  .deal-badge { display: inline-block; background: var(--green); color: #fff; font-weight: 700; font-size: 14px; padding: 6px 14px; border-radius: 999px; margin-bottom: 20px; }
+  .deal-code { background: #FFF3E0; border: 1.5px dashed var(--brand); border-radius: 10px; padding: 14px; text-align: center; margin-bottom: 24px; }
+  .deal-code__label { font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
+  .deal-code__value { font-size: 20px; font-weight: 700; letter-spacing: 2px; }
+  .deal-code__copy { display: block; margin-top: 10px; font-size: 13px; color: var(--brand); cursor: pointer; background: none; border: none; font-family: 'Inter', sans-serif; font-weight: 600; }
+  .cta-btn { display: block; width: 100%; background: var(--brand); color: #fff; font-weight: 700; font-size: 18px; text-align: center; border-radius: 12px; padding: 18px 0; text-decoration: none; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(255,138,30,0.4); }
+  .cta-btn:hover { background: var(--brand-dark); }
+  .back-link { display: block; text-align: center; font-size: 14px; color: var(--ink-soft); text-decoration: none; margin-bottom: 32px; }
+  .disclaimer { font-size: 11px; color: var(--ink-soft); text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <a href="/" class="nav__logo">Deals-<span>aholic</span></a>
+</nav>
+<div class="container">
+  <img id="deal-image" class="deal-image" src="" alt="" style="display:none">
+  <h1 id="deal-title" class="deal-title"></h1>
+  <div style="text-align:center">
+    <div class="deal-price-row">
+      <span id="deal-price" class="deal-price"></span>
+      <span id="deal-original" class="deal-price-original"></span>
+    </div>
+    <div id="deal-badge" class="deal-badge" style="display:none"></div>
+  </div>
+  <div id="deal-code-wrap" class="deal-code" style="display:none">
+    <div class="deal-code__label">Use this code at checkout</div>
+    <div id="deal-code" class="deal-code__value"></div>
+    <button class="deal-code__copy" onclick="copyCode()">📋 Copy Code</button>
+  </div>
+  <a id="deal-cta" class="cta-btn" href="#" target="_blank" rel="nofollow noopener">🛍️ Get This Deal on Amazon</a>
+  <a href="/" class="back-link">← Back to all deals</a>
+  <p class="disclaimer">As an Amazon Associate, Deals-aholic earns from qualifying purchases. Prices and availability are subject to change.</p>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const asin = params.get('asin');
+  const title = params.get('title');
+  const price = params.get('price');
+  const original = params.get('original');
+  const discount = params.get('discount');
+  const image = params.get('image');
+  const code = params.get('code');
+  const store = params.get('store') || 'amazon';
+  const url = params.get('url');
+
+  // Build affiliate URL
+  let affiliateUrl;
+  if (asin) {
+    affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
+  } else if (url) {
+    affiliateUrl = decodeURIComponent(url);
+  }
+
+  if (title) {
+    document.getElementById('deal-title').textContent = decodeURIComponent(title);
+    document.title = decodeURIComponent(title) + ' — Deals-aholic';
+  }
+  if (price) document.getElementById('deal-price').textContent = decodeURIComponent(price);
+  if (original) document.getElementById('deal-original').textContent = decodeURIComponent(original);
+  if (discount) {
+    const badge = document.getElementById('deal-badge');
+    badge.textContent = discount + '% OFF';
+    badge.style.display = 'inline-block';
+  }
+  if (image) {
+    const img = document.getElementById('deal-image');
+    img.src = decodeURIComponent(image);
+    img.alt = title ? decodeURIComponent(title) : 'Deal image';
+    img.style.display = 'block';
+  }
+  if (code) {
+    document.getElementById('deal-code').textContent = decodeURIComponent(code);
+    document.getElementById('deal-code-wrap').style.display = 'block';
+  }
+  if (affiliateUrl) {
+    const cta = document.getElementById('deal-cta');
+    cta.href = affiliateUrl;
+    if (store === 'walmart') cta.textContent = '🛒 Get This Deal on Walmart';
+  }
+
+  function copyCode() {
+    const code = document.getElementById('deal-code').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = document.querySelector('.deal-code__copy');
+      btn.textContent = '✅ Copied!';
+      setTimeout(() => btn.textContent = '📋 Copy Code', 2000);
+    });
+  }
+</script>
+</body>
+</html>
