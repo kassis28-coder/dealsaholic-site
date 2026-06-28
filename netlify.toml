@@ -14,3 +14,13 @@
   from = "/go"
   to = "/.netlify/functions/go"
   status = 200
+
+[[redirects]]
+  from = "/deal.html"
+  to = "/deal.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
