@@ -248,8 +248,9 @@ export default async (req, context) => {
 
   // Only save to submissions if posted successfully
   if (telegramOk) {
-    const submission = {
+  const submission = {
       id: deal.id,
+      asin: deal.asin || null,
       title: deal.title,
       price: deal.price || null,
       originalPrice: deal.originalPrice || null,
