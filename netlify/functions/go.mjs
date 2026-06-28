@@ -6,7 +6,7 @@ export default async (req) => {
   let redirectUrl;
 
   if (asin) {
-    redirectUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
+  redirectUrl = `https://smile.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
   } else if (dest) {
     // For non-Amazon links (Walmart, etc)
     redirectUrl = decodeURIComponent(dest);
