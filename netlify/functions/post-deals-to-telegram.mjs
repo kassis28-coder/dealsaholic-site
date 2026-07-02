@@ -180,5 +180,5 @@ export default async function handler() {
 }
 
 export const config = {
-  schedule: "*/10 * * * *", // runs every 10 minutes
+  schedule: "*/10 10-3 * * *", // every 10 min, 6am-11pm EST (UTC is EST+4... wait)
 };
