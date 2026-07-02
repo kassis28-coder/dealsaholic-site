@@ -9,10 +9,3 @@
   from = "/api/deals"
   to = "/.netlify/functions/get-deals"
   status = 200
-
-[[redirects]]
-  // FROM:
-schedule: "0 * * * *",
-
-// TO:
-schedule: "*/10 * * * *",
