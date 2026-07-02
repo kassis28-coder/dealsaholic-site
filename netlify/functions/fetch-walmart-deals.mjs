@@ -189,5 +189,5 @@ export default async function handler(req) {
 }
 
 export const config = {
-  schedule: "0 */3 10-3 * *", // every 3 hours, 6am-11pm EST
+  schedule: "0 */3 * * *", // every 3 hours
 };
