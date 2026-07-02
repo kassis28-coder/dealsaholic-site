@@ -1,4 +1,4 @@
-mport { getStore } from "@netlify/blobs";
+import { getStore } from "@netlify/blobs";
 
 const ACCOUNT_SID = process.env.IMPACT_ACCOUNT_SID;
 const AUTH_TOKEN = process.env.IMPACT_AUTH_TOKEN;
