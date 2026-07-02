@@ -31,7 +31,6 @@ async function fetchWalmartDeals() {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           "Accept-Language": "en-US,en;q=0.5",
-          "Accept-Encoding": "gzip, deflate, br",
           "Connection": "keep-alive",
           "Upgrade-Insecure-Requests": "1",
         },
@@ -43,9 +42,6 @@ async function fetchWalmartDeals() {
       }
 
       const html = await res.text();
-
-      // Extract JSON data embedded in Walmart's page
-      // Walmart embeds product data in __NEXT_DATA__ or window.__WML_REDUX_INITIAL_STATE__
       let products = [];
 
       // Try __NEXT_DATA__ first
@@ -53,39 +49,20 @@ async function fetchWalmartDeals() {
       if (nextDataMatch) {
         try {
           const nextData = JSON.parse(nextDataMatch[1]);
-          // Navigate the nested structure to find products
           const props = nextData?.props?.pageProps?.initialData?.searchResult?.itemStacks;
           if (props) {
             for (const stack of props) {
-              if (stack?.items) {
-                products.push(...stack.items);
-              }
+              if (stack?.items) products.push(...stack.items);
             }
           }
-          // Also try contentLayout path
           const contentLayout = nextData?.props?.pageProps?.initialData?.contentLayout?.modules;
           if (contentLayout) {
             for (const module of contentLayout) {
-              if (module?.configs?.products) {
-                products.push(...module.configs.products);
-              }
+              if (module?.configs?.products) products.push(...module.configs.products);
             }
           }
         } catch (e) {
           console.log("Could not parse __NEXT_DATA__:", e.message);
-        }
-      }
-
-      // Try extracting from inline JSON blobs
-      if (products.length === 0) {
-        const jsonMatches = html.matchAll(/"item":\{"id":"([^"]+)","usItemId":"([^"]+)","name":"([^"]+)"[^}]*"salePrice":(\d+\.?\d*)[^}]*"imageUrl":"([^"]+)"/g);
-        for (const match of jsonMatches) {
-          products.push({
-            usItemId: match[2],
-            name: match[3],
-            salePrice: parseFloat(match[4]),
-            imageUrl: match[5],
-          });
         }
       }
 
@@ -99,22 +76,18 @@ async function fetchWalmartDeals() {
           const originalPrice = item?.priceInfo?.wasPrice?.price || item?.wasPrice || item?.price?.wasPrice;
           const imageUrl = item?.imageInfo?.thumbnailUrl || item?.imageUrl || item?.image;
           const rating = item?.rating?.averageRating || item?.averageRating || 0;
-          const numRatings = item?.rating?.numberOfRatings || item?.numRatings || 0;
 
           if (!id || !name || !salePrice) continue;
 
-          // Calculate discount
           let discountPercent = 0;
           if (originalPrice && originalPrice > salePrice) {
             discountPercent = Math.round(((originalPrice - salePrice) / originalPrice) * 100);
           }
 
-          // Filter: minimum 20% off, rating 3.5+, must have image
           if (discountPercent < 20) continue;
           if (rating > 0 && rating < 3.5) continue;
           if (!imageUrl) continue;
 
-          // Block adult content
           const blocked = ["adult", "sex", "xxx", "erotic", "lingerie"];
           if (blocked.some(w => name.toLowerCase().includes(w))) continue;
 
@@ -132,10 +105,9 @@ async function fetchWalmartDeals() {
             status: "approved",
             sponsored: false,
             rating: rating,
-            numRatings: numRatings,
             source: "walmart-scraper",
             createdAt: new Date().toISOString(),
-            expiresOn: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+            expiresOn: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           });
 
         } catch (e) {
@@ -143,7 +115,6 @@ async function fetchWalmartDeals() {
         }
       }
 
-      // Small delay between requests to be polite
       await new Promise(r => setTimeout(r, 1000));
 
     } catch (e) {
@@ -154,49 +125,62 @@ async function fetchWalmartDeals() {
   return deals;
 }
 
-export default async function handler() {
-  try {
-    console.log("⏰ fetch-walmart-deals triggered");
+// Core logic shared by both scheduled and HTTP trigger
+async function runFetchWalmartDeals() {
+  const store = getStore("submissions");
+  const { blobs } = await store.list();
+  const existingIds = new Set(blobs.map(b => b.key));
+  console.log(`Existing submissions: ${existingIds.size}`);
 
-    const store = getStore("submissions");
+  const deals = await fetchWalmartDeals();
+  console.log(`Total Walmart deals found: ${deals.length}`);
 
-    // Get existing deal IDs to avoid duplicates
-    const { blobs } = await store.list();
-    const existingIds = new Set(blobs.map(b => b.key));
-    console.log(`Existing submissions: ${existingIds.size}`);
-
-    // Fetch Walmart deals
-    const deals = await fetchWalmartDeals();
-    console.log(`Total Walmart deals found: ${deals.length}`);
-
-    if (deals.length === 0) {
-      console.log("No Walmart deals found this run");
-      return new Response(JSON.stringify({ success: true, added: 0, message: "No deals found" }), {
-        headers: { "Content-Type": "application/json" },
-      });
+  let added = 0;
+  for (const deal of deals) {
+    if (existingIds.has(deal.id)) {
+      console.log(`Skipping duplicate: ${deal.id}`);
+      continue;
     }
+    await store.set(deal.id, JSON.stringify(deal));
+    added++;
+    console.log(`✅ Added: ${deal.title} - ${deal.price} (${deal.discountPercent}% off)`);
+  }
 
-    // Save new deals to Netlify Blobs
-    let added = 0;
-    for (const deal of deals) {
-      if (existingIds.has(deal.id)) {
-        console.log(`Skipping duplicate: ${deal.id}`);
-        continue;
-      }
-      await store.set(deal.id, JSON.stringify(deal));
-      added++;
-      console.log(`✅ Added: ${deal.title} - ${deal.price} (${deal.discountPercent}% off)`);
+  console.log(`✅ Done! Added ${added} new Walmart deals`);
+  return { success: true, added, total: deals.length };
+}
+
+// HTTP handler — triggered by URL
+export default async function handler(req) {
+  // Scheduled function trigger (no request object)
+  if (!req || !req.url) {
+    try {
+      await runFetchWalmartDeals();
+    } catch (err) {
+      console.error("❌ Error:", err);
     }
+    return;
+  }
 
-    console.log(`✅ Done! Added ${added} new Walmart deals`);
+  // Manual URL trigger — check for admin password
+  const url = new URL(req.url);
+  const password = url.searchParams.get("password");
+  const adminPassword = process.env.ADMIN_PASSWORD;
 
+  if (!password || password !== adminPassword) {
     return new Response(
-      JSON.stringify({ success: true, added, total: deals.length }),
-      { headers: { "Content-Type": "application/json" } }
+      JSON.stringify({ error: "Unauthorized — add ?password=YOUR_ADMIN_PASSWORD to the URL" }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
     );
+  }
 
+  try {
+    const result = await runFetchWalmartDeals();
+    return new Response(JSON.stringify(result), {
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err) {
-    console.error("❌ Error in fetch-walmart-deals:", err);
+    console.error("❌ Error:", err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }
