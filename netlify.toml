@@ -14,3 +14,6 @@
   from = "/go"
   to = "/.netlify/functions/go"
   status = 200
+[[functions]]
+  path = "netlify/functions/post-deals-to-telegram.mjs"
+  schedule = "0 * * * *"
