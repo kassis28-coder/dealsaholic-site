@@ -180,5 +180,5 @@ export default async function handler() {
 }
 
 export const config = {
-  schedule: "0 * * * *", // runs every hour on the hour
+  schedule: "*/10 * * * *", // runs every 10 minutes
 };
