@@ -116,12 +116,9 @@ function getContextAroundUrl(text, url, asin, windowSize = 600) {
 
 function extractTitle(context) {
   const patterns = [
-    // "Product name: TITLE" format
     /product\s*name\s*[：:]\s*([^\n\r]{5,200})/i,
-    // "#1\n60% off TITLE" format
     /#[\w\d]+\s*[\n\r]+\s*[\d]+%\s*off\s+([^\n\r]{5,150})/i,
     /[\d]+%\s*off\s+([A-Z][^\n\r]{5,150})/i,
-    // "#US01\nTITLE" format
     /#[\w\d]+\s*[\n\r]+\s*([A-Z][^\n\r]{5,150})/,
   ];
   for (const pat of patterns) {
@@ -143,13 +140,9 @@ function extractTitle(context) {
 
 function extractPrice(context) {
   const patterns = [
-    // "Discount price: 20" or "Deal price: $20"
     /(?:deal|discount|final|sale)\s*price\s*[：:]\s*\$?([\d.]+)/i,
-    // "price(Reg.xx)" format
     /\$?([\d.]+)\s*\(Reg/i,
-    // plain "$20"
     /\$\s*([\d.]+)/,
-    // plain number after price label
     /price\s*[：:]\s*([\d.]+)/i,
   ];
   for (const pat of patterns) {
@@ -176,7 +169,6 @@ function extractOriginalPrice(context) {
 
 function extractDiscount(context) {
   const patterns = [
-    // "Discount:50%code" or "Discount:50%" 
     /discount\s*[：:]\s*(\d+)\s*%/i,
     /(\d+)\s*%\s*off/i,
     /off\s*[：:]\s*(\d+)\s*%/i,
@@ -191,24 +183,17 @@ function extractDiscount(context) {
 
 function extractPromoCode(context) {
   const patterns = [
-    // "Discount code: OFLO45VW"
     /discount\s*code\s*[：:\s]+([A-Z0-9]{4,20})/i,
-    // "Promo code: XXXX"
     /promo\s*code\s*[：:\s]+([A-Z0-9]{4,20})/i,
-    // "Coupon code: XXXX"
     /coupon\s*code\s*[：:\s]+([A-Z0-9]{4,20})/i,
-    // "Code: XXXX"
     /\bcode\s*[：:\s]+([A-Z0-9]{4,20})\b/i,
-    // "50%OFF Code: XXXX"
     /\d+%\s*(?:off\s*)?(?:code|CODE)\s*[：:\s]+([A-Z0-9]{4,20})/i,
   ];
   for (const pat of patterns) {
     const m = context.match(pat);
     if (m) {
       const code = m[1].trim().toUpperCase();
-      // Skip if it looks like an ASIN
       if (code.match(/^B0[A-Z0-9]{8}$/)) continue;
-      // Skip generic words
       if (['DEAL', 'CODE', 'PROMO', 'SALE', 'OFF', 'DISCOUNT', 'COUPON', 'FREE'].includes(code)) continue;
       return code;
     }
@@ -224,7 +209,6 @@ function extractRating(context) {
 
 function extractExpiryDate(context) {
   const patterns = [
-    // "Code End Day: 2026-7-0823:59PDT" 
     /(?:code\s*end\s*day|end\s*day|expire[sd]?|expiry)\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
     /(?:end|expire[sd]?)\s*(?:date|day)\s*[：:\s]+(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/i,
     /expir\w*\s*[：:\s]+(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/i,
@@ -233,7 +217,6 @@ function extractExpiryDate(context) {
     const m = context.match(pat);
     if (m) {
       try {
-        // Handle "2026-7-0823:59PDT" by extracting just the date part
         const datePart = m[1].replace(/(\d{4}-\d{1,2}-\d{2})\d+.*/, '$1');
         const d = new Date(datePart);
         if (!isNaN(d.getTime())) return d.toISOString();
@@ -265,16 +248,12 @@ async function scrapeAmazon(asin) {
       || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
       || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
       || null;
-
-    // If scrape blocked, try widget URL
     if (!image) {
       const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
       return { title: cleanTitle(title), image: widgetUrl };
     }
-
     return { title: cleanTitle(title), image };
   } catch (e) {
-    // Fallback to widget URL
     const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
     return { title: null, image: widgetUrl };
   }
@@ -394,9 +373,23 @@ export default async (req, context) => {
   });
 
   const queueStore = getStore("deal-queue");
+  const submissionsStore = getStore("submissions");
 
   let queue = [];
   try { queue = await queueStore.get('queue', { type: 'json' }) || []; } catch (e) { queue = []; }
+
+  // Load recent submission ASINs for dedup check
+  let recentAsins = new Set();
+  try {
+    const index = await submissionsStore.get('index', { type: 'json' }) || [];
+    const recent = index.slice(0, 100);
+    for (const id of recent) {
+      try {
+        const sub = await submissionsStore.get(id, { type: 'json' });
+        if (sub?.asin) recentAsins.add(sub.asin);
+      } catch (e) {}
+    }
+  } catch (e) {}
 
   const MAX_QUEUE = 200;
   const MAX_PER_EMAIL = 50;
@@ -417,6 +410,16 @@ export default async (req, context) => {
     if (rating !== null && rating < 4.0) { skipped.push({ url, reason: 'rating < 4.0', rating }); continue; }
     if (isAdultContent(titleFromEmail, ctx)) { skipped.push({ url, reason: 'adult content' }); continue; }
 
+    // Dedup check — skip if ASIN already in queue or recently posted
+    if (asin && queue.some(q => q.asin === asin)) {
+      skipped.push({ url, reason: 'duplicate - already in queue' });
+      continue;
+    }
+    if (asin && recentAsins.has(asin)) {
+      skipped.push({ url, reason: 'duplicate - already posted recently' });
+      continue;
+    }
+
     const price = extractPrice(ctx);
     const originalPrice = extractOriginalPrice(ctx);
     const promoCode = extractPromoCode(ctx);
@@ -431,7 +434,6 @@ export default async (req, context) => {
       if (scraped) {
         if (!title && scraped.title) title = scraped.title;
         if (scraped.image) {
-          // Try R2 upload first, fall back to direct URL
           const r2Url = await uploadToR2(scraped.image, asin);
           imageUrl = r2Url || scraped.image;
         }
