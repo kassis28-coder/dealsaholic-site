@@ -462,6 +462,9 @@ export default async (req, context) => {
 
   await queueStore.setJSON('queue', queue);
 
+  // Get the last added deal for social media posting
+  const lastDeal = queue[queue.length - 1] || null;
+
   return new Response(JSON.stringify({
     success: true,
     totalFound: allUrls.length,
@@ -469,7 +472,13 @@ export default async (req, context) => {
     skipped: skipped.length,
     queueLength: queue.length,
     skipReasons: skipped.slice(0, 10),
+    // Return first deal data for Make.com Facebook posting
+    title: lastDeal?.title || null,
+    price: lastDeal?.price || null,
+    promoCode: lastDeal?.promoCode || null,
+    imageUrl: lastDeal?.imageUrl || null,
+    url: lastDeal?.url || null,
+    discount: lastDeal?.discount || null,
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-};
 
 export const config = { path: '/api/submit-email-deal' };
