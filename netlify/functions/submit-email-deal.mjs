@@ -1,4 +1,4 @@
- import { getStore } from "@netlify/blobs";
+  import { getStore } from "@netlify/blobs";
 
 async function followRedirectForAsin(amazonUrl) {
   try {
