@@ -1,3 +1,6 @@
+Here's the full code — copy everything below and paste it into GitHub, replacing the entire contents of `public/deal.html`:
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,7 +36,7 @@
   .deal-code__label { font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
   .deal-code__value { font-size: 20px; font-weight: 700; letter-spacing: 2px; }
   .deal-code__copy { display: block; margin-top: 10px; font-size: 13px; color: var(--brand); cursor: pointer; background: none; border: none; font-family: 'Inter', sans-serif; font-weight: 600; }
-  .cta-btn { display: block; width: 100%; background: var(--brand); color: #fff; font-weight: 700; font-size: 18px; text-align: center; border-radius: 12px; padding: 18px 0; text-decoration: none; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(255,138,30,0.4); }
+  .cta-btn { display: block; width: 100%; background: var(--brand); color: #fff; font-weight: 700; font-size: 18px; text-align: center; border-radius: 12px; padding: 18px 0; text-decoration: none; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(255,138,30,0.4); cursor: pointer; border: none; font-family: 'Inter', sans-serif; }
   .cta-btn:hover { background: var(--brand-dark); }
   .back-link { display: block; text-align: center; font-size: 14px; color: var(--ink-soft); text-decoration: none; margin-bottom: 32px; }
   .disclaimer { font-size: 11px; color: var(--ink-soft); text-align: center; line-height: 1.5; }
@@ -58,7 +61,7 @@
     <div id="deal-code" class="deal-code__value"></div>
     <button class="deal-code__copy" onclick="copyCode()">📋 Copy Code</button>
   </div>
-  <a id="deal-cta" class="cta-btn" href="#" target="_blank" rel="nofollow noopener">🛍️ Get This Deal on Amazon</a>
+  <button id="deal-cta" class="cta-btn">🛍️ Get This Deal on Amazon</button>
   <a href="/" class="back-link">← Back to all deals</a>
   <p class="disclaimer">As an Amazon Associate, Deals-aholic earns from qualifying purchases. Prices and availability are subject to change.</p>
 </div>
@@ -103,11 +106,47 @@
     document.getElementById('deal-code').textContent = decodeURIComponent(code);
     document.getElementById('deal-code-wrap').style.display = 'block';
   }
-  if (affiliateUrl) {
-    const cta = document.getElementById('deal-cta');
-    cta.href = affiliateUrl;
-    if (store === 'walmart') cta.textContent = '🛒 Get This Deal on Walmart';
-  }
+
+  const ctaBtn = document.getElementById('deal-cta');
+  if (store === 'walmart') ctaBtn.textContent = '🛒 Get This Deal on Walmart';
+
+  // Detect platform so we know which "force Safari/Chrome" trick to use
+  const ua = navigator.userAgent || navigator.vendor || window.opera;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isAndroid = /android/i.test(ua);
+
+  ctaBtn.addEventListener('click', function () {
+    if (!affiliateUrl) return;
+
+    if (isIOS) {
+      // Only amazon.com links are hijacked by the Amazon app via Universal Links.
+      // The x-safari- prefix forces iOS to open the link in Safari instead of
+      // launching the native app, which is what was silently killing the
+      // affiliate tag/cookie all month.
+      if (store !== 'walmart') {
+        window.location.href = 'x-safari-' + affiliateUrl;
+      } else {
+        window.location.href = affiliateUrl;
+      }
+    } else if (isAndroid) {
+      // On Android, prefix with intent:// + package=none forces Chrome instead
+      // of the Amazon app when it's installed.
+      if (store !== 'walmart') {
+        try {
+          const noProtocol = affiliateUrl.replace(/^https?:\/\//, '');
+          window.location.href = 'intent://' + noProtocol +
+            '#Intent;scheme=https;package=com.android.chrome;end';
+        } catch (e) {
+          window.open(affiliateUrl, '_blank');
+        }
+      } else {
+        window.open(affiliateUrl, '_blank');
+      }
+    } else {
+      // Desktop — just open normally
+      window.open(affiliateUrl, '_blank');
+    }
+  });
 
   function copyCode() {
     const code = document.getElementById('deal-code').textContent;
@@ -120,3 +159,6 @@
 </script>
 </body>
 </html>
+```
+
+Once that's committed and Netlify redeploys, test a link from Telegram on your phone — it should open in Safari instead of the Amazon app.
