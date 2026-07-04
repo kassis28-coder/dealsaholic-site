@@ -1,17 +1,26 @@
 [build]
   publish = "public"
-    functions = "netlify/functions"
+  functions = "netlify/functions"
 
-    [functions]
-      node_bundler = "esbuild"
+[functions]
+  node_bundler = "esbuild"
 
-      [[redirects]]
-        from = "/api/deals"
-          to = "/.netlify/functions/get-deals"
-            status = 200
+[[redirects]]
+  from = "/api/deals"
+  to = "/.netlify/functions/get-deals"
+  status = 200
 
-            [[redirects]]
-              from = "/api/fetch-walmart-deals"
-                to = "/.netlify/functions/fetch-walmart-deals"
-                  status = 200
-                  
+[[redirects]]
+  from = "/api/fetch-walmart-deals"
+  to = "/.netlify/functions/fetch-walmart-deals"
+  status = 200
+
+[[redirects]]
+  from = "/api/submit-email-deal"
+  to = "/.netlify/functions/submit-email-deal"
+  status = 200
+
+[[redirects]]
+  from = "/api/post-to-facebook"
+  to = "/.netlify/functions/post-to-facebook"
+  status = 200
