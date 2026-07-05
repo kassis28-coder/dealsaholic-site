@@ -280,6 +280,20 @@ export default async (req, context) => {
     try { index = await submissionsStore.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
     index.unshift(deal.id);
     await submissionsStore.setJSON('index', index);
+  // Keep telegram-posted dedup store in sync so post-deals-to-telegram.mjs doesn't repost this deal
+  try {
+    const postedStore = getStore("telegram-posted");
+    let postedIds = [];
+    try {
+      const postedData = await postedStore.get("posted-ids", { type: "json" });
+      if (postedData && Array.isArray(postedData)) postedIds = postedData;
+    } catch (e) {}
+    postedIds.push(deal.id);
+    if (postedIds.length > 500) postedIds = postedIds.slice(-500);
+    await postedStore.set("posted-ids", JSON.stringify(postedIds));
+  } catch (e) {
+    console.error("Failed to sync telegram-posted store:", e.message);
+  }
   }
 
   await queueStore.setJSON('queue', queue);
