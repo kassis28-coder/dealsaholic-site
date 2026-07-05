@@ -182,6 +182,11 @@ async function saveDeals(deals) {
   const { blobs } = await store.list();
   const existingKeys = new Set(blobs.map((b) => b.key));
   const now = Date.now();
+  let index = [];
+  try {
+    const idxData = await store.get("index", { type: "json" });
+    if (Array.isArray(idxData)) index = idxData;
+  } catch {}
   for (const blob of blobs) {
     if (!blob.key.startsWith("walmart-")) continue;
     try {
@@ -191,6 +196,7 @@ async function saveDeals(deals) {
       if (deal.expiresOn && new Date(deal.expiresOn).getTime() < now) {
         await store.delete(blob.key);
         existingKeys.delete(blob.key);
+        index = index.filter((i) => i !== blob.key);
       }
     } catch {}
   }
@@ -198,9 +204,13 @@ async function saveDeals(deals) {
   for (const deal of deals) {
     if (existingKeys.has(deal.id)) continue;
     await store.set(deal.id, JSON.stringify(deal));
+    if (!index.includes(deal.id)) index.unshift(deal.id);
     added++;
   }
-  return { added, total: deals.length };
+  await store.setJSON("index", index);
+await store.setJSON("index", index);
+await store.setJSON("index", index);
+return { added, total: deals.length };
 }
 
 async function run() {
@@ -212,7 +222,7 @@ async function run() {
 }
 
 export default async function handler(req) {
-  if (req && req.url) {
+  if (req && req.method === "GET") {
     const url = new URL(req.url);
     const password = url.searchParams.get("password");
     if (!password || password !== ADMIN_PASSWORD) {
