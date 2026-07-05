@@ -132,11 +132,15 @@ async function fetchWalmartPage(query) {
     },
   });
   if (!res.ok) { console.log(`Walmart fetch failed: ${res.status}`); return []; }
+console.log(`Walmart fetch ok: status=${res.status} finalUrl=${res.url}`);
   const html = await res.text();
+  console.log(`Walmart HTML length: ${html.length}, hasNextData: ${html.includes("__NEXT_DATA__")}`);
   const match = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (!match) return [];
+  // (diag) note: above line returns early if no NEXT_DATA match
   let pageData; try { pageData = JSON.parse(match[1]); } catch { return []; }
   const sr = pageData?.props?.pageProps?.initialData?.searchResult || pageData?.props?.pageProps?.searchResult || null;
+  console.log(`Walmart parsed: hasSearchResult=${!!sr}, stacks=${(sr?.itemStacks||[]).length}, items=${(sr?.itemStacks||[]).reduce((n,s)=>n+(s.items?.length||0),0)}`);
   return (sr?.itemStacks || []).flatMap((s) => s.items || []);
 }
 
