@@ -164,7 +164,7 @@ async function postToTelegram(deal) {
 }
 
 async function postToFacebook(deal) {
-  const pageToken = process.env.FFB_PAGE_TOKEN;
+  const pageToken = process.env.FB_PAGE_TOKEN;
   const pageId = process.env.FB_PAGE_ID;;
   if (!pageToken || !pageId) return false;
 
