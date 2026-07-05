@@ -164,9 +164,9 @@ async function postToTelegram(deal) {
 }
 
 async function postToFacebook(deal) {
-  const pageToken = process.env.FB_PAGE_TOKEN;
-  const pageId = process.env.FB_PAGE_ID;;
-  if (!pageToken || !pageId) return false;
+  const pageToken = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
+  const pageId = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
+  if (!pageToken || !pageId) return { ok: false, error: 'Missing FB credentials' };
 
   const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
@@ -179,28 +179,29 @@ async function postToFacebook(deal) {
 
   try {
     if (deal.imageUrl) {
-      const res = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/photos', {
+      const tok = pageToken;
+      const photoRes = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: deal.imageUrl, caption: message, access_token: pageToken }),
+        body: JSON.stringify({ url: deal.imageUrl, caption: message, access_token: tok }),
       });
-      const data = await res.json();
-      if (data.error) {
-        await fetch('https://graph.facebook.com/v19.0/' + pageId + '/feed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, link: deal.url, access_token: pageToken }),
-        });
-      }
-    } else {
-      return false;
+      const photoData = await photoRes.json();
+      if (photoData.id) return { ok: true, postId: photoData.id };
+      // Photo failed — try feed post
+      const feedRes = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/feed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, link: deal.url, access_token: tok }),
+      });
+      const feedData = await feedRes.json();
+      if (feedData.id) return { ok: true, postId: feedData.id, via: 'feed' };
+      return { ok: false, error: feedData.error?.message || photoData.error?.message || 'API error' };
     }
-    return true;
+    return { ok: false, error: 'No image URL' };
   } catch (e) {
-    return { error: e.message };
+    return { ok: false, error: e.message };
   }
 }
-
 export default async (req, context) => {
   const queueStore = getStore("deal-queue");
   const submissionsStore = getStore("submissions");
@@ -244,6 +245,8 @@ export default async (req, context) => {
 
   const telegramOk = await postToTelegram(deal);
   const fbResult = await postToFacebook(deal);
+  const facebookOk = fbResult?.ok === true;
+  const facebookError = fbResult?.ok ? null : (fbResult?.error || 'Unknown error');
   const facebookOk = fbResult === true;
   const facebookError = typeof fbResult === 'object' ? fbResult?.error : null;
 
