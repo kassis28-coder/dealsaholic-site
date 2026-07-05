@@ -164,8 +164,8 @@ async function postToTelegram(deal) {
 }
 
 async function postToFacebook(deal) {
-  const pageToken = process.env.FACEBOOK_PAGE_TOKEN;
-  const pageId = process.env.FACEBOOK_PAGE_ID;
+  const pageToken = process.env.FFB_PAGE_TOKEN;
+  const pageId = process.env.FB_PAGE_ID;;
   if (!pageToken || !pageId) return false;
 
   const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
@@ -261,6 +261,7 @@ export default async (req, context) => {
       source: 'email',
       store: deal.store || 'amazon',
       status: 'approved',
+      postedToFacebook: facebookOk,
       sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
