@@ -233,7 +233,7 @@ export default async (req, context) => {
   // If no image found, put deal back at front of queue and skip for now
   if (!deal.imageUrl) {
     console.log('No image found for deal, requeueing:', deal.url);
-    queue.unshift(deal);
+    queue.push(deal);
     await queueStore.setJSON('queue', queue);
     return new Response(JSON.stringify({
       success: true,
