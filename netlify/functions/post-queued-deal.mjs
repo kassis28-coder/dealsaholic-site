@@ -248,8 +248,6 @@ export default async (req, context) => {
   const facebookOk = fbResult?.ok === true;
   const facebookError = fbResult?.ok ? null : (fbResult?.error || 'Unknown error');
   const facebookPostId = fbResult?.postId || null;
-  const facebookOk = fbResult === true;
-  const facebookError = typeof fbResult === 'object' ? fbResult?.error : null;
 
   // Only save to submissions if posted successfully
   if (telegramOk) {
