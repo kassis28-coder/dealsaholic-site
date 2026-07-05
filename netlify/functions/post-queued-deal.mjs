@@ -152,11 +152,17 @@ async function postToTelegram(deal) {
         return false;
       }
     } else {
-      // No image — skip posting
-      console.log('No image for deal, skipping Telegram post:', deal.url);
-      return false;
-    }
-    return true;
+      const msgRes = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
+      });
+      const msgData = await msgRes.json();
+      if (!msgData.ok) {
+        console.error('Telegram sendMessage failed:', JSON.stringify(msgData));
+        return false;
+      }
+    }    return true;
   } catch (e) {
     console.error('Telegram post failed:', e.message);
     return false;
@@ -197,7 +203,17 @@ async function postToFacebook(deal) {
       if (feedData.id) return { ok: true, postId: feedData.id, via: 'feed' };
       return { ok: false, error: feedData.error?.message || photoData.error?.message || 'API error' };
     }
-    return { ok: false, error: 'No image URL' };
+    // No image — try text-only feed post
+    const tok = pageToken;
+    const pid = pageId;
+    const noImgRes = await fetch('https://graph.facebook.com/v19.0/' + pid + '/feed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, link: deal.url, access_token: tok }),
+    });
+    const noImgData = await noImgRes.json();
+    if (noImgData.id) return { ok: true, postId: noImgData.id, via: 'feed-text' };
+    return { ok: false, error: noImgData.error?.message || 'FB API error' };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -231,18 +247,6 @@ export default async (req, context) => {
   }
 
   // If no image found, put deal back at front of queue and skip for now
-  if (!deal.imageUrl) {
-    console.log('No image found for deal, requeueing:', deal.url);
-    queue.push(deal);
-    await queueStore.setJSON('queue', queue);
-    return new Response(JSON.stringify({
-      success: true,
-      message: 'No image found, deal requeued',
-      url: deal.url,
-      queueRemaining: queue.length,
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }
-
   const telegramOk = await postToTelegram(deal);
   const fbResult = await postToFacebook(deal);
   const facebookOk = fbResult?.ok === true;
