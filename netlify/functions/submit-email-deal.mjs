@@ -127,9 +127,11 @@ export default async (req, context) => {
   const discountCode = claudeData?.discountCode || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
 
   const store = getStore("submissions");
+const queueStore = getStore("deal-queue");
   const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 20) : [null];
   const savedIds = [];
   const deals = [];
+const queueItems = [];
 
   for (const dealUrl of urlsToProcess) {
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
@@ -157,11 +159,22 @@ export default async (req, context) => {
     await store.setJSON(id, submission);
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
+    queueItems.push({ id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null, discount: discount || null, url: affiliateUrl, imageUrl, promoCode: discountCode || null, asin, store: 'amazon' });
     let index = [];
     try { index = await store.get("index", { type: "json" }) || []; } catch (e) { index = []; }
     index.unshift(id);
     await store.setJSON("index", index);
     await new Promise(r => setTimeout(r, 10));
+  }
+
+  // Add to deal-queue so post-queued-deal.mjs picks them up for Telegram/Facebook
+  if (queueItems.length > 0) {
+    try {
+      let queue = [];
+      try { queue = await queueStore.get('queue', { type: 'json' }) || []; } catch(e) { queue = []; }
+      queue.push(...queueItems);
+      await queueStore.setJSON('queue', queue);
+    } catch(e) { console.error('Queue write failed:', e.message); }
   }
 
   const telegramMessage = deals.length === 0 ? null
