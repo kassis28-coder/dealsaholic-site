@@ -247,6 +247,7 @@ export default async (req, context) => {
   const fbResult = await postToFacebook(deal);
   const facebookOk = fbResult?.ok === true;
   const facebookError = fbResult?.ok ? null : (fbResult?.error || 'Unknown error');
+  const facebookPostId = fbResult?.postId || null;
   const facebookOk = fbResult === true;
   const facebookError = typeof fbResult === 'object' ? fbResult?.error : null;
 
@@ -288,6 +289,7 @@ export default async (req, context) => {
     telegramOk,
     facebookOk,
   facebookError,
+    facebookPostId,
     queueRemaining: queue.length,
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
