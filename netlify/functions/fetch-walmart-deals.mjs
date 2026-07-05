@@ -99,7 +99,11 @@ async function fetchViaImpactCatalogs() {
   const catalogs = await discoverCatalogs(auth);
   if (!catalogs.length) return [];
   const walmartCatalogs = catalogs.filter((c) => (c.Name || "").toLowerCase().includes("walmart"));
-  const targetCatalogs = walmartCatalogs.length ? walmartCatalogs : catalogs;
+  if (!walmartCatalogs.length) {
+  console.log("No Walmart-named catalog available in this Impact account; skipping to web scrape.");
+  return [];
+}
+const targetCatalogs = walmartCatalogs;
   const seen = new Set(); const deals = [];
   for (const catalog of targetCatalogs) {
     for (const term of SEARCH_TERMS) {
