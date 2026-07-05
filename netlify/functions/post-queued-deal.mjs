@@ -168,27 +168,27 @@ async function postToFacebook(deal) {
   const pageId = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
   if (!pageToken || !pageId) return { ok: false, error: 'Missing FB credentials' };
 
-  const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
+  const storeIcon = deal.store === 'walmart' ? '\u{1F6D2}' : '\u{1F6CD}\uFE0F';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
-  const codeLine = deal.promoCode ? '\n🏷 Code: ' + deal.promoCode : '';
+  const codeLine = deal.promoCode ? '\n\u{1F3F7} Code: ' + deal.promoCode : '';
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
-  const message = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
-    '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
-    '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
-    '👉 ' + deal.url;
+  const message = '\u{1F525} New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
+    '\u{1F4E6} ' + (deal.title || storeName + ' Deal') + '\n\n' +
+    '\u{1F4B0} ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
+    '\u{1F449} ' + deal.url;
 
   try {
     if (deal.imageUrl) {
       const tok = pageToken;
-      const photoRes = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/photos', {
+      const pid = pageId;
+      const photoRes = await fetch('https://graph.facebook.com/v19.0/' + pid + '/photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: deal.imageUrl, caption: message, access_token: tok }),
       });
       const photoData = await photoRes.json();
       if (photoData.id) return { ok: true, postId: photoData.id };
-      // Photo failed — try feed post
-      const feedRes = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/feed', {
+      const feedRes = await fetch('https://graph.facebook.com/v19.0/' + pid + '/feed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, link: deal.url, access_token: tok }),
