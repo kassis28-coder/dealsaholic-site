@@ -197,8 +197,7 @@ async function postToFacebook(deal) {
     }
     return true;
   } catch (e) {
-    console.error('Facebook post failed:', e.message);
-    return false;
+    return { error: e.message };
   }
 }
 
@@ -244,7 +243,9 @@ export default async (req, context) => {
   }
 
   const telegramOk = await postToTelegram(deal);
-  const facebookOk = await postToFacebook(deal);
+  const fbResult = await postToFacebook(deal);
+  const facebookOk = fbResult === true;
+  const facebookError = typeof fbResult === 'object' ? fbResult?.error : null;
 
   // Only save to submissions if posted successfully
   if (telegramOk) {
@@ -283,6 +284,7 @@ export default async (req, context) => {
     imageUrl: deal.imageUrl,
     telegramOk,
     facebookOk,
+  facebookError,
     queueRemaining: queue.length,
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
