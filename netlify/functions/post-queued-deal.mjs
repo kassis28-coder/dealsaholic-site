@@ -136,7 +136,7 @@ async function postToTelegram(deal) {
   const caption = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
     '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
     '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
-    '👉 ' + deal.url;
+    '👉 ' + deal.url + '\n\n#ad';
   const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
 
   try {
@@ -180,8 +180,8 @@ async function postToFacebook(deal) {
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
   const message = '\u{1F525} New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
     '\u{1F4E6} ' + (deal.title || storeName + ' Deal') + '\n\n' +
-    '\u{1F4B0} ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
-    '\u{1F449} ' + deal.url;
+    '💰 ' + (deal.discount ? deal.discount + '% OFF' : 'Check link for details') + codeLine + '\n\n' +
+    '👉 ' + deal.url + '\n\n#ad';
 
   try {
     if (deal.imageUrl) {
