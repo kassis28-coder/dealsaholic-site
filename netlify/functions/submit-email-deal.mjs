@@ -169,7 +169,9 @@ const queueItems = [];
     await store.setJSON(id, submission);
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
-    queueItems.push({ id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null, discount: discount || null, url: affiliateUrl, imageUrl, promoCode: discountCode || null, asin, store: 'amazon' });
+    if (!isGarbageText(dealTitle)) {
+      queueItems.push({ id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null, discount: discount || null, url: affiliateUrl, imageUrl, promoCode: discountCode || null, asin, store: 'amazon' });
+    }
     let index = [];
     try { index = await store.get("index", { type: "json" }) || []; } catch (e) { index = []; }
     index.unshift(id);
