@@ -158,18 +158,20 @@ const queueItems = [];
       || plainText.split(/[\n.!?]/).map(l => l.trim()).find(l => l.length > 10 && !l.includes('http') && !isGarbageText(l))?.substring(0, 150)
       || 'Amazon Deal';
     const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
+    const hasRealTitle = !!(meta?.title || (dealUrl === primaryUrl && claudeData?.title));
+    const isTrustworthy = hasRealTitle && !!dealPrice && !!imageUrl && !isGarbageText(dealTitle);
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
       id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null,
       discount: discount || null, url: affiliateUrl, imageUrl, discountCode: discountCode || null,
-      source: "email", status: (affiliateUrl && !isGarbageText(dealTitle)) ? "approved" : "pending", sponsored: false,
+      source: "email", status: (affiliateUrl && isTrustworthy) ? "approved" : "pending", sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
     await store.setJSON(id, submission);
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
-    if (!isGarbageText(dealTitle)) {
+    if (isTrustworthy) {
       queueItems.push({ id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null, discount: discount || null, url: affiliateUrl, imageUrl, promoCode: discountCode || null, asin, store: 'amazon' });
     }
     let index = [];
