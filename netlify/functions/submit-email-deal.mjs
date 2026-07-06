@@ -64,6 +64,16 @@ function extractAmazonUrls(text) {
   return urls;
 }
 
+function isGarbageText(s) {
+  if (!s) return true;
+  const encodedMatches = s.match(/%[0-9A-Fa-f]{2}/g) || [];
+  if (encodedMatches.length > 3) return true;
+  if (/dummy_textarea|position\s*%?3?A?\s*:?\s*absolute|overflow\s*%?3?A?\s*:?\s*hidden|opacity\s*%?3?A?\s*:?\s*0|emailBody=|<!DOCTYPE|<html/i.test(s)) return true;
+  const letters = (s.match(/[a-zA-Z\s]/g) || []).length;
+  if (letters / s.length < 0.6) return true;
+  return false;
+}
+
 function stripHtml(html) {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -145,14 +155,14 @@ const queueItems = [];
     const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
     const dealTitle = meta?.title
       || (dealUrl === primaryUrl ? claudeData?.title : null)
-      || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
+      || plainText.split(/[\n.!?]/).map(l => l.trim()).find(l => l.length > 10 && !l.includes('http') && !isGarbageText(l))?.substring(0, 150)
       || 'Amazon Deal';
     const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
       id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null,
       discount: discount || null, url: affiliateUrl, imageUrl, discountCode: discountCode || null,
-      source: "email", status: affiliateUrl ? "approved" : "pending", sponsored: false,
+      source: "email", status: (affiliateUrl && !isGarbageText(dealTitle)) ? "approved" : "pending", sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
