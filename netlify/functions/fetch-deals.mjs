@@ -13,32 +13,99 @@ const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
 
 const ALL_CATEGORIES = [
-  "deal of the day", "clearance", "today's deals", "electronics",
-  "electronics accessories", "headphones", "home and kitchen", "kitchen gadgets",
-  "small appliances", "best sellers", "home decor", "wall art", "furniture",
-  "storage organization", "bathroom accessories", "bedroom furniture",
-  "bedding sheets", "pillows comforters", "kitchen appliances deals",
-  "living room furniture", "home improvement", "curtains blinds", "beauty",
-  "skincare", "haircare tools", "toys", "toys for kids", "board games","perfumes",
-"hair treatment",
-  "fashion", "womens clothing", "mens clothing", "shoes", "sports and outdoors",
- "fitness equipment",
-  "workout equipment",
-  "yoga mats",
-  "outdoor camping gear",
-  "pet supplies",
-  "kids clothing",
-  "baby clothing",
-  "baby gear",
-  "vitamins supplements",
-  "protein powder", "toilet paper",
-  "paper towels", "laundry detergent", "dish soap", "cleaning supplies",
-  "trash bags", "household essentials","winter clothing",
+  // Core deal types
+  "deal of the day",
+  "lightning deals",
+  "limited time deals",
+  "outlet deals",
+  "lowest price deals",
+  "warehouse deals",
+  "clearance",
+  "today's deals",
+  "best sellers",
+
+  // Electronics
+  "electronics",
+  "electronics accessories",
+  "headphones",
+  "smart home devices",
+  "tablets",
+  "laptops deals",
+  "phone accessories",
+
+  // Home & Kitchen
+  "home and kitchen",
+  "kitchen gadgets",
+  "small appliances",
+  "kitchen appliances deals",
+  "home decor",
+  "wall art",
+  "furniture",
+  "storage organization",
+  "bathroom accessories",
+  "bedroom furniture",
+  "bedding sheets",
+  "pillows comforters",
+  "living room furniture",
+  "curtains blinds",
+  "home improvement",
+
+  // Beauty & Personal Care
+  "beauty",
+  "skincare",
+  "haircare tools",
+  "perfumes",
+  "hair treatment",
+  "makeup deals",
+  "personal care",
+
+  // Fashion
+  "fashion",
+  "womens clothing",
+  "mens clothing",
+  "shoes",
   "womens winter jackets",
   "womens boots",
   "womens shoes",
   "ankle boots",
-  "sneakers women","skincare" 
+  "sneakers women",
+  "kids clothing",
+  "baby clothing",
+
+  // Seasonal
+  "summer deals",
+  "summer favorites",
+  "outdoor summer",
+  "swimwear deals",
+
+  // Sports & Outdoors
+  "sports and outdoors",
+  "fitness equipment",
+  "workout equipment",
+  "yoga mats",
+  "outdoor camping gear",
+
+  // Baby & Kids
+  "baby gear",
+  "toys",
+  "toys for kids",
+  "board games",
+
+  // Health & Grocery
+  "vitamins supplements",
+  "protein powder",
+
+  // Household Essentials
+  "toilet paper",
+  "paper towels",
+  "laundry detergent",
+  "dish soap",
+  "cleaning supplies",
+  "trash bags",
+  "household essentials",
+
+  // Pet
+  "pet supplies",
 ];
 
 const BATCH_SIZE = 7;
