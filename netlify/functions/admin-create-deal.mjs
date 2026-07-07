@@ -25,6 +25,30 @@ function detectStore(url) {
   }
 }
 
+// ✅ NEW: Visit promocode page and grab FIRST product ASIN only
+async function resolvePromocodeToFirstAsin(promocodeUrl) {
+  try {
+    const res = await fetch(promocodeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const match = html.match(/\/dp\/([A-Z0-9]{10})/i);
+    if (!match) return null;
+    const asin = match[1];
+    console.log(`Resolved promocode ${promocodeUrl} → ASIN ${asin}`);
+    return asin;
+  } catch (e) {
+    console.error('resolvePromocodeToFirstAsin failed:', e.message);
+    return null;
+  }
+}
+
 function buildAffiliateUrl(url, store) {
   switch (store) {
     case "amazon": {
@@ -125,6 +149,22 @@ export default async (req, context) => {
 
     let { title, url, photoUrl, price, originalPrice, discount, discountCode, expiresOn } = body;
 
+    // ✅ NEW: Handle amazon.com/promocode/ URLs
+    const isPromocodeUrl = /amazon\.com\/promocode\//i.test(url);
+    let resolvedAsin = null;
+
+    if (isPromocodeUrl) {
+      console.log("Detected promocode URL, resolving to first product ASIN...");
+      resolvedAsin = await resolvePromocodeToFirstAsin(url);
+      if (resolvedAsin) {
+        // Replace the promocode URL with the real product URL
+        url = `https://www.amazon.com/dp/${resolvedAsin}?tag=${PARTNER_TAG}`;
+        console.log(`Replaced promocode URL with: ${url}`);
+      } else {
+        console.log("Could not resolve promocode URL to ASIN");
+      }
+    }
+
     const store = detectStore(url);
     const affiliateUrl = buildAffiliateUrl(url, store);
 
@@ -132,11 +172,15 @@ export default async (req, context) => {
 
     if (!imageUrl) {
       if (store === "amazon") {
-        const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
-        const asin = asinMatch ? asinMatch[1] : null;
+        // ✅ Use resolved ASIN if available, otherwise extract from URL
+        const asin = resolvedAsin || url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
         if (asin) {
           console.log("Fetching Amazon image for ASIN:", asin);
           imageUrl = await fetchAmazonImage(asin);
+          // Fallback to direct Amazon image URL
+          if (!imageUrl) {
+            imageUrl = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
+          }
         }
       } else if (store === "walmart" || store === "temu") {
         console.log("Fetching page image for:", url);
