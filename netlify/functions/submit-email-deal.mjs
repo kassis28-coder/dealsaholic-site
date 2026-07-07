@@ -66,11 +66,31 @@ function extractAmazonUrls(text) {
 
 function isGarbageText(s) {
   if (!s) return true;
+  // Decode URL encoding before checking
+  let decoded = s;
+  try { decoded = decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) {}
+  
+  // Check encoded percent sequences in original
   const encodedMatches = s.match(/%[0-9A-Fa-f]{2}/g) || [];
-  if (encodedMatches.length > 3) return true;
-  if (/dummy_textarea|position\s*%?3?A?\s*:?\s*absolute|overflow\s*%?3?A?\s*:?\s*hidden|opacity\s*%?3?A?\s*:?\s*0|emailBody=|<!DOCTYPE|<html/i.test(s)) return true;
-  const letters = (s.match(/[a-zA-Z\s]/g) || []).length;
-  if (letters / s.length < 0.6) return true;
+  if (encodedMatches.length > 2) return true;
+  
+  // Check for plus-encoded spaces (URL form encoding in titles)
+  const plusMatches = s.match(/\+/g) || [];
+  if (plusMatches.length > 3) return true;
+
+  // Check for HTML/CSS artifacts
+  if (/dummy_textarea|position\s*%?3?A?\s*:?\s*absolute|overflow\s*%?3?A?\s*:?\s*hidden|opacity\s*%?3?A?\s*:?\s*0|emailBody=|<!DOCTYPE|<html|ExternalClass|MsoNormal|font-size|margin:|padding:|border:/i.test(decoded)) return true;
+  
+  // Check for list-reference junk
+  if (/here\s+is\s+a\s+list|for\s+your\s+reference|original\s+price\s*:/i.test(decoded)) return true;
+
+  // Check ratio of readable letters
+  const letters = (decoded.match(/[a-zA-Z\s]/g) || []).length;
+  if (decoded.length > 0 && letters / decoded.length < 0.6) return true;
+  
+  // Too short to be a real product title
+  if (decoded.trim().length < 8) return true;
+  
   return false;
 }
 
@@ -82,6 +102,25 @@ function stripHtml(html) {
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ').trim();
+}
+
+// Extract discount code from a block of text near a specific URL
+function extractPerProductCode(text, urlIndex) {
+  // Look in a window of ~500 chars around the URL
+  const window = text.substring(Math.max(0, urlIndex - 300), urlIndex + 300);
+  return window.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
+}
+
+// Extract discount % from a block of text near a specific URL
+function extractPerProductDiscount(text, urlIndex) {
+  const window = text.substring(Math.max(0, urlIndex - 300), urlIndex + 300);
+  return window.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
+}
+
+// Extract price from a block of text near a specific URL
+function extractPerProductPrice(text, urlIndex) {
+  const window = text.substring(Math.max(0, urlIndex - 300), urlIndex + 300);
+  return window.match(/\$[\d,.]+/)?.[0] || null;
 }
 
 export default async (req, context) => {
@@ -131,17 +170,18 @@ export default async (req, context) => {
   let primaryMeta = null;
   if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
-  const sharedPrice = claudeData?.price || primaryMeta?.price || plainText.match(/\$[\d,.]+/)?.[0] || null;
+  // Global fallbacks (only used if per-product extraction fails)
+  const globalDiscount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
+  const globalDiscountCode = claudeData?.discountCode || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
+  const globalPrice = claudeData?.price || primaryMeta?.price || plainText.match(/\$[\d,.]+/)?.[0] || null;
   const originalPrice = claudeData?.originalPrice || null;
-  const discount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
-  const discountCode = claudeData?.discountCode || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
 
   const store = getStore("submissions");
-const queueStore = getStore("deal-queue");
+  const queueStore = getStore("deal-queue");
   const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 20) : [null];
   const savedIds = [];
   const deals = [];
-const queueItems = [];
+  const queueItems = [];
 
   for (const dealUrl of urlsToProcess) {
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
@@ -153,17 +193,30 @@ const queueItems = [];
       ? (dealUrl.includes('tag=') ? dealUrl : dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20')
       : '';
     const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
+
+    // ✅ FIX: Extract per-product discount/code/price based on position of URL in text
+    const urlIndex = dealUrl ? plainText.indexOf(dealUrl) : -1;
+    const perProductDiscount = urlIndex >= 0 ? extractPerProductDiscount(plainText, urlIndex) : null;
+    const perProductCode = urlIndex >= 0 ? extractPerProductCode(plainText, urlIndex) : null;
+    const perProductPrice = urlIndex >= 0 ? extractPerProductPrice(plainText, urlIndex) : null;
+
+    // Use per-product values first, fall back to global only for single-product emails
+    const dealDiscount = perProductDiscount || (uniqueUrls.length === 1 ? globalDiscount : null);
+    const dealCode = perProductCode || (uniqueUrls.length === 1 ? globalDiscountCode : null);
+    const dealPrice = meta?.price || perProductPrice || (uniqueUrls.length === 1 ? globalPrice : null);
+
     const dealTitle = meta?.title
       || (dealUrl === primaryUrl ? claudeData?.title : null)
       || plainText.split(/[\n.!?]/).map(l => l.trim()).find(l => l.length > 10 && !l.includes('http') && !isGarbageText(l))?.substring(0, 150)
       || 'Amazon Deal';
-    const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
+
     const hasRealTitle = !!(meta?.title || (dealUrl === primaryUrl && claudeData?.title));
     const isTrustworthy = hasRealTitle && !!dealPrice && !!imageUrl && !isGarbageText(dealTitle);
+
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
       id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null,
-      discount: discount || null, url: affiliateUrl, imageUrl, discountCode: discountCode || null,
+      discount: dealDiscount || null, url: affiliateUrl, imageUrl, discountCode: dealCode || null,
       source: "email", status: (affiliateUrl && isTrustworthy) ? "approved" : "pending", sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -171,9 +224,11 @@ const queueItems = [];
     await store.setJSON(id, submission);
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
+
     if (isTrustworthy) {
-      queueItems.push({ id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null, discount: discount || null, url: affiliateUrl, imageUrl, promoCode: discountCode || null, asin, store: 'amazon' });
+      queueItems.push({ id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null, discount: dealDiscount || null, url: affiliateUrl, imageUrl, promoCode: dealCode || null, asin, store: 'amazon' });
     }
+
     let index = [];
     try { index = await store.get("index", { type: "json" }) || []; } catch (e) { index = []; }
     index.unshift(id);
