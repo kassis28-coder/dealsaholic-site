@@ -51,6 +51,31 @@ async function fetchAmazonMeta(amazonUrl) {
   }
 }
 
+// ✅ NEW: Visit promocode page and grab FIRST product ASIN only
+async function resolvePromocodeToFirstAsin(promocodeUrl) {
+  try {
+    const res = await fetch(promocodeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    // Grab only the FIRST ASIN found on the page
+    const match = html.match(/\/dp\/([A-Z0-9]{10})/i);
+    if (!match) return null;
+    const asin = match[1];
+    console.log(`Resolved promocode ${promocodeUrl} → ASIN ${asin}`);
+    return `https://www.amazon.com/dp/${asin}?tag=kethya08-20`;
+  } catch (e) {
+    console.error('resolvePromocodeToFirstAsin failed:', e.message);
+    return null;
+  }
+}
+
 function extractAmazonUrls(text) {
   const patterns = [
     /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
@@ -64,33 +89,35 @@ function extractAmazonUrls(text) {
   return urls;
 }
 
+// ✅ NEW: Extract promocode URLs from text
+function extractPromocodeUrls(text) {
+  return [...text.matchAll(/https?:\/\/(?:www\.)?amazon\.com\/promocode\/[A-Z0-9]+/gi)]
+    .map(m => m[0]);
+}
+
 function isGarbageText(s) {
   if (!s) return true;
-  // Decode URL encoding before checking
   let decoded = s;
   try { decoded = decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) {}
-  
-  // Check encoded percent sequences in original
+
   const encodedMatches = s.match(/%[0-9A-Fa-f]{2}/g) || [];
   if (encodedMatches.length > 2) return true;
-  
-  // Check for plus-encoded spaces (URL form encoding in titles)
+
   const plusMatches = s.match(/\+/g) || [];
   if (plusMatches.length > 3) return true;
 
-  // Check for HTML/CSS artifacts
+  // ✅ NEW: Block google/promo garbage
+  if (/googleusercontent|googleapis|gstatic|promocode/i.test(decoded)) return true;
+
   if (/dummy_textarea|position\s*%?3?A?\s*:?\s*absolute|overflow\s*%?3?A?\s*:?\s*hidden|opacity\s*%?3?A?\s*:?\s*0|emailBody=|<!DOCTYPE|<html|ExternalClass|MsoNormal|font-size|margin:|padding:|border:/i.test(decoded)) return true;
-  
-  // Check for list-reference junk
+
   if (/here\s+is\s+a\s+list|for\s+your\s+reference|original\s+price\s*:/i.test(decoded)) return true;
 
-  // Check ratio of readable letters
   const letters = (decoded.match(/[a-zA-Z\s]/g) || []).length;
   if (decoded.length > 0 && letters / decoded.length < 0.6) return true;
-  
-  // Too short to be a real product title
+
   if (decoded.trim().length < 8) return true;
-  
+
   return false;
 }
 
@@ -104,20 +131,16 @@ function stripHtml(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
-// Extract discount code from a block of text near a specific URL
 function extractPerProductCode(text, urlIndex) {
-  // Look in a window of ~500 chars around the URL
   const window = text.substring(Math.max(0, urlIndex - 300), urlIndex + 300);
   return window.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
 }
 
-// Extract discount % from a block of text near a specific URL
 function extractPerProductDiscount(text, urlIndex) {
   const window = text.substring(Math.max(0, urlIndex - 300), urlIndex + 300);
   return window.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
 }
 
-// Extract price from a block of text near a specific URL
 function extractPerProductPrice(text, urlIndex) {
   const window = text.substring(Math.max(0, urlIndex - 300), urlIndex + 300);
   return window.match(/\$[\d,.]+/)?.[0] || null;
@@ -156,6 +179,8 @@ export default async (req, context) => {
   } catch (e) {}
 
   const plainText = stripHtml(content);
+
+  // ✅ UPDATED: Collect all URLs including resolved promocode URLs
   const allUrls = [];
   if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
   extractAmazonUrls(content).forEach(u => allUrls.push(u));
@@ -165,12 +190,25 @@ export default async (req, context) => {
     extractAmazonUrls(stripHtml(rawSnippet)).forEach(u => allUrls.push(u));
   }
 
+  // ✅ NEW: Find and resolve promocode URLs → first product ASIN only
+  const promocodeUrls = [
+    ...extractPromocodeUrls(content),
+    ...extractPromocodeUrls(plainText),
+    ...(rawSnippet ? extractPromocodeUrls(rawSnippet) : []),
+  ];
+  for (const promoUrl of [...new Set(promocodeUrls)]) {
+    const resolvedUrl = await resolvePromocodeToFirstAsin(promoUrl);
+    if (resolvedUrl) {
+      allUrls.push(resolvedUrl);
+      console.log(`Promocode resolved: ${promoUrl} → ${resolvedUrl}`);
+    }
+  }
+
   const uniqueUrls = [...new Set(allUrls)];
   const primaryUrl = uniqueUrls[0] || null;
   let primaryMeta = null;
   if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
-  // Global fallbacks (only used if per-product extraction fails)
   const globalDiscount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
   const globalDiscountCode = claudeData?.discountCode || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
   const globalPrice = claudeData?.price || primaryMeta?.price || plainText.match(/\$[\d,.]+/)?.[0] || null;
@@ -194,16 +232,14 @@ export default async (req, context) => {
       : '';
     const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
 
-    // ✅ FIX: Extract per-product discount/code/price based on position of URL in text
     const urlIndex = dealUrl ? plainText.indexOf(dealUrl) : -1;
     const perProductDiscount = urlIndex >= 0 ? extractPerProductDiscount(plainText, urlIndex) : null;
     const perProductCode = urlIndex >= 0 ? extractPerProductCode(plainText, urlIndex) : null;
     const perProductPrice = urlIndex >= 0 ? extractPerProductPrice(plainText, urlIndex) : null;
 
-    // Use per-product values first, fall back to global only for single-product emails
-    const dealDiscount = perProductDiscount || (uniqueUrls.length === 1 ? globalDiscount : null);
-    const dealCode = perProductCode || (uniqueUrls.length === 1 ? globalDiscountCode : null);
-    const dealPrice = meta?.price || perProductPrice || (uniqueUrls.length === 1 ? globalPrice : null);
+    const dealDiscount = perProductDiscount || (uniqueUrls.length === 1 ? globalDiscount : null) || globalDiscount;
+    const dealCode = perProductCode || (uniqueUrls.length === 1 ? globalDiscountCode : null) || globalDiscountCode;
+    const dealPrice = meta?.price || perProductPrice || (uniqueUrls.length === 1 ? globalPrice : null) || globalPrice;
 
     const dealTitle = meta?.title
       || (dealUrl === primaryUrl ? claudeData?.title : null)
@@ -236,7 +272,6 @@ export default async (req, context) => {
     await new Promise(r => setTimeout(r, 10));
   }
 
-  // Add to deal-queue so post-queued-deal.mjs picks them up for Telegram/Facebook
   if (queueItems.length > 0) {
     try {
       let queue = [];
