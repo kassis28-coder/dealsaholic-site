@@ -25,30 +25,6 @@ function detectStore(url) {
   }
 }
 
-// ✅ NEW: Visit promocode page and grab FIRST product ASIN only
-async function resolvePromocodeToFirstAsin(promocodeUrl) {
-  try {
-    const res = await fetch(promocodeUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      redirect: 'follow',
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const match = html.match(/\/dp\/([A-Z0-9]{10})/i);
-    if (!match) return null;
-    const asin = match[1];
-    console.log(`Resolved promocode ${promocodeUrl} → ASIN ${asin}`);
-    return asin;
-  } catch (e) {
-    console.error('resolvePromocodeToFirstAsin failed:', e.message);
-    return null;
-  }
-}
-
 function buildAffiliateUrl(url, store) {
   switch (store) {
     case "amazon": {
@@ -80,6 +56,57 @@ async function getAmazonAccessToken() {
   if (!res.ok) throw new Error(`Token request failed (${res.status})`);
   const data = await res.json();
   return data.access_token;
+}
+
+// ✅ Search Amazon by title using Creator API — no scraping needed
+async function searchAmazonByTitle(title) {
+  try {
+    const accessToken = await getAmazonAccessToken();
+    const res = await fetch(CATALOG_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "x-marketplace": MARKETPLACE,
+      },
+      body: JSON.stringify({
+        keywords: title,
+        itemCount: 1,
+        partnerTag: PARTNER_TAG,
+        partnerType: "Associates",
+        marketplace: MARKETPLACE,
+        resources: [
+          "images.primary.large",
+          "itemInfo.title",
+          "offersV2.listings.price",
+        ],
+      }),
+    });
+    if (!res.ok) {
+      console.log("Amazon title search failed:", res.status);
+      return null;
+    }
+    const data = await res.json();
+    const items = data.items || data.searchResult?.items || [];
+    if (!items[0]) {
+      console.log("No items found for title:", title);
+      return null;
+    }
+    const item = items[0];
+    const asin = item.asin;
+    const image = item.images?.primary?.large?.url || 
+      `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
+    console.log(`Title search found ASIN: ${asin}`);
+    return {
+      asin,
+      image,
+      title: item.itemInfo?.title?.displayValue || null,
+      url: `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`,
+    };
+  } catch (e) {
+    console.error('searchAmazonByTitle failed:', e.message);
+    return null;
+  }
 }
 
 async function fetchAmazonImage(asin) {
@@ -149,42 +176,48 @@ export default async (req, context) => {
 
     let { title, url, photoUrl, price, originalPrice, discount, discountCode, expiresOn } = body;
 
-    // ✅ NEW: Handle amazon.com/promocode/ URLs
+    let imageUrl = photoUrl || null;
+    let finalUrl = url;
+
+    // ✅ FIXED: Detect promocode URL and search by title instead of scraping
     const isPromocodeUrl = /amazon\.com\/promocode\//i.test(url);
-    let resolvedAsin = null;
 
     if (isPromocodeUrl) {
-      console.log("Detected promocode URL, resolving to first product ASIN...");
-      resolvedAsin = await resolvePromocodeToFirstAsin(url);
-      if (resolvedAsin) {
-        // Replace the promocode URL with the real product URL
-        url = `https://www.amazon.com/dp/${resolvedAsin}?tag=${PARTNER_TAG}`;
-        console.log(`Replaced promocode URL with: ${url}`);
-      } else {
-        console.log("Could not resolve promocode URL to ASIN");
+      console.log("Promocode URL detected:", url);
+      if (title) {
+        console.log("Searching Amazon by title:", title);
+        const searchResult = await searchAmazonByTitle(title);
+        if (searchResult) {
+          finalUrl = searchResult.url;
+          if (!imageUrl) imageUrl = searchResult.image;
+          console.log(`Resolved via title search → ${finalUrl}`);
+        } else {
+          // If title search fails, keep promocode URL but flag it
+          console.log("Title search failed, keeping original URL");
+          finalUrl = url;
+        }
       }
     }
 
-    const store = detectStore(url);
-    const affiliateUrl = buildAffiliateUrl(url, store);
+    const store = detectStore(finalUrl);
+    const affiliateUrl = buildAffiliateUrl(finalUrl, store);
 
-    let imageUrl = photoUrl || null;
-
+    // Get image if still missing
     if (!imageUrl) {
       if (store === "amazon") {
-        // ✅ Use resolved ASIN if available, otherwise extract from URL
-        const asin = resolvedAsin || url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
+        const asinMatch = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i);
+        const asin = asinMatch ? asinMatch[1] : null;
         if (asin) {
           console.log("Fetching Amazon image for ASIN:", asin);
           imageUrl = await fetchAmazonImage(asin);
-          // Fallback to direct Amazon image URL
+          // Fallback to direct image URL
           if (!imageUrl) {
             imageUrl = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
           }
         }
       } else if (store === "walmart" || store === "temu") {
-        console.log("Fetching page image for:", url);
-        imageUrl = await fetchPageImage(url);
+        console.log("Fetching page image for:", finalUrl);
+        imageUrl = await fetchPageImage(finalUrl);
       }
     }
 
@@ -231,7 +264,12 @@ export default async (req, context) => {
     index.unshift(id);
     await blobStore.setJSON("index", index);
 
-    return new Response(JSON.stringify({ success: true, id, deal: submission }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      id, 
+      deal: submission,
+      resolvedFromPromocode: isPromocodeUrl,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
