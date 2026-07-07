@@ -438,6 +438,10 @@
               </div>
             </div>
             <div class="edit-form-group" style="margin-bottom:10px;">
+  <label>Product URL</label>
+  <input type="text" id="edit-url-${s.id}" value="${escapeHtml(s.url || s.productUrl || '')}" placeholder="https://www.amazon.com/dp/...">
+</div>
+<div class="edit-form-group" style="margin-bottom:10px;">
   <label>Image URL</label>
   <input type="text" id="edit-image-${s.id}" value="${escapeHtml(s.imageUrl || s.photoUrl || '')}" placeholder="https://...">
 </div>
