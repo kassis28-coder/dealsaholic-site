@@ -62,7 +62,7 @@ function buildCaption(deal) {
   lines.push(``);
   lines.push(`🛒 Shop now: ${deal.url}`);
   lines.push(``);
-  lines.push(`#deals #dealsaholic #sale #shopping`);
+  lines.push(`#ad #deals #dealsaholic #sale #shopping`);
   return lines.join("\n");
 }
 
