@@ -58,7 +58,7 @@ async function getAmazonAccessToken() {
   return data.access_token;
 }
 
-// ✅ Search Amazon by title using Creator API — no scraping needed
+// ✅ Search Amazon by title using Creator API
 async function searchAmazonByTitle(title) {
   try {
     const accessToken = await getAmazonAccessToken();
@@ -82,19 +82,13 @@ async function searchAmazonByTitle(title) {
         ],
       }),
     });
-    if (!res.ok) {
-      console.log("Amazon title search failed:", res.status);
-      return null;
-    }
+    if (!res.ok) return null;
     const data = await res.json();
     const items = data.items || data.searchResult?.items || [];
-    if (!items[0]) {
-      console.log("No items found for title:", title);
-      return null;
-    }
+    if (!items[0]) return null;
     const item = items[0];
     const asin = item.asin;
-    const image = item.images?.primary?.large?.url || 
+    const image = item.images?.primary?.large?.url ||
       `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
     console.log(`Title search found ASIN: ${asin}`);
     return {
@@ -178,24 +172,20 @@ export default async (req, context) => {
 
     let imageUrl = photoUrl || null;
     let finalUrl = url;
+    let resolvedAsin = null;
 
-    // ✅ FIXED: Detect promocode URL and search by title instead of scraping
+    // ✅ Handle promocode URLs — search by title
     const isPromocodeUrl = /amazon\.com\/promocode\//i.test(url);
-
-    if (isPromocodeUrl) {
-      console.log("Promocode URL detected:", url);
-      if (title) {
-        console.log("Searching Amazon by title:", title);
-        const searchResult = await searchAmazonByTitle(title);
-        if (searchResult) {
-          finalUrl = searchResult.url;
-          if (!imageUrl) imageUrl = searchResult.image;
-          console.log(`Resolved via title search → ${finalUrl}`);
-        } else {
-          // If title search fails, keep promocode URL but flag it
-          console.log("Title search failed, keeping original URL");
-          finalUrl = url;
-        }
+    if (isPromocodeUrl && title) {
+      console.log("Promocode URL detected, searching by title:", title);
+      const searchResult = await searchAmazonByTitle(title);
+      if (searchResult) {
+        resolvedAsin = searchResult.asin;
+        finalUrl = searchResult.url;
+        if (!imageUrl) imageUrl = searchResult.image;
+        console.log(`Resolved via title search → ASIN ${resolvedAsin}`);
+      } else {
+        console.log("Title search failed");
       }
     }
 
@@ -205,21 +195,22 @@ export default async (req, context) => {
     // Get image if still missing
     if (!imageUrl) {
       if (store === "amazon") {
-        const asinMatch = finalUrl.match(/\/dp\/([A-Z0-9]{10})/i);
-        const asin = asinMatch ? asinMatch[1] : null;
+        const asin = resolvedAsin || finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
         if (asin) {
-          console.log("Fetching Amazon image for ASIN:", asin);
           imageUrl = await fetchAmazonImage(asin);
-          // Fallback to direct image URL
           if (!imageUrl) {
             imageUrl = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
           }
         }
       } else if (store === "walmart" || store === "temu") {
-        console.log("Fetching page image for:", finalUrl);
         imageUrl = await fetchPageImage(finalUrl);
       }
     }
+
+    // Get ASIN from final URL
+    const asin = resolvedAsin
+      || affiliateUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+      || null;
 
     let expiresOnISO;
     if (expiresOn) {
@@ -237,7 +228,9 @@ export default async (req, context) => {
     }
 
     const blobStore = getStore("submissions");
+    const queueStore = getStore("deal-queue");
     const id = `admin-${Date.now()}`;
+
     const submission = {
       id,
       title,
@@ -257,6 +250,7 @@ export default async (req, context) => {
 
     await blobStore.setJSON(id, submission);
 
+    // Update index
     let index = [];
     try {
       index = await blobStore.get("index", { type: "json" }) || [];
@@ -264,11 +258,41 @@ export default async (req, context) => {
     index.unshift(id);
     await blobStore.setJSON("index", index);
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      id, 
+    // ✅ NEW: Add to queue for Telegram/Facebook posting
+    // Only queue if we have all required info
+    if (affiliateUrl && imageUrl && title) {
+      try {
+        let queue = [];
+        try {
+          queue = await queueStore.get('queue', { type: 'json' }) || [];
+        } catch(e) { queue = []; }
+
+        queue.push({
+          id,
+          title,
+          price: price || null,
+          originalPrice: originalPrice || null,
+          discount: discount || null,
+          url: affiliateUrl,
+          imageUrl,
+          promoCode: discountCode || null,
+          asin,
+          store: store === 'walmart' ? 'walmart' : 'amazon',
+        });
+
+        await queueStore.setJSON('queue', queue);
+        console.log(`Added admin deal to queue: ${title}`);
+      } catch(e) {
+        console.error('Queue write failed:', e.message);
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      id,
       deal: submission,
       resolvedFromPromocode: isPromocodeUrl,
+      queuedForPosting: !!(affiliateUrl && imageUrl && title),
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
