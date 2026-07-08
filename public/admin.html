@@ -8,362 +8,634 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --paper: #FAF8F4;
-    --card: #FFFFFF;
-    --ink: #1C1A17;
-    --ink-soft: #6B6459;
-    --line: #ECE6DB;
-    --brand: #FF8A1E;
-    --brand-dark: #D96E0C;
-    --green: #1C8C5A;
-    --red: #B3261E;
-    --blue: #1A73E8;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; }
-  .login-screen { max-width: 360px; margin: 100px auto; padding: 32px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-  .login-screen h1 { font-family: 'Archivo Black', sans-serif; font-size: 20px; margin: 0 0 16px; }
-  .login-screen input { width: 100%; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
-  .login-screen button, .btn { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
-  .login-screen button { width: 100%; background: var(--brand); color: #fff; }
-  .error-text { color: var(--red); font-size: 13px; margin-top: 8px; }
-  .admin-page { display: none; max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; }
-  .admin-page h1 { font-family: 'Archivo Black', sans-serif; font-size: 26px; margin: 0 0 4px; }
-  .admin-page__subtitle { font-size: 13px; color: var(--ink-soft); margin: 0 0 28px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-  .tab { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); cursor: pointer; color: var(--ink-soft); }
-  .tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
-  .tab--create.active { background: var(--brand); border-color: var(--brand); color: #fff; }
-  .tab--email.active { background: #7B2FBE; border-color: #7B2FBE; color: #fff; }
-  .tab--review.active { background: #E1432D; border-color: #E1432D; color: #fff; }
-  .submission-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 14px; display: flex; gap: 16px; }
-  .submission-card img { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; flex-shrink: 0; }
-  .submission-card__body { flex: 1; min-width: 0; }
-  .submission-card__title { font-weight: 700; font-size: 14px; margin: 0 0 4px; }
-  .submission-card__meta { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; line-height: 1.5; }
-  .submission-card__meta a { color: var(--brand); text-decoration: none; }
-  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; margin-left: 6px; }
-  .badge--pending { background: #FFF3DC; color: #92660A; }
-  .badge--approved { background: #E7F5EC; color: var(--green); }
-  .badge--rejected { background: #FCEAE8; color: var(--red); }
-  .badge--needs-review { background: #FCEAE8; color: var(--red); }
-  .badge--warning { background: #FCEAE8; color: var(--red); }
-  .badge--email { background: #F3E8FF; color: #7B2FBE; }
-  .badge--amazon { background: #FFF3DC; color: #92660A; }
-  .link-edit-row { display: flex; gap: 8px; margin-top: 8px; }
-  .link-edit-row input { flex: 1; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
-  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  .btn--approve { background: var(--green); color: #fff; }
-  .btn--reject { background: var(--red); color: #fff; }
-  .btn--delete { background: #fff; color: var(--red); border: 1px solid var(--red); }
-  .btn--edit { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
-  .btn--save { background: var(--blue); color: #fff; }
-  .empty-state { text-align: center; padding: 48px 20px; color: var(--ink-soft); font-size: 14px; }
-  .edit-form { background: #f0f7ff; border: 1px solid #c0d8f8; border-radius: 10px; padding: 16px; margin-top: 12px; }
-  .edit-form h3 { font-size: 13px; font-weight: 700; margin: 0 0 12px; color: var(--blue); }
-  .edit-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-  .edit-form-group { display: flex; flex-direction: column; gap: 4px; }
-  .edit-form-group label { font-size: 11px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; }
-  .edit-form-group input { font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; width: 100%; }
-  .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
-  .create-form { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
-  .create-form h2 { font-family: 'Archivo Black', sans-serif; font-size: 18px; margin: 0 0 20px; }
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-  .form-group label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
-  .form-group input { font-family: 'Inter', sans-serif; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; }
-  .form-submit-row { display: flex; gap: 12px; align-items: center; margin-top: 20px; }
-  .btn--submit-post { background: var(--brand); color: #fff; font-size: 14px; padding: 12px 28px; border-radius: 999px; border: none; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; }
-  .btn--submit-post:hover { background: var(--brand-dark); }
-  .success-msg { color: var(--green); font-size: 13px; font-weight: 600; }
-  .error-msg { color: var(--red); font-size: 13px; font-weight: 600; }
-  .image-choice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-  .image-choice__label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
-  .image-choice__options { display: flex; gap: 16px; }
-  .image-choice__option { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
-  .image-choice__input { margin-top: 8px; }
-  .image-preview { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; margin-top: 8px; display: none; }
-  .upload-btn { background: var(--paper); border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; font-size: 13px; color: var(--ink-soft); transition: border-color 0.15s; }
-  .upload-btn:hover { border-color: var(--brand); color: var(--brand); }
-  @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .edit-form-row { grid-template-columns: 1fr; } }
+:root {
+--paper: #FAF8F4;
+--card: #FFFFFF;
+--ink: #1C1A17;
+--ink-soft: #6B6459;
+--line: #ECE6DB;
+--brand: #FF8A1E;
+--brand-dark: #D96E0C;
+--green: #1C8C5A;
+--red: #B3261E;
+--blue: #1A73E8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; }
+.login-screen { max-width: 360px; margin: 100px auto; padding: 32px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+.login-screen h1 { font-family: 'Archivo Black', sans-serif; font-size: 20px; margin: 0 0 16px; }
+.login-screen input { width: 100%; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
+.login-screen button, .btn { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+.login-screen button { width: 100%; background: var(--brand); color: #fff; }
+.error-text { color: var(--red); font-size: 13px; margin-top: 8px; }
+.admin-page { display: none; max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; }
+.admin-page h1 { font-family: 'Archivo Black', sans-serif; font-size: 26px; margin: 0 0 4px; }
+.admin-page__subtitle { font-size: 13px; color: var(--ink-soft); margin: 0 0 28px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.tab { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); cursor: pointer; color: var(--ink-soft); }
+.tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.tab--create.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.tab--email.active { background: #7B2FBE; border-color: #7B2FBE; color: #fff; }
+.tab--review.active { background: #E1432D; border-color: #E1432D; color: #fff; }
+.submission-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 14px; display: flex; gap: 16px; }
+.submission-card img { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; flex-shrink: 0; }
+.submission-card__body { flex: 1; min-width: 0; }
+.submission-card__title { font-weight: 700; font-size: 14px; margin: 0 0 4px; }
+.submission-card__meta { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; line-height: 1.5; }
+.submission-card__meta a { color: var(--brand); text-decoration: none; }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; margin-left: 6px; }
+.badge--pending { background: #FFF3DC; color: #92660A; }
+.badge--approved { background: #E7F5EC; color: var(--green); }
+.badge--rejected { background: #FCEAE8; color: var(--red); }
+.badge--needs-review { background: #FCEAE8; color: var(--red); }
+.badge--warning { background: #FCEAE8; color: var(--red); }
+.badge--email { background: #F3E8FF; color: #7B2FBE; }
+.badge--amazon { background: #FFF3DC; color: #92660A; }
+.link-edit-row { display: flex; gap: 8px; margin-top: 8px; }
+.link-edit-row input { flex: 1; font-size: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn--approve { background: var(--green); color: #fff; }
+.btn--reject { background: var(--red); color: #fff; }
+.btn--delete { background: #fff; color: var(--red); border: 1px solid var(--red); }
+.btn--edit { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
+.btn--save { background: var(--blue); color: #fff; }
+.empty-state { text-align: center; padding: 48px 20px; color: var(--ink-soft); font-size: 14px; }
+.edit-form { background: #f0f7ff; border: 1px solid #c0d8f8; border-radius: 10px; padding: 16px; margin-top: 12px; }
+.edit-form h3 { font-size: 13px; font-weight: 700; margin: 0 0 12px; color: var(--blue); }
+.edit-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.edit-form-group { display: flex; flex-direction: column; gap: 4px; }
+.edit-form-group label { font-size: 11px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; }
+.edit-form-group input { font-family: 'Inter', sans-serif; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+.edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+.create-form { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+.create-form h2 { font-family: 'Archivo Black', sans-serif; font-size: 18px; margin: 0 0 20px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.form-group label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.form-group input { font-family: 'Inter', sans-serif; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; }
+.form-submit-row { display: flex; gap: 12px; align-items: center; margin-top: 20px; }
+.btn--submit-post { background: var(--brand); color: #fff; font-size: 14px; padding: 12px 28px; border-radius: 999px; border: none; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; }
+.btn--submit-post:hover { background: var(--brand-dark); }
+.success-msg { color: var(--green); font-size: 13px; font-weight: 600; }
+.error-msg { color: var(--red); font-size: 13px; font-weight: 600; }
+.image-choice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.image-choice__label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.image-choice__options { display: flex; gap: 16px; }
+.image-choice__option { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.image-choice__input { margin-top: 8px; }
+.image-preview { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; margin-top: 8px; display: none; }
+.upload-btn { background: var(--paper); border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; font-size: 13px; color: var(--ink-soft); transition: border-color 0.15s; }
+.upload-btn:hover { border-color: var(--brand); color: var(--brand); }
+@media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .edit-form-row { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 
 <div class="login-screen" id="login-screen">
-  <h1>Admin Login</h1>
-  <input type="password" id="password-input" placeholder="Admin password">
-  <button onclick="login()">Log in</button>
-  <div class="error-text" id="login-error"></div>
+<h1>Admin Login</h1>
+<input type="password" id="password-input" placeholder="Admin password">
+<button onclick="login()">Log in</button>
+<div class="error-text" id="login-error"></div>
 </div>
 
 <div class="admin-page" id="admin-page">
-  <h1>Deals-aholic Admin</h1>
-  <p class="admin-page__subtitle">Manage seller submissions and manually create deal posts.</p>
+<h1>Deals-aholic Admin</h1>
+<p class="admin-page__subtitle">Manage seller submissions and manually create deal posts.</p>
 
-  <div class="tabs">
-    <div class="tab active" data-status="pending" onclick="setTab('pending')">Pending</div>
-    <div class="tab" data-status="approved" onclick="setTab('approved')">Approved</div>
-    <div class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</div>
-    <div class="tab tab--email" data-status="email" onclick="setTab('email')">📧 Email Deals</div>
-    <div class="tab tab--review" data-status="needs-review" onclick="setTab('needs-review')">⚠️ Needs Review</div>
-    <div class="tab tab--create" data-status="create" onclick="setTab('create')">➕ Create Post</div>
-  </div>
+<div class="tabs">
+<div class="tab active" data-status="pending" onclick="setTab('pending')">Pending</div>
+<div class="tab" data-status="approved" onclick="setTab('approved')">Approved</div>
+<div class="tab" data-status="rejected" onclick="setTab('rejected')">Rejected</div>
+<div class="tab tab--email" data-status="email" onclick="setTab('email')">📧 Email Deals</div>
+<div class="tab tab--review" data-status="needs-review" onclick="setTab('needs-review')">⚠️ Needs Review</div>
+<div class="tab tab--create" data-status="create" onclick="setTab('create')">➕ Create Post</div>
+</div>
 
-  <div id="submissions-list"></div>
-  <div id="amazon-flagged-list"></div>
+<div id="submissions-list"></div>
+<div id="amazon-flagged-list"></div>
 
-  <div id="create-post-form" style="display:none;">
-    <div class="create-form">
-      <h2>➕ Create a New Deal Post</h2>
-      <p style="font-size:13px; color:var(--ink-soft); margin:-10px 0 20px;">Works with Amazon, Walmart, Temu, Mavely, and any other store.</p>
+<div id="create-post-form" style="display:none;">
+<div class="create-form">
+<h2>➕ Create a New Deal Post</h2>
+<p style="font-size:13px; color:var(--ink-soft); margin:-10px 0 20px;">Works with Amazon, Walmart, Temu, Mavely, and any other store.</p>
 
-      <div class="form-group">
-        <label>Product Title *</label>
-        <input type="text" id="cp-title" placeholder="e.g. Michael Kors Handbag">
-      </div>
+<div class="form-group">
+<label>Product Title *</label>
+<input type="text" id="cp-title" placeholder="e.g. Michael Kors Handbag">
+</div>
 
-      <div class="form-group">
-        <label>Product URL *</label>
-        <input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/... or walmart.com or temu.com">
-        <small style="color:var(--ink-soft); font-size:11px;">Amazon, Walmart & Temu: affiliate tag added automatically. Other stores: paste your affiliate link directly.</small>
-      </div>
+<div class="form-group">
+<label>Product URL *</label>
+<input type="text" id="cp-url" placeholder="https://www.amazon.com/dp/... or walmart.com or temu.com">
+<small style="color:var(--ink-soft); font-size:11px;">Amazon, Walmart &amp; Temu: affiliate tag added automatically. Other stores: paste your affiliate link directly.</small>
+</div>
 
-      <div class="image-choice">
-        <div class="image-choice__label">ADD IMAGE</div>
-        <div class="image-choice__options">
-          <label class="image-choice__option">
-            <input type="radio" name="image-type" value="url" onchange="switchImageType('url')"> Paste image URL
-          </label>
-          <label class="image-choice__option">
-            <input type="radio" name="image-type" value="upload" onchange="switchImageType('upload')"> Upload from computer
-          </label>
-        </div>
-        <div class="image-choice__input" id="image-url-input" style="display:none;">
-          <input type="text" id="cp-photo" placeholder="https://example.com/product-image.jpg" style="width:100%; font-family:Inter,sans-serif; font-size:14px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink);">
-        </div>
-        <div class="image-choice__input" id="image-upload-input" style="display:none;">
-          <div class="upload-btn" onclick="document.getElementById('cp-file').click()">
-            📁 Click to choose image from computer
-          </div>
-          <input type="file" id="cp-file" accept="image/*" style="display:none;" onchange="previewImage(this)">
-          <img id="cp-preview" class="image-preview" alt="Preview">
-          <div id="upload-filename" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
-        </div>
-      </div>
+<div class="image-choice">
+<div class="image-choice__label">ADD IMAGE</div>
+<div class="image-choice__options">
+<label class="image-choice__option">
+<input type="radio" name="image-type" value="url" onchange="switchImageType('url')"> Paste image URL
+</label>
+<label class="image-choice__option">
+<input type="radio" name="image-type" value="upload" onchange="switchImageType('upload')"> Upload from computer
+</label>
+</div>
+<div class="image-choice__input" id="image-url-input" style="display:none;">
+<input type="text" id="cp-photo" placeholder="https://example.com/product-image.jpg" style="width:100%; font-family:Inter,sans-serif; font-size:14px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink);">
+</div>
+<div class="image-choice__input" id="image-upload-input" style="display:none;">
+<div class="upload-btn" onclick="document.getElementById('cp-file').click()">
+📁 Click to choose image from computer
+</div>
+<input type="file" id="cp-file" accept="image/*" style="display:none;" onchange="previewImage(this)">
+<img id="cp-preview" class="image-preview" alt="Preview">
+<div id="upload-filename" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+</div>
+</div>
 
-      <div class="form-row">
-        <div class="form-group" style="margin-bottom:0">
-          <label>Current Price *</label>
-          <input type="text" id="cp-price" placeholder="$5.99">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>Original Price</label>
-          <input type="text" id="cp-original-price" placeholder="$14.99">
-        </div>
-      </div>
+<div class="form-row">
+<div class="form-group" style="margin-bottom:0">
+<label>Current Price *</label>
+<input type="text" id="cp-price" placeholder="$5.99">
+</div>
+<div class="form-group" style="margin-bottom:0">
+<label>Original Price</label>
+<input type="text" id="cp-original-price" placeholder="$14.99">
+</div>
+</div>
 
-      <div class="form-row" style="margin-top:14px;">
-        <div class="form-group" style="margin-bottom:0">
-          <label>Discount %</label>
-          <input type="text" id="cp-discount" placeholder="50">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>Discount Code</label>
-          <input type="text" id="cp-code" placeholder="SAVE20">
-        </div>
-      </div>
+<div class="form-row" style="margin-top:14px;">
+<div class="form-group" style="margin-bottom:0">
+<label>Discount %</label>
+<input type="text" id="cp-discount" placeholder="50">
+</div>
+<div class="form-group" style="margin-bottom:0">
+<label>Discount Code</label>
+<input type="text" id="cp-code" placeholder="SAVE20">
+</div>
+</div>
 
-      <div class="form-group" style="margin-top:14px;">
-        <label>Expires On</label>
-        <input type="date" id="cp-expires">
-      </div>
+<div class="form-group" style="margin-top:14px;">
+<label>Expires On</label>
+<input type="date" id="cp-expires">
+</div>
 
-      <div class="form-submit-row">
-        <button class="btn--submit-post" onclick="createPost()">🚀 Post Deal Now</button>
-        <span id="create-msg"></span>
-      </div>
-    </div>
-  </div>
+<div class="form-submit-row">
+<button class="btn--submit-post" onclick="createPost()">🚀 Post Deal Now</button>
+<span id="create-msg"></span>
+</div>
+</div>
+</div>
 </div>
 
 <script>
-  let adminPassword = '';
-  let allSubmissions = [];
-  let flaggedAmazonDeals = [];
-  let currentTab = 'pending';
-  let editingId = null;
+let adminPassword = '';
+let allSubmissions = [];
+let flaggedAmazonDeals = [];
+let currentTab = 'pending';
+let editingId = null;
 
-  function compressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.8) {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-        if (width > maxWidth || height > maxHeight) {
-          const ratio = Math.min(maxWidth / width, maxHeight / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => {
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
-        }, 'image/jpeg', quality);
-      };
-      img.src = URL.createObjectURL(file);
-    });
-  }
+function compressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.8) {
+return new Promise((resolve) => {
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+const img = new Image();
+img.onload = () => {
+let width = img.width;
+let height = img.height;
+if (width > maxWidth || height > maxHeight) {
+const ratio = Math.min(maxWidth / width, maxHeight / height);
+width = Math.round(width * ratio);
+height = Math.round(height * ratio);
+}
+canvas.width = width;
+canvas.height = height;
+ctx.drawImage(img, 0, 0, width, height);
+canvas.toBlob((blob) => {
+resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+}, 'image/jpeg', quality);
+};
+img.src = URL.createObjectURL(file);
+});
+}
 
-  function switchImageType(type) {
-    document.getElementById('image-url-input').style.display = type === 'url' ? 'block' : 'none';
-    document.getElementById('image-upload-input').style.display = type === 'upload' ? 'block' : 'none';
-  }
+function switchImageType(type) {
+document.getElementById('image-url-input').style.display = type === 'url' ? 'block' : 'none';
+document.getElementById('image-upload-input').style.display = type === 'upload' ? 'block' : 'none';
+}
 
-  function previewImage(input) {
-    const file = input.files[0];
-    if (!file) return;
-    const preview = document.getElementById('cp-preview');
-    const filename = document.getElementById('upload-filename');
-    preview.src = URL.createObjectURL(file);
-    preview.style.display = 'block';
-    filename.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + 'KB)';
-  }
+function previewImage(input) {
+const file = input.files[0];
+if (!file) return;
+const preview = document.getElementById('cp-preview');
+const filename = document.getElementById('upload-filename');
+preview.src = URL.createObjectURL(file);
+preview.style.display = 'block';
+filename.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + 'KB)';
+}
 
-  async function login() {
-    const input = document.getElementById('password-input');
-    const password = input.value;
-    const errorEl = document.getElementById('login-error');
-    errorEl.textContent = '';
-    try {
-      const res = await fetch('/.netlify/functions/get-submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { errorEl.textContent = data.error || 'Login failed.'; return; }
-      adminPassword = password;
-      allSubmissions = data.submissions || [];
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('admin-page').style.display = 'block';
-      loadFlaggedDeals();
-      renderList();
-    } catch (err) {
-      errorEl.textContent = 'Could not reach the server. Please try again.';
-    }
-  }
+async function login() {
+const input = document.getElementById('password-input');
+const password = input.value;
+const errorEl = document.getElementById('login-error');
+errorEl.textContent = '';
+try {
+const res = await fetch('/.netlify/functions/get-submissions', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password }),
+});
+const data = await res.json();
+if (!res.ok) { errorEl.textContent = data.error || 'Login failed.'; return; }
+adminPassword = password;
+allSubmissions = data.submissions || [];
+document.getElementById('login-screen').style.display = 'none';
+document.getElementById('admin-page').style.display = 'block';
 
-  async function loadFlaggedDeals() {
-    try {
-      const res = await fetch('/api/get-flagged-deals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword }),
-      });
-      const data = await res.json();
-      flaggedAmazonDeals = data.flaggedDeals || [];
-    } catch (err) {
-      flaggedAmazonDeals = [];
-    }
-  }
+// Load flagged Amazon deals
+loadFlaggedDeals();
+renderList();
+} catch (err) {
+errorEl.textContent = 'Could not reach the server. Please try again.';
+}
+}
 
-  function setTab(status) {
-    currentTab = status;
-    editingId = null;
-    document.querySelectorAll('.tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.status === status);
-    });
-    if (status === 'create') {
-      document.getElementById('submissions-list').style.display = 'none';
-      document.getElementById('amazon-flagged-list').style.display = 'none';
-      document.getElementById('create-post-form').style.display = 'block';
-    } else if (status === 'needs-review') {
-      document.getElementById('submissions-list').style.display = 'block';
-      document.getElementById('amazon-flagged-list').style.display = 'block';
-      document.getElementById('create-post-form').style.display = 'none';
-      renderList();
-      renderFlaggedAmazonDeals();
-    } else {
-      document.getElementById('submissions-list').style.display = 'block';
-      document.getElementById('amazon-flagged-list').style.display = 'none';
-      document.getElementById('create-post-form').style.display = 'none';
-      renderList();
-    }
-  }
+async function loadFlaggedDeals() {
+try {
+const res = await fetch('/api/get-flagged-deals', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword }),
+});
+const data = await res.json();
+flaggedAmazonDeals = data.flaggedDeals || [];
+} catch (err) {
+flaggedAmazonDeals = [];
+}
+}
 
-  function renderFlaggedAmazonDeals() {
-    const container = document.getElementById('amazon-flagged-list');
-    if (flaggedAmazonDeals.length === 0) {
-      container.innerHTML = '<div class="empty-state">✅ No suspicious Amazon deals flagged!</div>';
-      return;
-    }
-    container.innerHTML = '<h3 style="margin:20px 0 12px; font-size:14px; color:var(--red);">⚠️ Suspicious Amazon Deals (Auto-flagged)</h3>' +
-      flaggedAmazonDeals.map(d => `
-      <div class="submission-card" id="amazon-card-${d.asin}">
-        ${d.image ? `<img src="${d.image}" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="submission-card__body">
-          <p class="submission-card__title">${escapeHtml(d.title)}
-            <span class="badge badge--amazon">🛒 Amazon API</span>
-            <span class="badge badge--needs-review">⚠️ ${d.discountPercent}% OFF</span>
-          </p>
-          <p class="submission-card__meta">
-            Price: ${escapeHtml(d.price || 'N/A')} · Original: ${escapeHtml(d.originalPrice || 'N/A')}<br>
-            <a href="${d.url}" target="_blank" rel="noopener">View on Amazon</a><br>
-            Reason: ${escapeHtml(d.flagReason || 'High discount')}
-          </p>
-          <div class="edit-form" id="amazon-edit-${d.asin}" style="display:none;">
-            <h3>✏️ Update Price</h3>
-            <div class="edit-form-row">
-              <div class="edit-form-group">
-                <label>Correct Price</label>
-                <input type="text" id="amazon-price-${d.asin}" placeholder="$49.99">
-              </div>
-              <div class="edit-form-group">
-                <label>Correct Discount %</label>
-                <input type="text" id="amazon-discount-${d.asin}" placeholder="25">
-              </div>
-            </div>
-            <div class="edit-actions">
-              <button class="btn btn--save" onclick="updateAmazonDeal('${d.asin}', 'update')">💾 Save & Approve</button>
-              <button class="btn btn--edit" onclick="document.getElementById('amazon-edit-${d.asin}').style.display='none'">Cancel</button>
-            </div>
-          </div>
-          <div class="actions">
-            <button class="btn btn--approve" onclick="updateAmazonDeal('${d.asin}', 'approve')">✅ Looks Good</button>
-            <button class="btn btn--edit" onclick="document.getElementById('amazon-edit-${d.asin}').style.display='block'">✏️ Fix Price</button>
-            <button class="btn btn--delete" onclick="updateAmazonDeal('${d.asin}', 'delete')">🗑️ Remove</button>
-          </div>
-        </div>
-      </div>
-    `).join('');
-  }
+function setTab(status) {
+currentTab = status;
+editingId = null;
+document.querySelectorAll('.tab').forEach(t => {
+t.classList.toggle('active', t.dataset.status === status);
+});
+if (status === 'create') {
+document.getElementById('submissions-list').style.display = 'none';
+document.getElementById('amazon-flagged-list').style.display = 'none';
+document.getElementById('create-post-form').style.display = 'block';
+} else if (status === 'needs-review') {
+document.getElementById('submissions-list').style.display = 'block';
+document.getElementById('amazon-flagged-list').style.display = 'block';
+document.getElementById('create-post-form').style.display = 'none';
+renderList();
+renderFlaggedAmazonDeals();
+} else {
+document.getElementById('submissions-list').style.display = 'block';
+document.getElementById('amazon-flagged-list').style.display = 'none';
+document.getElementById('create-post-form').style.display = 'none';
+renderList();
+}
+}
 
-  async function updateAmazonDeal(asin, action) {
-    const price = document.getElementById(`amazon-price-${asin}`)?.value.trim();
-    const discountPercent = document.getElementById(`amazon-discount-${asin}`)?.value.trim();
-    try {
-      const res = await fetch('/api/update-amazon-deal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassword, asin, action, price, discountPercent: discountPercent ? parseInt(discountPercent) : null }),
-      });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || 'Action failed.'); return; }
-      flaggedAmazonDeals = flaggedAmazonDeals.filter(d => d.asin !== asin);
-      renderFlaggedAmazonDeals();
-    } catch (err) {
-      alert('Could not reach the server. Please try again.');
-    }
-  }
+function renderFlaggedAmazonDeals() {
+const container = document.getElementById('amazon-flagged-list');
+if (flaggedAmazonDeals.length === 0) {
+container.innerHTML = '<div class="empty-state">✅ No suspicious Amazon deals flagged!</div>';
+return;
+}
+container.innerHTML = '<h3 style="margin:20px 0 12px; font-size:14px; color:var(--red);">⚠️ Suspicious Amazon Deals (Auto-flagged)</h3>' +
+flaggedAmazonDeals.map(d => `
+<div class="submission-card" id="amazon-card-${d.asin}">
+${d.image ? `<img src="${d.image}" alt="" onerror="this.style.display='none'">` : ''}
+<div class="submission-card__body">
+<p class="submission-card__title">${escapeHtml(d.title)}
+<span class="badge badge--amazon">🛒 Amazon API</span>
+<span class="badge badge--needs-review">⚠️ ${d.discountPercent}% OFF</span>
+</p>
+<p class="submission-card__meta">
+Price: ${escapeHtml(d.price || 'N/A')} · Original: ${escapeHtml(d.originalPrice || 'N/A')}<br>
+<a href="${d.url}" target="_blank" rel="noopener">View on Amazon</a><br>
+Reason: ${escapeHtml(d.flagReason || 'High discount')}
+</p>
+<div class="edit-form" id="amazon-edit-${d.asin}" style="display:none;">
+<h3>✏️ Update Price</h3>
+<div class="edit-form-row">
+<div class="edit-form-group">
+<label>Correct Price</label>
+<input type="text" id="amazon-price-${d.asin}" placeholder="$49.99">
+</div>
+<div class="edit-form-group">
+<label>Correct Discount %</label>
+<input type="text" id="amazon-discount-${d.asin}" placeholder="25">
+</div>
+</div>
+<div class="edit-actions">
+<button class="btn btn--save" onclick="updateAmazonDeal('${d.asin}', 'update')">💾 Save & Approve</button>
+<button class="btn btn--edit" onclick="document.getElementById('amazon-edit-${d.asin}').style.display='none'">Cancel</button>
+</div>
+</div>
+<div class="actions">
+<button class="btn btn--approve" onclick="updateAmazonDeal('${d.asin}', 'approve')">✅ Looks Good</button>
+<button class="btn btn--edit" onclick="document.getElementById('amazon-edit-${d.asin}').style.display='block'">✏️ Fix Price</button>
+<button class="btn btn--delete" onclick="updateAmazonDeal('${d.asin}', 'delete')">🗑️ Remove</button>
+</div>
+</div>
+</div>
+`).join('');
+}
 
-  function toggleEdit(id) {
-    editingId = editingId === id ? null : id;
-    renderList();
-  }
+async function updateAmazonDeal(asin, action) {
+const price = document.getElementById(`amazon-price-${asin}`)?.value.trim();
+const discountPercent = document.getElementById(`amazon-discount-${asin}`)?.value.trim();
 
-  function
+try {
+const res = await fetch('/api/update-amazon-deal', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword, asin, action, price, discountPercent: discountPercent ? parseInt(discountPercent) : null }),
+});
+const data = await res.json();
+if (!res.ok) { alert(data.error || 'Action failed.'); return; }
+
+flaggedAmazonDeals = flaggedAmazonDeals.filter(d => d.asin !== asin);
+renderFlaggedAmazonDeals();
+} catch (err) {
+alert('Could not reach the server. Please try again.');
+}
+}
+
+function toggleEdit(id) {
+editingId = editingId === id ? null : id;
+renderList();
+}
+
+function renderList() {
+const container = document.getElementById('submissions-list');
+let filtered;
+if (currentTab === 'email') {
+filtered = allSubmissions.filter(s => s.source === 'email');
+} else if (currentTab === 'needs-review') {
+filtered = allSubmissions.filter(s => s.status === 'needs-review');
+} else {
+filtered = allSubmissions.filter(s => s.status === currentTab && s.source !== 'email');
+}
+if (filtered.length === 0 && currentTab !== 'needs-review') {
+container.innerHTML = '<div class="empty-state">No ' + currentTab + ' submissions.</div>';
+return;
+}
+if (filtered.length === 0 && currentTab === 'needs-review') {
+container.innerHTML = '<div class="empty-state">No flagged seller/email submissions.</div>';
+return;
+}
+container.innerHTML = filtered.map(s => {
+const isEditing = editingId === s.id;
+const expiryDate = s.expiresOn ? s.expiresOn.split('T')[0] : '';
+const isEmail = s.source === 'email';
+return `
+<div class="submission-card" id="card-${s.id}">
+${s.photoUrl || s.imageUrl ? `<img src="${s.photoUrl || s.imageUrl}" alt="" onerror="this.style.display='none'">` : ''}
+<div class="submission-card__body">
+<p class="submission-card__title">${escapeHtml(s.productTitle || s.title)}
+<span class="badge badge--${s.status}">${s.status}</span>
+${isEmail ? '<span class="badge badge--email">📧 email</span>' : ''}
+${s.needsAffiliateLink ? '<span class="badge badge--warning">NEEDS YOUR AFFILIATE LINK</span>' : ''}
+${s.flagReason ? '<span class="badge badge--needs-review">⚠️ Expired Code Reported</span>' : ''}
+</p>
+<p class="submission-card__meta">
+Price: ${escapeHtml(s.price || 'N/A')} &middot; Code: ${escapeHtml(s.discountCode || 'none')}<br>
+<a href="${s.productUrl || s.url || '#'}" target="_blank" rel="noopener">View link</a><br>
+Expires: ${escapeHtml(s.expiresOn || 'N/A')}<br>
+${s.sellerEmail ? 'Seller: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
+${s.flaggedAt ? 'Flagged: ' + new Date(s.flaggedAt).toLocaleString() + '<br>' : ''}
+Created: ${new Date(s.createdAt || s.submittedAt).toLocaleString()}
+</p>
+${isEditing ? `
+<div class="edit-form">
+<h3>✏️ Edit Deal</h3>
+<div class="edit-form-group" style="margin-bottom:10px;">
+<label>Title</label>
+<input type="text" id="edit-title-${s.id}" value="${escapeHtml(s.productTitle || s.title || '')}">
+</div>
+<div class="edit-form-row">
+<div class="edit-form-group">
+<label>Current Price</label>
+<input type="text" id="edit-price-${s.id}" value="${escapeHtml(s.price || '')}">
+</div>
+<div class="edit-form-group">
+<label>Original Price</label>
+<input type="text" id="edit-original-${s.id}" value="${escapeHtml(s.originalPrice || '')}">
+</div>
+</div>
+<div class="edit-form-row">
+<div class="edit-form-group">
+<label>Discount %</label>
+<input type="text" id="edit-discount-${s.id}" value="${escapeHtml(s.discount || '')}">
+</div>
+<div class="edit-form-group">
+<label>Discount Code</label>
+<input type="text" id="edit-code-${s.id}" value="${escapeHtml(s.discountCode || '')}">
+</div>
+</div>
+<div class="edit-form-group" style="margin-bottom:10px;">
+<label>Product URL</label>
+<input type="text" id="edit-url-${s.id}" value="${escapeHtml(s.productUrl || s.url || '')}" placeholder="https://www.amazon.com/dp/...">
+</div>
+<div class="edit-form-group" style="margin-bottom:10px;">
+<label>Image URL</label>
+<input type="text" id="edit-image-${s.id}" value="${escapeHtml(s.imageUrl || s.photoUrl || '')}" placeholder="https://...">
+</div>
+<div class="edit-form-group" style="margin-bottom:0;">
+<label>Expires On</label>
+<input type="date" id="edit-expires-${s.id}" value="${expiryDate}">
+</div>
+<div class="edit-actions">
+<button class="btn btn--save" onclick="saveEdit('${s.id}')">💾 Save Changes</button>
+<button class="btn btn--edit" onclick="toggleEdit('${s.id}')">Cancel</button>
+<span id="edit-msg-${s.id}" style="font-size:13px;"></span>
+</div>
+</div>
+` : ''}
+<div class="actions">
+${s.status === 'pending' && !isEmail ? `
+${s.needsAffiliateLink ? `<div class="link-edit-row"><input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here"></div>` : ''}
+<button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Approve</button>
+<button class="btn btn--reject" onclick="review('${s.id}', 'reject')">❌ Reject</button>
+` : ''}
+${s.status === 'needs-review' ? `
+<button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Keep Live</button>
+<button class="btn btn--reject" onclick="deleteSubmission('${s.id}')">🗑️ Remove Deal</button>
+` : ''}
+<button class="btn btn--edit" onclick="toggleEdit('${s.id}')">✏️ Edit</button>
+${s.status !== 'needs-review' ? `<button class="btn btn--delete" onclick="deleteSubmission('${s.id}')">🗑️ Delete</button>` : ''}
+</div>
+</div>
+</div>`;
+}).join('');
+}
+
+async function saveEdit(id) {
+const msgEl = document.getElementById(`edit-msg-${id}`);
+msgEl.textContent = 'Saving...';
+msgEl.style.color = 'var(--ink-soft)';
+const title = document.getElementById(`edit-title-${id}`).value.trim();
+const price = document.getElementById(`edit-price-${id}`).value.trim();
+const originalPrice = document.getElementById(`edit-original-${id}`).value.trim();
+const discount = document.getElementById(`edit-discount-${id}`).value.trim();
+const discountCode = document.getElementById(`edit-code-${id}`).value.trim();
+const url = document.getElementById(`edit-url-${id}`).value.trim();
+const imageUrl = document.getElementById(`edit-image-${id}`).value.trim();
+const expiresOn = document.getElementById(`edit-expires-${id}`).value.trim();
+try {
+const res = await fetch('/api/edit-submission', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword, submissionId: id, title, price, originalPrice, discount, discountCode, expiresOn, imageUrl, url }),
+});
+let data = {};
+try { data = await res.json(); } catch (e) {}
+if (!res.ok) throw new Error(data.error || ('Save failed (HTTP ' + res.status + ')'));
+const record = allSubmissions.find(s => s.id === id);
+if (record) {
+record.title = title; record.productTitle = title;
+record.price = price; record.originalPrice = originalPrice;
+record.discount = discount; record.discountCode = discountCode;
+record.expiresOn = expiresOn;
+record.imageUrl = imageUrl;
+if (data.record && data.record.url) { record.url = data.record.url; record.productUrl = data.record.url; }
+else if (url) { record.url = url; record.productUrl = url; }
+}
+editingId = null;
+renderList();
+} catch (err) {
+msgEl.textContent = '❌ ' + err.message;
+msgEl.style.color = 'var(--red)';
+}
+}
+
+async function deleteSubmission(submissionId) {
+if (!confirm('Are you sure you want to delete this post? This cannot be undone.')) return;
+try {
+const res = await fetch('/api/delete-submission', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword, submissionId }),
+});
+const data = await res.json();
+if (!res.ok) { alert(data.error || 'Delete failed.'); return; }
+allSubmissions = allSubmissions.filter(s => s.id !== submissionId);
+renderList();
+} catch (err) {
+alert('Could not reach the server. Please try again.');
+}
+}
+
+async function createPost() {
+const msgEl = document.getElementById('create-msg');
+msgEl.textContent = '';
+const title = document.getElementById('cp-title').value.trim();
+const url = document.getElementById('cp-url').value.trim();
+const price = document.getElementById('cp-price').value.trim();
+const originalPrice = document.getElementById('cp-original-price').value.trim();
+const discount = document.getElementById('cp-discount').value.trim();
+const discountCode = document.getElementById('cp-code').value.trim();
+const expiresOn = document.getElementById('cp-expires').value.trim();
+
+if (!title || !url || !price) {
+msgEl.className = 'error-msg';
+msgEl.textContent = '❌ Title, URL and price are required!';
+return;
+}
+
+let photoUrl = '';
+const imageType = document.querySelector('input[name="image-type"]:checked')?.value;
+
+if (imageType === 'url') {
+photoUrl = document.getElementById('cp-photo').value.trim();
+} else if (imageType === 'upload') {
+const fileInput = document.getElementById('cp-file');
+if (fileInput.files[0]) {
+msgEl.className = '';
+msgEl.textContent = '⏳ Compressing and uploading image...';
+const formData = new FormData();
+formData.append('password', adminPassword);
+const compressed = await compressImage(fileInput.files[0]);
+formData.append('image', compressed);
+try {
+const uploadRes = await fetch('/api/upload-image', { method: 'POST', body: formData });
+const uploadData = await uploadRes.json();
+if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
+photoUrl = uploadData.imageUrl;
+} catch (err) {
+msgEl.className = 'error-msg';
+msgEl.textContent = '❌ Image upload failed: ' + err.message;
+return;
+}
+}
+}
+
+msgEl.className = '';
+msgEl.textContent = photoUrl ? '⏳ Posting deal...' : '⏳ Posting and fetching image...';
+
+try {
+const res = await fetch('/api/admin-create-deal', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword, title, url, photoUrl, price, originalPrice, discount, discountCode, expiresOn }),
+});
+const data = await res.json();
+if (!res.ok) throw new Error(data.error || 'Failed');
+msgEl.className = 'success-msg';
+msgEl.textContent = '✅ Deal posted successfully!';
+['cp-title','cp-url','cp-price','cp-original-price','cp-discount','cp-code','cp-expires'].forEach(id => document.getElementById(id).value = '');
+document.getElementById('cp-photo').value = '';
+document.getElementById('cp-file').value = '';
+document.getElementById('cp-preview').style.display = 'none';
+document.getElementById('upload-filename').textContent = '';
+document.querySelectorAll('input[name="image-type"]').forEach(r => r.checked = false);
+document.getElementById('image-url-input').style.display = 'none';
+document.getElementById('image-upload-input').style.display = 'none';
+} catch (err) {
+msgEl.className = 'error-msg';
+msgEl.textContent = '❌ Error: ' + err.message;
+}
+}
+
+async function review(submissionId, action) {
+const linkInput = document.getElementById('link-' + submissionId);
+const updatedUrl = linkInput ? linkInput.value.trim() : '';
+if (action === 'approve' && linkInput && !updatedUrl) {
+alert('This submission needs your affiliate link before approving.');
+return;
+}
+try {
+const res = await fetch('/.netlify/functions/review-submission', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword, submissionId, action, updatedUrl }),
+});
+const data = await res.json();
+if (!res.ok) { alert(data.error || 'Action failed.'); return; }
+const record = allSubmissions.find(s => s.id === submissionId);
+if (record) {
+record.status = data.status;
+if (updatedUrl) { record.productUrl = updatedUrl; record.needsAffiliateLink = false; }
+}
+renderList();
+} catch (err) {
+alert('Could not reach the server. Please try again.');
+}
+}
+
+function escapeHtml(str) {
+const div = document.createElement('div');
+div.textContent = str || '';
+return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+document.getElementById('password-input').addEventListener('keydown', (e) => {
+if (e.key === 'Enter') login();
+});
+</script>
+</body>
+</html>
