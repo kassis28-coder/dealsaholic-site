@@ -10,7 +10,6 @@ export default async (req, context) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
-    // ✅ Added url to destructuring
     const { submissionId, title, price, originalPrice, discount, discountCode, expiresOn, imageUrl, url } = body;
 
     if (!submissionId) {
@@ -22,22 +21,27 @@ export default async (req, context) => {
     try {
       record = await store.get(submissionId, { type: "json" });
     } catch (e) {
+      record = null;
+    }
+    if (!record) {
       return new Response(JSON.stringify({ error: "Submission not found" }), { status: 404 });
     }
 
     let expiresOnISO = record.expiresOn;
     if (expiresOn) {
-      if (expiresOn.includes('/')) {
-        const parts = expiresOn.split('/');
-        if (parts.length === 3) {
-          expiresOnISO = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}T23:59:59.000Z`;
+      try {
+        if (expiresOn.includes('/')) {
+          const parts = expiresOn.split('/');
+          if (parts.length === 3) {
+            expiresOnISO = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}T23:59:59.000Z`;
+          }
+        } else {
+          expiresOnISO = new Date(expiresOn).toISOString();
         }
-      } else {
-        expiresOnISO = new Date(expiresOn).toISOString();
-      }
+      } catch (e) { /* keep existing expiresOn on bad input */ }
     }
 
-    // ✅ Build affiliate URL if amazon link provided
+    // Build affiliate URL if an Amazon link was provided
     let finalUrl = url || record.url;
     if (url) {
       const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
@@ -49,14 +53,14 @@ export default async (req, context) => {
 
     const updated = {
       ...record,
-      title: title || record.title,
+      title: title || record.title || record.productTitle,
       price: price || record.price,
       originalPrice: originalPrice || record.originalPrice,
       discount: discount || record.discount,
       discountCode: discountCode || record.discountCode,
       expiresOn: expiresOnISO,
       imageUrl: imageUrl || record.imageUrl,
-      url: finalUrl, // ✅ Now updates the URL
+      url: finalUrl,
       updatedAt: new Date().toISOString(),
     };
 
