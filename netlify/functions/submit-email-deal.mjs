@@ -158,6 +158,17 @@ function maybeUrlDecode(text) {
   }
 }
 
+function stripHtml(html) {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+// Preserves line breaks so the block parser can find markers line by line.
 function stripHtmlKeepLines(html) {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
@@ -195,12 +206,15 @@ function isGarbageText(s) {
   return false;
 }
 
+// ─── Date parsing ──────────────────────────────────────────────────────────
+
 function parseDateString(raw, defaultHour = '00', defaultMin = '00') {
   if (!raw) return null;
   let s = raw
     .replace(/\s*(?:PDT|PST|PST8PDT|EDT|EST|UTC|GMT)[^\s]*/gi, '')
     .replace('T', ' ')
     .trim();
+
   const concat = s.match(/^(\d{4})-(\d{1,2})-(\d{2})(\d{2}:\d{2})?$/);
   if (concat) {
     const [, yr, mo, dy, tm] = concat;
@@ -208,6 +222,7 @@ function parseDateString(raw, defaultHour = '00', defaultMin = '00') {
     const d = new Date(`${yr}-${mo.padStart(2,'0')}-${dy}T${hr.padStart(2,'0')}:${mn.padStart(2,'0')}:00Z`);
     return isNaN(d.getTime()) ? null : d.toISOString();
   }
+
   const standard = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
   if (standard) {
     const [, yr, mo, dy, hr = defaultHour, mn = defaultMin] = standard;
@@ -217,15 +232,23 @@ function parseDateString(raw, defaultHour = '00', defaultMin = '00') {
     );
     return isNaN(d.getTime()) ? null : d.toISOString();
   }
+
   return null;
 }
+
+// ─── Price helpers ─────────────────────────────────────────────────────────
 
 function parsePriceValue(str) {
   if (!str) return null;
   const s = str.trim().replace(/^\$/, '');
   const rangeMatch = s.match(/^([\d]+(?:\.[\d]+)?)\s*[-–]\s*([\d]+(?:\.[\d]+)?)$/);
   if (rangeMatch) {
-    return { low: parseFloat(rangeMatch[1]), high: parseFloat(rangeMatch[2]), raw: s, isRange: true };
+    return {
+      low: parseFloat(rangeMatch[1]),
+      high: parseFloat(rangeMatch[2]),
+      raw: s,
+      isRange: true,
+    };
   }
   const single = parseFloat(s);
   if (isNaN(single)) return null;
@@ -240,47 +263,62 @@ function formatPrice(p) {
 // ─── Per-product block field extractor ────────────────────────────────────
 
 function extractFieldsFromBlock(block, prevTail) {
+  // ── Amazon URLs ────────────────────────────────────────────────────────────
   const dpMatch =
     block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/([A-Z0-9]{10})[^\s"'<>\n]*/i)
     || block.match(/https?:\/\/amzn\.to\/[A-Za-z0-9]+/i)
     || block.match(/https?:\/\/a\.co\/[A-Za-z0-9/]+/i);
   const realUrl = dpMatch ? dpMatch[0].replace(/["'\s]+$/, '') : null;
+
   const asinFromUrl = realUrl
     ? (realUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null)
     : null;
+
   const promoMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/promocode\/[A-Z0-9]+/i);
   const promocodeUrl = promoMatch ? promoMatch[0].replace(/\s+/g, '') : null;
 
+  // ── Promo code ─────────────────────────────────────────────────────────────
   const codeMatch = block.match(
     /(?:discount\s*code|promo(?:tion)?\s*code|coupon\s*code|(?<![a-zA-Z])code|(?<![a-zA-Z])coupon)\s*[:：]\s*["']?([A-Z0-9]{4,20})\b/i
   );
   const promoCode = codeMatch ? codeMatch[1].toUpperCase() : null;
 
+  // ── Coupon percentage ──────────────────────────────────────────────────────
   const couponPctMatch = block.match(/(?<![a-zA-Z])coupon\s*[:：]\s*(\d{1,3})\s*%/i);
   const couponPct = couponPctMatch
     ? (promoCode && couponPctMatch[0].includes(promoCode) ? null : couponPctMatch[1])
     : null;
 
+  // ── Sale price ────────────────────────────────────────────────────────────
   const PRICE_PATTERN = /\$?\s*([\d]+(?:\.[\d]+)?(?:\s*[-–]\s*[\d]+(?:\.[\d]+)?)?)/;
   const saleLabelRe = new RegExp(
     '(?:deal\\s*price|discount\\s*price|product\\s*price|sale\\s*price' +
     '|after\\s*(?:the\\s*)?discount\\s*price|price\\s*after\\s*discount|final\\s*price)' +
-    '\\s*[:：]?\\s*' + PRICE_PATTERN.source, 'i'
+    '\\s*[:：]?\\s*' + PRICE_PATTERN.source,
+    'i'
   );
-  const barePriceRe = new RegExp('(?:^|\\n)[ \\t]*price\\s*[:：]\\s*' + PRICE_PATTERN.source, 'i');
+  const barePriceRe = new RegExp(
+    '(?:^|\\n)[ \\t]*price\\s*[:：]\\s*' + PRICE_PATTERN.source,
+    'i'
+  );
   const salePriceRaw = (block.match(saleLabelRe) || block.match(barePriceRe))?.[1] || null;
   let salePrice = parsePriceValue(salePriceRaw);
 
+  // ── Original price ─────────────────────────────────────────────────────────
   const origLabelRe = new RegExp(
     '(?:original\\s*price|price\\s*before\\s*discount|list\\s*price|was' +
-    '|reg(?:ular)?\\.?\\s*(?:price)?)\\s*[:：]?\\s*' + PRICE_PATTERN.source, 'i'
+    '|reg(?:ular)?\\.?\\s*(?:price)?)' +
+    '\\s*[:：]?\\s*' + PRICE_PATTERN.source,
+    'i'
   );
   const origPriceRaw = block.match(origLabelRe)?.[1] || null;
   let origPrice = parsePriceValue(origPriceRaw);
 
-  if (salePrice && origPrice && !salePrice.isRange && !origPrice.isRange && origPrice.low < salePrice.low) {
+  if (salePrice && origPrice && !salePrice.isRange && !origPrice.isRange
+    && origPrice.low < salePrice.low) {
     [salePrice, origPrice] = [origPrice, salePrice];
   }
+
   if (!salePrice && !origPrice) {
     const amounts = [...block.matchAll(/\$\s*([\d]+\.[\d]{1,2})\b/g)]
       .map(m => parseFloat(m[1])).filter(p => p > 0);
@@ -291,32 +329,56 @@ function extractFieldsFromBlock(block, prevTail) {
     }
   }
 
+  // ── Discount % ─────────────────────────────────────────────────────────────
   let discount = null;
+
   if (prevTail) {
     const ptm = prevTail.match(/(?:discount|%off)\s*[:：]?\s*(\d{1,2})\s*%/i);
     if (ptm) discount = ptm[1];
   }
+
   if (!discount) {
     const dm =
       block.match(/(?:^|[\n\s])(?:discount|%off)\s*[:：]\s*(\d{1,2})\s*%/i)
       || block.match(/(\d{1,2})\s*%\s*(?:off(?:\s+prime)?|OFF(?:\s+PRIME)?)\b/i)
       || block.match(/(\d{1,2})\s*%\s*(?:discount)\b/i)
+      // FIX: Also detect "Save X%" pattern within a block
       || block.match(/[Ss]ave\s+(\d{1,2})\s*%/i);
     if (dm) discount = dm[1];
   }
-  if (!discount && salePrice && origPrice && !salePrice.isRange && !origPrice.isRange && origPrice.low > 0) {
+
+  if (!discount && salePrice && origPrice
+    && !salePrice.isRange && !origPrice.isRange && origPrice.low > 0) {
     const pct = Math.round((1 - salePrice.low / origPrice.low) * 100);
     if (pct >= 5 && pct <= 95) discount = String(pct);
   }
 
-  const startRaw = block.match(/start\s*(?:date|day|time)?\s*[:：]?\s*([\d]{4}-[\d]{1,2}-[\d]{1,2}(?:\s*T?\s*[\d]{1,2}:[\d]{2})?)/i);
+  // ── Start date ─────────────────────────────────────────────────────────────
+  const startRaw = block.match(
+    /start\s*(?:date|day|time)?\s*[:：]?\s*([\d]{4}-[\d]{1,2}-[\d]{1,2}(?:\s*T?\s*[\d]{1,2}:[\d]{2})?)/i
+  );
   const startDate = startRaw ? parseDateString(startRaw[1], '00', '00') : null;
-  const endRaw = block.match(/end\s*(?:date|day|time)?\s*[:：]?\s*([\d]{4}-[\d]{1,2}-[\d]{1,2}(?:\s*T?\s*[\d]{1,2}:[\d]{2})?)/i);
-  const endDateParsed = endRaw ? parseDateString(endRaw[1], '23', '59') : null;
-  const endDate = (endDateParsed && new Date(endDateParsed).getTime() > Date.now()) ? endDateParsed : null;
 
-  return { asinFromUrl, realUrl, promocodeUrl, promoCode, couponPct, discount,
-    salePrice: formatPrice(salePrice), originalPrice: formatPrice(origPrice), startDate, endDate };
+  // ── End date ───────────────────────────────────────────────────────────────
+  const endRaw = block.match(
+    /end\s*(?:date|day|time)?\s*[:：]?\s*([\d]{4}-[\d]{1,2}-[\d]{1,2}(?:\s*T?\s*[\d]{1,2}:[\d]{2})?)/i
+  );
+  const endDateParsed = endRaw ? parseDateString(endRaw[1], '23', '59') : null;
+  const endDate = (endDateParsed && new Date(endDateParsed).getTime() > Date.now())
+    ? endDateParsed : null;
+
+  return {
+    asinFromUrl,
+    realUrl,
+    promocodeUrl,
+    promoCode,
+    couponPct,
+    discount,
+    salePrice: formatPrice(salePrice),
+    originalPrice: formatPrice(origPrice),
+    startDate,
+    endDate,
+  };
 }
 
 // ─── Title extraction ──────────────────────────────────────────────────────
@@ -325,46 +387,59 @@ const FIELD_LINE_RE = /^(?:original\s*price|price\s*before|deal\s*price|discount
 
 function extractTitleFromBlock(blockText, strategy) {
   const lines = blockText.split('\n').map(l => l.trim()).filter(Boolean);
+
   if (strategy === 'label') {
     const firstLine = lines[0] || '';
     const inlineFieldMatch = firstLine.match(
       /\b(?:original\s*price|price\s*before|deal\s*price|discount\s*price|product\s*price|sale\s*price|after\s*(?:the\s*)?discount|code\s*[:：]|coupon\s*[:：]|link\s*[:：]|start\s*date|end\s*(?:date|day)|%off\s*[:：]|\d+\s*%\s*off)/i
     );
-    const raw = inlineFieldMatch ? firstLine.slice(0, inlineFieldMatch.index) : firstLine;
-    const title = raw.replace(/^["""'\s]+|["""'",:：\s]+$/g, '').substring(0, 200);
+    const raw = inlineFieldMatch
+      ? firstLine.slice(0, inlineFieldMatch.index)
+      : firstLine;
+    const title = raw.replace(/^["""'\s]+|["""'",：\s]+$/g, '').substring(0, 200);
     if (title.length > 4 && !isGarbageText(title)) return title;
   }
+
   if (strategy === 'numbered') {
     for (const line of lines.slice(1, 4)) {
       const m = line.match(/^["""']?(?:products?\s*(?:name|title)|title)\s*[:：]\s*(.+)/i);
       if (m) {
-        const title = m[1].replace(/^["""'\s]+|["""'",:：\s]+$/g, '').substring(0, 200);
+        const title = m[1].replace(/^["""'\s]+|["""'",：\s]+$/g, '').substring(0, 200);
         if (!isGarbageText(title)) return title;
       }
     }
     for (const line of lines.slice(1)) {
-      if (!FIELD_LINE_RE.test(line) && !/^https?:\/\//i.test(line) && line.length > 10 && !isGarbageText(line)) {
-        return line.replace(/^["""'\s]+|["""'",:：\s]+$/g, '').substring(0, 200);
+      if (!FIELD_LINE_RE.test(line) && !/^https?:\/\//i.test(line)
+        && line.length > 10 && !isGarbageText(line)) {
+        return line.replace(/^["""'\s]+|["""'",：\s]+$/g, '').substring(0, 200);
       }
     }
   }
+
+  // Fallback: scan all lines for an explicit title label
   for (const line of lines) {
     const m = line.match(/^["""']?(?:products?\s*(?:name|title)|title)\s*[:：]\s*(.+)/i);
     if (m) {
-      const title = m[1].replace(/^["""'\s]+|["""'",:：\s]+$/g, '').substring(0, 200);
+      const title = m[1].replace(/^["""'\s]+|["""'",：\s]+$/g, '').substring(0, 200);
       if (!isGarbageText(title)) return title;
     }
   }
+
   // FIX: In 'fallback' strategy, only return a title if there's also a real Amazon URL
+  // in the block — prevents treating email boilerplate as a product title.
   if (strategy === 'fallback') {
     const hasAmazonUrl = /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}/i.test(blockText);
     if (!hasAmazonUrl) return null;
   }
+
+  // Last resort: first meaningful line that is not a field label or URL
   for (const line of lines) {
-    if (!FIELD_LINE_RE.test(line) && !/^https?:\/\//i.test(line) && line.length > 10 && !isGarbageText(line)) {
-      return line.replace(/^["""'\s]+|["""'",:：\s]+$/g, '').substring(0, 200);
+    if (!FIELD_LINE_RE.test(line) && !/^https?:\/\//i.test(line)
+      && line.length > 10 && !isGarbageText(line)) {
+      return line.replace(/^["""'\s]+|["""'",：\s]+$/g, '').substring(0, 200);
     }
   }
+
   return null;
 }
 
@@ -378,6 +453,8 @@ function splitAtPositions(text, positions) {
   }));
 }
 
+// Split the email into isolated per-product blocks.
+// Returns an array of parsed block objects ready for Amazon enrichment.
 function parseEmailIntoProductBlocks(text) {
   const results = [];
 
@@ -390,13 +467,19 @@ function parseEmailIntoProductBlocks(text) {
   }
 
   // ── Strategy 0: Amazon "Save X% on eligible items" multi-product format ──
+  // Handles: "Save 40% on the eligible item(s) below"
+  // Extracts ALL /dp/ASIN product URLs and applies the global discount to each.
+  // This runs FIRST so multi-product promo emails never fall through to
+  // strategies 3/4 which would misread email boilerplate as product titles.
   const eligibleMatch = text.match(/[Ss]ave\s+(\d{1,2})\s*%\s+on\s+(?:the\s+)?eligible/i);
   if (eligibleMatch) {
     const globalDiscount = eligibleMatch[1];
+    // Extract a global promo code if present anywhere in the email
     const globalCodeMatch = text.match(
       /(?:discount\s*code|promo(?:tion)?\s*code|coupon\s*code|(?<![a-zA-Z])code)\s*[:：]\s*["']?([A-Z0-9]{4,20})\b/i
     );
     const globalCode = globalCodeMatch ? globalCodeMatch[1].toUpperCase() : null;
+    // Collect all unique /dp/ASIN or /gp/product/ASIN URLs
     const allUrlMatches = [
       ...text.matchAll(/https?:\/\/(?:www\.)?amazon\.com\/(?:[^\s"'<>\n]*\/)?(?:dp|gp\/product)\/([A-Z0-9]{10})[^\s"'<>\n]*/gi)
     ];
@@ -406,14 +489,26 @@ function parseEmailIntoProductBlocks(text) {
       if (seenAsins0.has(asinFromUrl)) continue;
       seenAsins0.add(asinFromUrl);
       const realUrl = m[0].replace(/["'\s]+$/, '');
-      results.push({ title: null, asinFromUrl, realUrl, promocodeUrl: null,
-        promoCode: globalCode, couponPct: null, discount: globalDiscount,
-        salePrice: null, originalPrice: null, startDate: null, endDate: null });
+      results.push({
+        title: null,          // fetched from Amazon API in main handler
+        asinFromUrl,
+        realUrl,
+        promocodeUrl: null,
+        promoCode: globalCode,
+        couponPct: null,
+        discount: globalDiscount,
+        salePrice: null,
+        originalPrice: null,
+        startDate: null,
+        endDate: null,
+      });
     }
     if (results.length > 0) {
       console.log(`[Strategy 0] "Save ${globalDiscount}% eligible items" — ${results.length} product URL(s) found`);
       return results.slice(0, 20);
     }
+    // If no /dp/ URLs found in an "eligible items" email, stop here.
+    // Do not fall through to strategies that would misread boilerplate.
     console.log(`[Strategy 0] "Save ${globalDiscount}% eligible items" email but no /dp/ URLs found — skipping`);
     return results;
   }
@@ -421,29 +516,38 @@ function parseEmailIntoProductBlocks(text) {
   // ── Strategy 1: Split on title label markers ───────────────────────────────
   const TITLE_LABEL_RE = /(?:products?\s*(?:name|title)|(?<![a-zA-Z])title)\s*[:：]/gi;
   const titleMatches = [...text.matchAll(TITLE_LABEL_RE)];
+
   if (titleMatches.length > 0) {
     const segs = splitAtPositions(text, titleMatches.map(m => m.index + m[0].length));
-    for (const { blockText, prevTail } of segs) addBlock(blockText, prevTail, 'label');
+    for (const { blockText, prevTail } of segs) {
+      addBlock(blockText, prevTail, 'label');
+    }
     if (results.length > 0) return results.slice(0, 20);
   }
 
   // ── Strategy 2: Split on numbered list prefixes at line start ──────────────
   const NUMBERED_RE = /(?:^|\n)[ \t]*\d+\s*[.、]/gm;
   const numMatches = [...text.matchAll(NUMBERED_RE)];
+
   if (numMatches.length > 0) {
     const positions = numMatches.map(m => m.index + (text[m.index] === '\n' ? 1 : 0));
     const segs = splitAtPositions(text, positions);
-    for (const { blockText, prevTail } of segs) addBlock(blockText, prevTail, 'numbered');
+    for (const { blockText, prevTail } of segs) {
+      addBlock(blockText, prevTail, 'numbered');
+    }
     if (results.length > 0) return results.slice(0, 20);
   }
 
-  // ── Strategy 3: Split on double blank lines (Amazon URL required) ──────────
+  // ── Strategy 3: Split on double blank lines ────────────────────────────────
+  // FIX: Only create blocks that contain a real Amazon product URL.
+  // This prevents email boilerplate paragraphs from becoming fake deals.
   const blankParts = text.split(/\n{2,}/);
   if (blankParts.length > 1) {
     let offset = 0;
     for (const part of blankParts) {
       const trimmed = part.trim();
       const prevTail = text.slice(0, offset).slice(-200);
+      // Only process paragraphs that have an actual Amazon /dp/ product URL
       if (trimmed.length >= 10 && /https?:\/\/(?:www\.)?amazon\.com\/(?:[^\s"'<>\n]*\/)?(?:dp|gp\/product)\/[A-Z0-9]{10}/i.test(trimmed)) {
         addBlock(trimmed, prevTail, 'fallback');
       }
@@ -452,8 +556,66 @@ function parseEmailIntoProductBlocks(text) {
     if (results.length > 0) return results.slice(0, 20);
   }
 
-  // Strategy 4 removed — caused boilerplate to be saved as product titles.
+  // ── Strategy 4 REMOVED ────────────────────────────────────────────────────
+  // Treating the whole email as one product block caused email boilerplate
+  // (e.g. "Save 40% on the eligible item(s) below. Terms and conditions…")
+  // to be saved as a product title. Strategy 0 now handles these emails.
   return results;
+}
+
+// ─── Deduplication helpers ─────────────────────────────────────────────────
+// Three indexes live in the submissions blob store:
+//   asin-index        : { [ASIN]: submissionId }
+//   url-index         : { [normalizedUrl]: submissionId }
+//   asin-promo-index  : { ["ASIN|PROMOCODE"]: submissionId }
+
+function normalizeUrlForIndex(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    return (u.hostname + u.pathname).toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return url.toLowerCase().trim();
+  }
+}
+
+async function loadDedupIndexes(store) {
+  let asinIndex = {}, urlIndex = {}, asinPromoIndex = {};
+  try { asinIndex      = await store.get('asin-index',       { type: 'json' }) || {}; } catch {}
+  try { urlIndex       = await store.get('url-index',        { type: 'json' }) || {}; } catch {}
+  try { asinPromoIndex = await store.get('asin-promo-index', { type: 'json' }) || {}; } catch {}
+  return { asinIndex, urlIndex, asinPromoIndex };
+}
+
+async function saveDedupIndexes(store, asinIndex, urlIndex, asinPromoIndex) {
+  await store.setJSON('asin-index',       asinIndex);
+  await store.setJSON('url-index',        urlIndex);
+  await store.setJSON('asin-promo-index', asinPromoIndex);
+}
+
+// Returns { isDuplicate, reason, existingId } or { isDuplicate: false }
+function checkDuplicate(asin, affiliateUrl, promoCode, asinIndex, urlIndex, asinPromoIndex) {
+  if (asin && asinIndex[asin]) {
+    return { isDuplicate: true, reason: 'ASIN', existingId: asinIndex[asin] };
+  }
+  const normUrl = normalizeUrlForIndex(affiliateUrl);
+  if (normUrl && urlIndex[normUrl]) {
+    return { isDuplicate: true, reason: 'URL', existingId: urlIndex[normUrl] };
+  }
+  if (asin && promoCode) {
+    const key = `${asin}|${promoCode.toUpperCase()}`;
+    if (asinPromoIndex[key]) {
+      return { isDuplicate: true, reason: 'ASIN+PromoCode', existingId: asinPromoIndex[key] };
+    }
+  }
+  return { isDuplicate: false };
+}
+
+function registerInDedupIndexes(id, asin, affiliateUrl, promoCode, asinIndex, urlIndex, asinPromoIndex) {
+  if (asin) asinIndex[asin] = id;
+  const normUrl = normalizeUrlForIndex(affiliateUrl);
+  if (normUrl) urlIndex[normUrl] = id;
+  if (asin && promoCode) asinPromoIndex[`${asin}|${promoCode.toUpperCase()}`] = id;
 }
 
 // ─── Main handler ──────────────────────────────────────────────────────────
@@ -461,7 +623,15 @@ function parseEmailIntoProductBlocks(text) {
 export default async (req, context) => {
   const urlObj = new URL(req.url);
   const debugMode = urlObj.searchParams.get('debug') === 'true';
+  // force=true → bypass dedup checks so you can reprocess an email without creating duplicates
+  // being rejected. Existing records are NOT overwritten — duplicates are logged, not saved again.
+  // Use force=true only for testing; in production every email is processed once.
+  const forceMode = urlObj.searchParams.get('force') === 'true';
+  // messageId helps trace logs back to the originating email
+  let messageId = urlObj.searchParams.get('messageId') || null;
+
   let emailBody = '', title = '', snippet = '';
+
   if (req.method === 'GET') {
     emailBody = urlObj.searchParams.get('emailBody') || '';
     title = urlObj.searchParams.get('title') || '';
@@ -471,19 +641,24 @@ export default async (req, context) => {
   }
 
   let content = (emailBody || title).trim();
+
   try {
     const parsed = JSON.parse(content);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       if (parsed.emailBody) content = String(parsed.emailBody);
       else if (parsed.snippet) content = String(parsed.snippet);
+      // Allow messageId to be passed in the JSON body too
+      if (parsed.messageId && !messageId) messageId = String(parsed.messageId);
     }
   } catch (e) {}
 
   content = maybeUrlDecode(content);
   const lineText = stripHtmlKeepLines(content);
-  const blocks = parseEmailIntoProductBlocks(lineText);
-  console.log(`[Parser] ${blocks.length} product block(s) from email (debug=${debugMode})`);
 
+  const blocks = parseEmailIntoProductBlocks(lineText);
+  console.log(`[Parser] email="${messageId || 'unknown'}" blocks=${blocks.length} debug=${debugMode} force=${forceMode}`);
+
+  // ── Debug mode: return JSON preview, no saves ──────────────────────────────
   if (debugMode) {
     const preview = blocks.map(block => ({
       title: block.title || null,
@@ -497,86 +672,183 @@ export default async (req, context) => {
       imageUrl: null,
       startDate: block.startDate || null,
       endDate: block.endDate || null,
-      flags: { asinMissing: !block.asinFromUrl && !!block.promocodeUrl, hasPromocode: !!block.promocodeUrl },
+      flags: {
+        asinMissing: !block.asinFromUrl && !!block.promocodeUrl,
+        hasPromocode: !!block.promocodeUrl,
+      },
     }));
-    return new Response(JSON.stringify({ debug: true, count: blocks.length, deals: preview }, null, 2), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({ debug: true, messageId, count: blocks.length, deals: preview }, null, 2), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
+  // ── Normal mode: enrich, validate, dedup, save to Blobs, queue approved deals ─
   const store = getStore("submissions");
   const queueStore = getStore("deal-queue");
-  const savedIds = [], deals = [], queueItems = [];
-  const seenAsins = new Set();
+  const savedIds = [];
+  const skippedDuplicates = [];
+  const deals = [];
+  const queueItems = [];
+  const seenAsins = new Set();  // dedup within this email
+
+  // Load cross-email dedup indexes once before the loop
+  const { asinIndex, urlIndex, asinPromoIndex } = await loadDedupIndexes(store);
+  let dedupIndexDirty = false;  // only write indexes if something was saved
 
   for (const block of blocks) {
-    let affiliateUrl = '', imageUrl = null, dealTitle = block.title, asin = null;
-    let status = 'pending', priceFromMeta = null;
+    let affiliateUrl = '';
+    let imageUrl = null;
+    let dealTitle = block.title;
+    let asin = null;
+    let status = 'pending';
+    let priceFromMeta = null;   // price scraped from Amazon product page
 
+    // ── CASE 1: Real /dp/ or /gp/product/ URL — ASIN is known ───────────────
     if (block.realUrl) {
-      console.log(`[Block] real URL: ${block.realUrl}`);
+      console.log(`[email=${messageId}][Block] real URL asin=${block.asinFromUrl || '?'} url=${block.realUrl}`);
       const meta = await fetchAmazonMeta(block.realUrl);
       asin = block.asinFromUrl || meta?.asin || null;
       affiliateUrl = asin
         ? `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`
-        : (block.realUrl.includes('tag=') ? block.realUrl : `${block.realUrl}${block.realUrl.includes('?') ? '&' : '?'}tag=${PARTNER_TAG}`);
+        : (block.realUrl.includes('tag=')
+          ? block.realUrl
+          : `${block.realUrl}${block.realUrl.includes('?') ? '&' : '?'}tag=${PARTNER_TAG}`);
+      // FIX: Image comes from Amazon scrape only — never /images/P/ fallback
       imageUrl = meta?.image || null;
-      dealTitle = (meta?.title && !isGarbageText(meta.title) ? meta.title : null) || block.title || null;
+      dealTitle = (meta?.title && !isGarbageText(meta.title) ? meta.title : null)
+        || block.title
+        || null;
+      // Capture price from the scraped Amazon page
       priceFromMeta = meta?.price || null;
       if (asin && affiliateUrl && imageUrl && dealTitle && !isGarbageText(dealTitle)) status = 'approved';
-    } else if (block.promocodeUrl) {
-      console.log(`[Block] promocode URL (no ASIN) — will be rejected by validation: ${block.promocodeUrl}`);
-    } else if (block.title) {
-      console.log(`[Block] no URL — searching Amazon by title: "${block.title}"`);
+      console.log(`[email=${messageId}][Block] asin=${asin} image=${imageUrl ? 'YES' : 'no'} price=${block.salePrice || priceFromMeta || block.discount || 'none'} title="${String(dealTitle || '').substring(0, 50)}"`);
+    }
+
+    // ── CASE 2: /promocode/ URL — ASIN unknown ────────────────────────────────
+    // FIX: These are skipped entirely by strict validation below (no ASIN, no image).
+    // Do not save partial records; admin cannot reliably fix them.
+    else if (block.promocodeUrl) {
+      console.log(`[email=${messageId}][Block] SKIP promocode URL (no ASIN): ${block.promocodeUrl}`);
+      // Leave asin=null, imageUrl=null, dealTitle=block.title — validation will skip.
+    }
+
+    // ── CASE 3: Title only — search Amazon by title ───────────────────────────
+    else if (block.title) {
+      console.log(`[email=${messageId}][Block] no URL — searching Amazon by title: "${block.title}"`);
       const searchResult = await searchAmazonByTitle(block.title);
       if (searchResult) {
         asin = searchResult.asin;
         affiliateUrl = searchResult.url;
+        // FIX: image from searchAmazonByTitle already returns null instead of /images/P/
         imageUrl = searchResult.image;
         dealTitle = block.title;
         if (asin && affiliateUrl && imageUrl && !isGarbageText(dealTitle)) status = 'approved';
+        console.log(`[email=${messageId}][Block] title-search asin=${asin} image=${imageUrl ? 'YES' : 'no'}`);
+      } else {
+        console.log(`[email=${messageId}][Block] title-search returned no result for "${block.title}"`);
       }
     }
 
-    if (asin && seenAsins.has(asin)) { console.log(`[SKIP] Duplicate ASIN ${asin}`); continue; }
+    // ── Skip duplicate ASINs within the same email ────────────────────────────
+    if (asin && seenAsins.has(asin)) {
+      console.log(`[email=${messageId}][SKIP] Same-email duplicate ASIN=${asin}`);
+      continue;
+    }
     if (asin) seenAsins.add(asin);
 
-    // ── STRICT VALIDATION: all 5 required fields must be present ──────────────
+    // ── Cross-email dedup check ───────────────────────────────────────────────
+    // Check if this ASIN / URL / ASIN+promo already exists in the submissions store.
+    // Pass force=true in the query string to skip this check during testing.
+    if (!forceMode) {
+      const dup = checkDuplicate(asin, affiliateUrl, block.promoCode || null, asinIndex, urlIndex, asinPromoIndex);
+      if (dup.isDuplicate) {
+        console.log(
+          `[email=${messageId}][SKIP-DUP] Duplicate by ${dup.reason} — ` +
+          `asin=${asin} existingId=${dup.existingId} title="${String(dealTitle || '').substring(0, 50)}"`
+        );
+        skippedDuplicates.push({ asin, reason: dup.reason, existingId: dup.existingId });
+        continue;
+      }
+    } else if (asin) {
+      // force mode: log that we're ignoring the dedup check
+      const dup = checkDuplicate(asin, affiliateUrl, block.promoCode || null, asinIndex, urlIndex, asinPromoIndex);
+      if (dup.isDuplicate) {
+        console.log(
+          `[email=${messageId}][FORCE] Overriding duplicate by ${dup.reason} — ` +
+          `asin=${asin} existingId=${dup.existingId} (force=true, NOT re-saving)`
+        );
+        // Even with force=true we don't re-save — the deal already exists.
+        // force=true just means "don't error, keep processing the rest of the email".
+        skippedDuplicates.push({ asin, reason: dup.reason, existingId: dup.existingId, forced: true });
+        continue;
+      }
+    }
+
+    // ── VALIDATION: ASIN + title + URL + price/discount required at submit time ─
+    // Image is NOT required here — post-queued-deal.mjs has more robust image
+    // fetching (multiple scraping methods + R2 upload) and will re-fetch at post time.
+    // Requiring image here would block valid deals when Amazon temporarily 403s the scraper.
     const hasPriceOrDiscount = !!(block.salePrice || block.discount || priceFromMeta);
     const hasValidTitle = !!(dealTitle && !isGarbageText(dealTitle));
-    // Image is NOT required at submit time — post-queued-deal.mjs re-fetches it with more
-    // robust scraping. Requiring it here blocks valid deals when Amazon 403s the scraper.
     if (!asin || !hasValidTitle || !affiliateUrl || !hasPriceOrDiscount) {
-      console.log(`[SKIP] Missing required field(s) — asin=${!!asin} title=${hasValidTitle} url=${!!affiliateUrl} img=${!!imageUrl} price=${hasPriceOrDiscount} — "${String(dealTitle ?? '').substring(0, 60)}"`);
+      console.log(
+        `[SKIP] Missing required field(s) — ` +
+        `asin=${!!asin} title=${hasValidTitle} url=${!!affiliateUrl} ` +
+        `price=${hasPriceOrDiscount} ` +
+        `— "${String(dealTitle ?? '').substring(0, 60)}"`
+      );
       continue;
     }
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+
     const submission = {
-      id, title: dealTitle,
+      id,
+      asin,                            // ← stored so dedup and post-queued-deal can use it
+      title: dealTitle,
       price: block.salePrice || priceFromMeta || null,
       originalPrice: block.originalPrice || null,
       discount: block.discount || null,
-      url: affiliateUrl, imageUrl,
+      url: affiliateUrl,
+      imageUrl,
       discountCode: block.promoCode || null,
       couponPct: block.couponPct || null,
-      source: "email", status, asinMissing: false, sponsored: false,
+      source: "email",
+      sourceMessageId: messageId || null,   // → which email this came from
+      status,
+      asinMissing: false,
+      sponsored: false,
       createdAt: new Date().toISOString(),
       startDate: block.startDate || null,
       expiresOn: block.endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     await store.setJSON(id, submission);
+
+    // Register in dedup indexes immediately so subsequent blocks in the same loop
+    // don't create duplicates for the same ASIN (safety net on top of seenAsins).
+    registerInDedupIndexes(id, asin, affiliateUrl, block.promoCode || null, asinIndex, urlIndex, asinPromoIndex);
+    dedupIndexDirty = true;
+
+    console.log(`[email=${messageId}][SAVED] id=${id} asin=${asin} status=${status} title="${String(dealTitle || '').substring(0, 50)}"`);
+
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: block.salePrice || priceFromMeta || null, url: affiliateUrl, imageUrl });
 
     if (status === 'approved') {
-      queueItems.push({ id, title: dealTitle,
+      queueItems.push({
+        id,
+        title: dealTitle,
         price: block.salePrice || priceFromMeta || null,
         originalPrice: block.originalPrice || null,
         discount: block.discount || null,
-        url: affiliateUrl, imageUrl,
-        promoCode: block.promoCode || null, asin, store: 'amazon' });
+        url: affiliateUrl,
+        imageUrl,
+        promoCode: block.promoCode || null,
+        asin,
+        store: 'amazon',
+      });
     }
 
     let index = [];
@@ -586,6 +858,17 @@ export default async (req, context) => {
     await new Promise(r => setTimeout(r, 10));
   }
 
+  // Flush dedup indexes once after the loop (single write, not per-deal)
+  if (dedupIndexDirty) {
+    try {
+      await saveDedupIndexes(store, asinIndex, urlIndex, asinPromoIndex);
+      console.log(`[email=${messageId}][Dedup] indexes saved (${savedIds.length} new deals, ${skippedDuplicates.length} duplicates skipped)`);
+    } catch (e) {
+      console.error(`[email=${messageId}][Dedup] index save failed:`, e.message);
+    }
+  }
+
+  // Add approved deals to the Telegram/Facebook posting queue
   if (queueItems.length > 0) {
     try {
       let queue = [];
@@ -597,23 +880,33 @@ export default async (req, context) => {
 
   const telegramMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `🔥 <b>New Deal Alert!</b>\n\n🛍️ <b>${deals[0].title}</b>\n\n💰 <b>${deals[0].price || 'Check link'}</b>\n\n🔗 <a href="${deals[0].url}">👉 Grab this deal!</a>`
-      : `🔥 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
-        `${i + 1}. 🛍️ <b>${d.title}</b>\n   💰 <b>${d.price || 'Check link'}</b>\n   🔗 <a href="${d.url}">Grab deal</a>`
+      ? `👧 <b>New Deal Alert!</b>\n\n🛽 <b>${deals[0].title}</b>\n\n🊰 <b>${deals[0].price || 'Check link'}</b>\n\n🔢 <a href="${deals[0].url}">👎 Grab this deal!</a>`
+      : `💧 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
+        `${i + 1}. 🛽 <b>${d.title}</b>\n   🊰 <b>${d.price || 'Check link'}</b>\n   🔢 <a href="${d.url}">Grab deal</a>`
       ).join('\n\n');
 
   const facebookMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `🔥 New Deal Alert!\n\n🛍️ ${deals[0].title}\n\n💰 ${deals[0].price || 'Check link'}\n\n🔗 ${deals[0].url}\n\n#ad #deals #amazon #dealsaholic #shopping #sale`
-      : `🔥 ${deals.length} New Deals Alert!\n\n` + deals.map((d, i) =>
-        `${i + 1}. 🛍️ ${d.title}\n   💰 ${d.price || 'Check link'}\n   🔗 ${d.url}`
+      ? `💧 New Deal Alert!\n\n🛽 ${deals[0].title}\n\n🊰 ${deals[0].price || 'Check link'}\n\n🔢 ${deals[0].url}\n\n#ad #deals #amazon #dealsaholic #shopping #sale`
+      : `💧 ${deals.length} New Deals Alert!\n\n` + deals.map((d, i) =>
+        `${i + 1}. 🛽 ${d.title}\n   🊰 ${d.price || 'Check link'}\n   🔢 ${d.url}`
       ).join('\n\n') + '\n\n#ad #deals #amazon #dealsaholic #shopping #sale';
 
   return new Response(JSON.stringify({
-    success: true, count: deals.length, ids: savedIds, deals,
-    productBlocksFound: blocks.length, telegramMessage, facebookMessage,
-    title: deals[0]?.title || null, price: deals[0]?.price || null,
-    url: deals[0]?.url || null, imageUrl: deals[0]?.imageUrl || null,
+    success: true,
+    count: deals.length,
+    ids: savedIds,
+    deals,
+    productBlocksFound: blocks.length,
+    duplicatesSkipped: skippedDuplicates.length,
+    duplicates: skippedDuplicates,
+    messageId: messageId || null,
+    telegramMessage,
+    facebookMessage,
+    title: deals[0]?.title || null,
+    price: deals[0]?.price || null,
+    url: deals[0]?.url || null,
+    imageUrl: deals[0]?.imageUrl || null,
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 };
 
