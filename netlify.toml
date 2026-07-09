@@ -24,3 +24,7 @@
   from = "/api/post-to-facebook"
   to = "/.netlify/functions/post-to-facebook"
   status = 200
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/.netlify/functions/sitemap"
+  status = 200
