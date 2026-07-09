@@ -2,9 +2,9 @@ import { getStore } from "@netlify/blobs";
 
 export default async () => {
   const baseUrl = "https://deals-aholic.com";
-
   const store = getStore("deals");
-  const data = await store.get("latest", { type: "json" });
+
+  let data = await store.get("latest", { type: "json" });
 
   const staticPages = [
     "",
@@ -21,16 +21,12 @@ export default async () => {
     </url>
   `).join("");
 
-  if (data?.deals) {
+  if (data && data.deals && Array.isArray(data.deals)) {
     data.deals.forEach(deal => {
-      const slug = deal.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
-
       urls += `
       <url>
-        <loc>${baseUrl}/deal/${slug}</loc>
+        <loc>${baseUrl}/deal.html?asin=${deal.asin}</loc>
+        <lastmod>${deal.fetchedAt || new Date().toISOString()}</lastmod>
         <changefreq>daily</changefreq>
         <priority>0.7</priority>
       </url>`;
@@ -38,9 +34,9 @@ export default async () => {
   }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-  <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  ${urls}
-  </urlset>`;
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>`;
 
   return new Response(xml, {
     headers: {
