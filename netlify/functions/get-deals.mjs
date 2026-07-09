@@ -1,5 +1,18 @@
 import { getStore } from "@netlify/blobs";
 
+// Titles that come from email auto-replies, bounces, or failed parsing.
+const GARBAGE_TITLE_RE = /^(?:the response was|message not delivered|undelivered mail|auto.?reply|delivery status|mail delivery|failure notice|returned mail|amazon deal|no title|untitled)\b/i;
+
+function isGarbageSubmission(record) {
+  const title = (record.productTitle || record.title || '').trim();
+  if (!title || title.length < 8) return true;
+  if (GARBAGE_TITLE_RE.test(title)) return true;
+  // Must have a usable URL
+  const url = record.productUrl || record.url || '';
+  if (!url) return true;
+  return false;
+}
+
 async function getApprovedSellerDeals() {
   try {
     const store = getStore("submissions");
@@ -13,6 +26,7 @@ async function getApprovedSellerDeals() {
         record = await store.get(id, { type: "json" });
       } catch { continue; }
       if (!record || record.status !== "approved") continue;
+      if (isGarbageSubmission(record)) continue;   // skip bounces, empty titles, error messages
       const expiresAt = new Date(record.expiresOn).getTime();
       if (!isNaN(expiresAt) && expiresAt < now) continue;
       // Extract a real ASIN — never use the internal record.id

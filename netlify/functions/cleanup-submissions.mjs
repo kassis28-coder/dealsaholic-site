@@ -1,8 +1,20 @@
 import { getStore } from "@netlify/blobs";
 
+// Same garbage detection as get-deals.mjs — keeps both in sync.
+const GARBAGE_TITLE_RE = /^(?:the response was|message not delivered|undelivered mail|auto.?reply|delivery status|mail delivery|failure notice|returned mail|amazon deal|no title|untitled)\b/i;
+
+function isGarbageSubmission(record) {
+  const title = (record.productTitle || record.title || '').trim();
+  if (!title || title.length < 8) return true;
+  if (GARBAGE_TITLE_RE.test(title)) return true;
+  const url = record.productUrl || record.url || '';
+  if (!url) return true;
+  return false;
+}
+
 export default async (req, context) => {
   const store = getStore("submissions");
-  
+
   let index = [];
   try { index = await store.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
 
@@ -14,6 +26,13 @@ export default async (req, context) => {
     try {
       const record = await store.get(id, { type: 'json' });
       if (!record) { removedIds.push(id); continue; }
+
+      // Remove garbage / error-message submissions permanently
+      if (isGarbageSubmission(record)) {
+        await store.delete(id);
+        removedIds.push(id);
+        continue;
+      }
 
       // Remove if expired
       if (record.expiresOn && new Date(record.expiresOn) < now) {
