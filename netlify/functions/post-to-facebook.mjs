@@ -13,7 +13,7 @@ async function postDealToFacebook(deal) {
 
   if (deal.image) {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/photos`,
+      `https://graph.facebook.com/v21.0/${FB_PAGE_ID}/photos`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -30,7 +30,7 @@ async function postDealToFacebook(deal) {
   }
 
   const res = await fetch(
-    `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/feed`,
+    `https://graph.facebook.com/v21.0/${FB_PAGE_ID}/feed`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
