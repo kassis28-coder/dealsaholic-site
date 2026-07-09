@@ -74,11 +74,12 @@
   const store = params.get('store') || 'amazon';
   const url = params.get('url');
 
+  // URLSearchParams.get() already decodes — do NOT call decodeURIComponent again
   let affiliateUrl;
   if (asin) {
     affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
   } else if (url) {
-    affiliateUrl = decodeURIComponent(url);
+    affiliateUrl = url;
   }
 
   if (title) {
@@ -110,27 +111,25 @@
   const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
   const isAndroid = /android/i.test(ua);
 
+  // x-safari- / intent:// only work for ASIN product pages (/dp/ASIN).
+  // Promo-code URLs (/promocode/…) and Walmart links do NOT trigger Universal
+  // Links, so applying those tricks breaks them. Gate on isAsinDeal.
+  const isAsinDeal = !!asin;
+
   ctaBtn.addEventListener('click', function () {
     if (!affiliateUrl) return;
-    if (isIOS) {
-      if (store !== 'walmart') {
-        window.location.href = 'x-safari-' + affiliateUrl;
-      } else {
-        window.location.href = affiliateUrl;
-      }
-    } else if (isAndroid) {
-      if (store !== 'walmart') {
-        try {
-          const noProtocol = affiliateUrl.replace(/^https?:\/\//, '');
-          window.location.href = 'intent://' + noProtocol +
-            '#Intent;scheme=https;package=com.android.chrome;end';
-        } catch (e) {
-          window.open(affiliateUrl, '_blank');
-        }
-      } else {
+    if (isAsinDeal && isIOS) {
+      window.location.href = 'x-safari-' + affiliateUrl;
+    } else if (isAsinDeal && isAndroid) {
+      try {
+        const noProtocol = affiliateUrl.replace(/^https?:\/\//, '');
+        window.location.href = 'intent://' + noProtocol +
+          '#Intent;scheme=https;package=com.android.chrome;end';
+      } catch (e) {
         window.open(affiliateUrl, '_blank');
       }
     } else {
+      // Promo codes, Walmart, other direct URLs — open normally
       window.open(affiliateUrl, '_blank');
     }
   });
