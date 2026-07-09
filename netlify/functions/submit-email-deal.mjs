@@ -544,7 +544,9 @@ export default async (req, context) => {
     // ── STRICT VALIDATION: all 5 required fields must be present ──────────────
     const hasPriceOrDiscount = !!(block.salePrice || block.discount || priceFromMeta);
     const hasValidTitle = !!(dealTitle && !isGarbageText(dealTitle));
-    if (!asin || !hasValidTitle || !affiliateUrl || !imageUrl || !hasPriceOrDiscount) {
+    // Image is NOT required at submit time — post-queued-deal.mjs re-fetches it with more
+    // robust scraping. Requiring it here blocks valid deals when Amazon 403s the scraper.
+    if (!asin || !hasValidTitle || !affiliateUrl || !hasPriceOrDiscount) {
       console.log(`[SKIP] Missing required field(s) — asin=${!!asin} title=${hasValidTitle} url=${!!affiliateUrl} img=${!!imageUrl} price=${hasPriceOrDiscount} — "${String(dealTitle ?? '').substring(0, 60)}"`);
       continue;
     }
