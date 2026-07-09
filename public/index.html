@@ -193,7 +193,12 @@
 
   function buildDealUrl(deal) {
     const originalUrl = deal.url || deal.productUrl || '';
-    const asin = deal.asin || originalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1];
+    // Only treat as ASIN if it's exactly 10 alphanumeric chars — never an internal ID
+    const VALID_ASIN = /^[A-Z0-9]{10}$/i;
+    const rawAsin = deal.asin
+      || originalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+      || originalUrl.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
+    const asin = rawAsin && VALID_ASIN.test(rawAsin) ? rawAsin : null;
     const params = new URLSearchParams();
     if (asin) params.set('asin', asin);
     else if (originalUrl) params.set('url', originalUrl);

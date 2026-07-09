@@ -15,9 +15,16 @@ async function getApprovedSellerDeals() {
       if (!record || record.status !== "approved") continue;
       const expiresAt = new Date(record.expiresOn).getTime();
       if (!isNaN(expiresAt) && expiresAt < now) continue;
+      // Extract a real ASIN — never use the internal record.id
+      const storedUrl = record.productUrl || record.url || '';
+      const urlAsin = storedUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
+      const validAsin = (record.asin && /^[A-Z0-9]{10}$/i.test(record.asin))
+        ? record.asin
+        : urlAsin;
+
       approved.push({
         id: record.id,
-        asin: record.id,
+        asin: validAsin || null,   // null for promo/multi-product deals — never the internal ID
         title: record.productTitle || record.title,
         image: record.image || record.photoUrl || record.imageUrl || null,
         price: record.price,
@@ -25,7 +32,7 @@ async function getApprovedSellerDeals() {
         discountPercent: record.discountPercent || (record.discount ? parseInt(record.discount) : null),
         rating: null,
         reviewCount: null,
-        url: record.productUrl || record.url,
+        url: storedUrl,
         discountCode: record.discountCode || null,
         sponsored: record.sponsored || false,
         source: record.source || 'seller',

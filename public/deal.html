@@ -64,7 +64,10 @@
 </div>
 <script>
   const params = new URLSearchParams(window.location.search);
-  const asin = params.get('asin');
+  // Validate ASIN — must be exactly 10 uppercase alphanumeric chars.
+  // Internal IDs like "admin-1783417099237" must never generate /dp/ links.
+  const rawAsin = params.get('asin');
+  const asin = rawAsin && /^[A-Z0-9]{10}$/i.test(rawAsin) ? rawAsin : null;
   const title = params.get('title');
   const price = params.get('price');
   const original = params.get('original');

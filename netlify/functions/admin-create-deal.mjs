@@ -233,11 +233,13 @@ export default async (req, context) => {
 
     const submission = {
       id,
+      asin: asin || null,   // real ASIN only — never the internal id
       title,
       price,
       originalPrice,
       discount,
       url: affiliateUrl,
+      productUrl: url,      // preserve the original submitted URL
       imageUrl: imageUrl || null,
       discountCode: discountCode || null,
       source: "admin",
