@@ -105,6 +105,7 @@
   .deal-card__report-btn { display: block; width: 100%; background: none; border: none; padding: 8px 0 0; font-size: 11px; color: var(--ink-soft); cursor: pointer; text-align: center; font-family: 'Inter', sans-serif; transition: color 0.15s ease; }
   .deal-card__report-btn:hover { color: var(--deal-red); }
   .deal-card__report-btn:disabled { cursor: default; opacity: 0.7; }
+  .deal-card__promo-tag { display: inline-flex; align-items: center; gap: 4px; background: #FFF3E0; border: 1px solid var(--brand); color: var(--brand-dark); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px; margin-bottom: 8px; }
   .deals-feed__empty { grid-column: 1/-1; padding: 64px 20px; text-align: center; color: var(--ink-soft); font-size: 14px; }
   .site-footer { text-align: center; padding: 28px 20px 44px; font-size: 12px; color: var(--ink-soft); border-top: 1px solid var(--line); }
   @media (max-width: 480px) {
@@ -164,6 +165,7 @@
     <option value="sports">🏋️ Sports & Outdoors</option>
     <option value="pets">🐾 Pet Supplies</option>
     <option value="household">🧹 Household</option>
+    <option value="promo">🏷️ Promo Codes</option>
   </select>
   <select id="filter-sort">
     <option value="newest">Newest first</option>
@@ -229,6 +231,14 @@
     if (params.get('search')) document.getElementById('filter-search').value = params.get('search');
     if (params.get('category')) document.getElementById('filter-category').value = params.get('category');
     if (params.get('sort')) document.getElementById('filter-sort').value = params.get('sort');
+  }
+
+  function isPromo(deal) {
+    const hasCode = deal.discountCode && deal.discountCode.trim() !== '' && deal.discountCode.toLowerCase() !== 'none';
+    return hasCode
+      || deal.source === 'email'
+      || deal.source === 'submission'
+      || deal.sponsored === true;
   }
 
   function detectCategory(title) {
@@ -333,6 +343,7 @@
     const productUrl = deal.url || deal.productUrl || '';
     const dealUrl = buildDealUrl(deal);
     const storeLabel = deal.sponsored ? 'View Deal' : deal.storeType === 'walmart' ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon';
+    const showPromoTag = isPromo(deal);
     return `
       <a class="deal-card" href="${dealUrl}">
         <div class="deal-card__image-wrap">
@@ -340,6 +351,7 @@
           ${deal.image ? `<img class="deal-card__image" src="${deal.image}" alt="${escapeHtml(deal.title)}" loading="lazy">` : ''}
         </div>
         <div class="deal-card__body">
+          ${showPromoTag ? `<span class="deal-card__promo-tag">🏷️ PROMO CODE</span>` : ''}
           <p class="deal-card__title">${escapeHtml(deal.title)}</p>
           <div class="deal-card__price-row">
             <span class="deal-card__price">${deal.price || ''}</span>
@@ -362,7 +374,8 @@
     const sort = document.getElementById('filter-sort').value;
     let filtered = allDeals.filter(d => {
       const matchSearch = !search || (d.title || '').toLowerCase().includes(search);
-      const matchCategory = !category || detectCategory(d.title) === category;
+      const matchCategory = !category
+        || (category === 'promo' ? isPromo(d) : detectCategory(d.title) === category);
       return matchSearch && matchCategory;
     });
     if (sort === 'price-low') {
