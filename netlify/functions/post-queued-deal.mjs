@@ -1,5 +1,9 @@
 import { getStore } from "@netlify/blobs";
 
+// ─── Facebook Graph API version ────────────────────────────────────────────
+// v19.0 was deprecated April 2025 — broken as of July 2026. Use v21.0.
+const FB_API_VERSION = 'v21.0';
+
 // ============================================================
 // CRYPTO HELPERS FOR R2 UPLOADS
 // ============================================================
@@ -121,6 +125,7 @@ async function getAmazonImage(asin) {
     console.error('Scrape failed:', e.message);
   }
 
+  // Fallback: Amazon widget URL (usually accessible even when main page is blocked)
   const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
   try {
     const testRes = await fetch(widgetUrl, { method: 'HEAD' });
@@ -137,7 +142,10 @@ async function getAmazonImage(asin) {
 async function postToTelegram(deal) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) return false;
+  if (!botToken || !chatId) {
+    console.error('[Telegram] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+    return false;
+  }
 
   const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
@@ -150,6 +158,7 @@ async function postToTelegram(deal) {
   const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
 
   try {
+    // Try sendPhoto first
     if (deal.imageUrl) {
       const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
         method: 'POST',
@@ -157,16 +166,28 @@ async function postToTelegram(deal) {
         body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
       });
       const data = await res.json();
-      if (!data.ok) {
-        console.error('Telegram sendPhoto failed:', JSON.stringify(data));
-        return false;
+      if (data.ok) {
+        console.log('[Telegram] sendPhoto succeeded');
+        return true;
       }
-    } else {
-      return false;
+      console.error('[Telegram] sendPhoto failed:', JSON.stringify(data), '— falling back to sendMessage');
     }
-    return true;
+
+    // Fallback: send as text message (works even when image URL is inaccessible)
+    const msgRes = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
+    });
+    const msgData = await msgRes.json();
+    if (msgData.ok) {
+      console.log('[Telegram] sendMessage fallback succeeded');
+      return true;
+    }
+    console.error('[Telegram] sendMessage also failed:', JSON.stringify(msgData));
+    return false;
   } catch (e) {
-    console.error('Telegram post failed:', e.message);
+    console.error('[Telegram] post failed:', e.message);
     return false;
   }
 }
@@ -174,7 +195,10 @@ async function postToTelegram(deal) {
 async function postToFacebook(deal) {
   const pageToken = process.env.FACEBOOK_PAGE_TOKEN;
   const pageId = process.env.FACEBOOK_PAGE_ID;
-  if (!pageToken || !pageId) return false;
+  if (!pageToken || !pageId) {
+    console.error('[Facebook] Missing FACEBOOK_PAGE_TOKEN or FACEBOOK_PAGE_ID');
+    return false;
+  }
 
   const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
@@ -186,26 +210,36 @@ async function postToFacebook(deal) {
     '👉 ' + deal.url;
 
   try {
+    // Try photo post first
     if (deal.imageUrl) {
-      const res = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/photos', {
+      const photoRes = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/photos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: deal.imageUrl, caption: message, access_token: pageToken }),
       });
-      const data = await res.json();
-      if (data.error) {
-        await fetch('https://graph.facebook.com/v19.0/' + pageId + '/feed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, link: deal.url, access_token: pageToken }),
-        });
+      const photoData = await photoRes.json();
+      if (!photoData.error) {
+        console.log('[Facebook] photo post succeeded, id:', photoData.id);
+        return true;
       }
-    } else {
-      return false;
+      console.error('[Facebook] /photos failed:', JSON.stringify(photoData.error), '— falling back to /feed');
     }
-    return true;
+
+    // Fallback: text post with link
+    const feedRes = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/feed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, link: deal.url, access_token: pageToken }),
+    });
+    const feedData = await feedRes.json();
+    if (!feedData.error) {
+      console.log('[Facebook] /feed fallback succeeded, id:', feedData.id);
+      return true;
+    }
+    console.error('[Facebook] /feed also failed:', JSON.stringify(feedData.error));
+    return false;
   } catch (e) {
-    console.error('Facebook post failed:', e.message);
+    console.error('[Facebook] post failed:', e.message);
     return false;
   }
 }
@@ -338,8 +372,10 @@ export default async (req, context) => {
     });
   }
 
+  // Pull the next deal — keep a reference so we can re-add it on failure
   const deal = queue.shift();
 
+  // ── Re-fetch image from Amazon (more robust than submit-time scraping) ──────
   if (deal.store === 'amazon' && deal.asin) {
     const scraped = await getAmazonImage(deal.asin);
     if (scraped) {
@@ -352,8 +388,9 @@ export default async (req, context) => {
     }
   }
 
+  // ── If still no image after re-fetch: requeue and try again next cycle ──────
   if (!deal.imageUrl) {
-    console.log('No image found for deal, requeueing:', deal.url);
+    console.log('[post-queued-deal] No image found — requeueing:', deal.url);
     queue.unshift(deal);
     await queueStore.setJSON('queue', queue);
     return new Response(JSON.stringify({
@@ -390,26 +427,22 @@ export default async (req, context) => {
       const updatedDeal = { ...existingDeal, ...updates };
       await submissionsStore.setJSON(dealId, updatedDeal);
       await saveDedupIndexes(submissionsStore, asinIndex, urlIndex);
-      console.log(`[post-queued-deal] UPDATED EXISTING DEAL | Reason: Same ${reason} with newer info | ASIN: ${deal.asin || 'N/A'} | ID: ${dealId}`);
+      console.log(`[post-queued-deal] UPDATED EXISTING DEAL | Same ${reason} | ASIN: ${deal.asin || 'N/A'} | ID: ${dealId}`);
       await queueStore.setJSON('queue', queue);
       return new Response(JSON.stringify({
-        success: true,
-        updated: true,
+        success: true, updated: true,
         reason: `Updated existing deal (same ${reason})`,
-        dealId,
-        queueRemaining: queue.length,
+        dealId, queueRemaining: queue.length,
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    console.log(`[post-queued-deal] SKIPPED DUPLICATE | Reason: Existing ${reason} | ASIN: ${deal.asin || 'N/A'} | ID: ${dealId} | Recent: ${isRecent}`);
+    console.log(`[post-queued-deal] SKIPPED DUPLICATE | ${reason} | ASIN: ${deal.asin || 'N/A'} | ID: ${dealId}`);
     await saveDedupIndexes(submissionsStore, asinIndex, urlIndex);
     await queueStore.setJSON('queue', queue);
     return new Response(JSON.stringify({
-      success: true,
-      skipped: true,
+      success: true, skipped: true,
       reason: `Duplicate ${reason} — deal already exists`,
-      dealId,
-      queueRemaining: queue.length,
+      dealId, queueRemaining: queue.length,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   // ── END DEDUPLICATION ────────────────────────────────────────────────────────
@@ -417,7 +450,21 @@ export default async (req, context) => {
   const telegramOk = await postToTelegram(deal);
   const facebookOk = await postToFacebook(deal);
 
-  if (telegramOk) {
+  // ── FIX: Re-add to queue if BOTH platforms failed — don't silently lose deals ─
+  if (!telegramOk && !facebookOk) {
+    console.error('[post-queued-deal] Both Telegram and Facebook failed — requeueing deal:', deal.url);
+    queue.unshift(deal);
+    await queueStore.setJSON('queue', queue);
+    return new Response(JSON.stringify({
+      success: false,
+      message: 'Both platforms failed — deal requeued',
+      url: deal.url,
+      queueRemaining: queue.length,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // At least one platform succeeded — save the deal as posted
+  if (telegramOk || facebookOk) {
     const submission = {
       id: deal.id,
       asin: deal.asin || null,
@@ -427,11 +474,14 @@ export default async (req, context) => {
       discountPercent: deal.discount ? parseInt(deal.discount) : null,
       url: deal.url,
       image: deal.imageUrl || null,
+      imageUrl: deal.imageUrl || null,   // keep both field names for compatibility
       discountCode: deal.promoCode || null,
       source: 'email',
       store: deal.store || 'amazon',
       status: 'approved',
       sponsored: false,
+      postedToTelegram: telegramOk,
+      postedToFacebook: facebookOk,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
