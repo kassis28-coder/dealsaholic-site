@@ -1,9 +1,9 @@
- <!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Deal — Deals-aholic</title>
+<title>Deal â Deals-aholic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -56,15 +56,15 @@
   <div id="deal-code-wrap" class="deal-code" style="display:none">
     <div class="deal-code__label">Use this code at checkout</div>
     <div id="deal-code" class="deal-code__value"></div>
-    <button class="deal-code__copy" onclick="copyCode()">📋 Copy Code</button>
+    <button class="deal-code__copy" onclick="copyCode()">ð Copy Code</button>
   </div>
-  <button id="deal-cta" class="cta-btn">🛍️ Get This Deal on Amazon</button>
-  <a href="/" class="back-link">← Back to all deals</a>
+  <button id="deal-cta" class="cta-btn">ðï¸ Get This Deal on Amazon</button>
+  <a href="/" class="back-link">â Back to all deals</a>
   <p class="disclaimer">As an Amazon Associate, Deals-aholic earns from qualifying purchases. Prices and availability are subject to change.</p>
 </div>
 <script>
   const params = new URLSearchParams(window.location.search);
-  // Validate ASIN — must be exactly 10 uppercase alphanumeric chars.
+  // Validate ASIN â must be exactly 10 uppercase alphanumeric chars.
   // Internal IDs like "admin-1783417099237" must never generate /dp/ links.
   const rawAsin = params.get('asin');
   const asin = rawAsin && /^[A-Z0-9]{10}$/i.test(rawAsin) ? rawAsin : null;
@@ -77,7 +77,7 @@
   const store = params.get('store') || 'amazon';
   const url = params.get('url');
 
-  // URLSearchParams.get() already decodes — do NOT call decodeURIComponent again
+  // URLSearchParams.get() already decodes â do NOT call decodeURIComponent again
   let affiliateUrl;
   if (asin) {
     affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
@@ -85,12 +85,37 @@
     affiliateUrl = url;
   }
 
-  if (title) {
-    document.getElementById('deal-title').textContent = decodeURIComponent(title);
-    document.title = decodeURIComponent(title) + ' — Deals-aholic';
+  // Safely decode URL-encoded + HTML-entity-encoded strings
+  function safeDecode(val) {
+    if (!val) return '';
+    let result = val;
+    try {
+      const once = safeDecode(result);
+      if (once !== result) {
+        result = once;
+        try { result = safeDecode(result); } catch(e) {}
+      }
+    } catch(e) {}
+    result = result
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    return result;
   }
-  if (price) document.getElementById('deal-price').textContent = decodeURIComponent(price);
-  if (original) document.getElementById('deal-original').textContent = decodeURIComponent(original);
+
+  function cleanDealTitle(raw) {
+    return raw.replace(/^Amazon\.com\s*[:\-]\s*/i, '').trim();
+  }
+
+
+  if (title) {
+    document.getElementById('deal-title').textContent = cleanDealTitle(safeDecode(title));
+    document.title = cleanDealTitle(safeDecode(title)) + ' â Deals-aholic';
+  }
+  if (price) document.getElementById('deal-price').textContent = safeDecode(price);
+  if (original) document.getElementById('deal-original').textContent = safeDecode(original);
   if (discount) {
     const badge = document.getElementById('deal-badge');
     badge.textContent = discount + '% OFF';
@@ -98,24 +123,25 @@
   }
   if (image) {
     const img = document.getElementById('deal-image');
-    img.src = decodeURIComponent(image);
-    img.alt = title ? decodeURIComponent(title) : 'Deal image';
+    img.src = safeDecode(image);
+    img.alt = title ? cleanDealTitle(safeDecode(title)) : 'Deal image';
+    img.onerror = function() { this.onerror = null; this.style.display = 'none'; };
     img.style.display = 'block';
   }
   if (code) {
-    document.getElementById('deal-code').textContent = decodeURIComponent(code);
+    document.getElementById('deal-code').textContent = safeDecode(code);
     document.getElementById('deal-code-wrap').style.display = 'block';
   }
 
   const ctaBtn = document.getElementById('deal-cta');
-  if (store === 'walmart') ctaBtn.textContent = '🛒 Get This Deal on Walmart';
+  if (store === 'walmart') ctaBtn.textContent = 'ð Get This Deal on Walmart';
 
   const ua = navigator.userAgent || navigator.vendor || window.opera;
   const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
   const isAndroid = /android/i.test(ua);
 
   // x-safari- / intent:// only work for ASIN product pages (/dp/ASIN).
-  // Promo-code URLs (/promocode/…) and Walmart links do NOT trigger Universal
+  // Promo-code URLs (/promocode/â¦) and Walmart links do NOT trigger Universal
   // Links, so applying those tricks breaks them. Gate on isAsinDeal.
   const isAsinDeal = !!asin;
 
@@ -132,7 +158,7 @@
         window.open(affiliateUrl, '_blank');
       }
     } else {
-      // Promo codes, Walmart, other direct URLs — open normally
+      // Promo codes, Walmart, other direct URLs â open normally
       window.open(affiliateUrl, '_blank');
     }
   });
@@ -141,8 +167,8 @@
     const code = document.getElementById('deal-code').textContent;
     navigator.clipboard.writeText(code).then(() => {
       const btn = document.querySelector('.deal-code__copy');
-      btn.textContent = '✅ Copied!';
-      setTimeout(() => btn.textContent = '📋 Copy Code', 2000);
+      btn.textContent = 'â Copied!';
+      setTimeout(() => btn.textContent = 'ð Copy Code', 2000);
     });
   }
 </script>
