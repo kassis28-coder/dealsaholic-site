@@ -94,7 +94,7 @@ async function followRedirectForAsin(amazonUrl) {
   }
 }
 
-async function f%tchAmazonMeta(amazonUrl) {
+async function fetchAmazonMeta(amazonUrl) {
   const { asin: asinFromRedirect, finalUrl: redirectUrl } = await followRedirectForAsin(amazonUrl);
   try {
     const res = await fetch(amazonUrl, {
