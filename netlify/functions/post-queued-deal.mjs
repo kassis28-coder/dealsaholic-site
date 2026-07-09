@@ -85,7 +85,6 @@ async function fetchAndUploadImage(imageUrl, asin) {
 }
 
 async function getAmazonImage(asin) {
-  // Try scraping first
   try {
     const res = await fetch('https://www.amazon.com/dp/' + asin, {
       headers: {
@@ -114,7 +113,6 @@ async function getAmazonImage(asin) {
     console.error('Scrape failed:', e.message);
   }
 
-  // Fallback: use Amazon widget image URL
   const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
   try {
     const testRes = await fetch(widgetUrl, { method: 'HEAD' });
@@ -136,7 +134,7 @@ async function postToTelegram(deal) {
   const caption = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
     '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
     '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
-    '👉 ' + deal.url + '\n\n#ad';
+    '👉 ' + deal.url;
   const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
 
   try {
@@ -152,17 +150,10 @@ async function postToTelegram(deal) {
         return false;
       }
     } else {
-      const msgRes = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
-      });
-      const msgData = await msgRes.json();
-      if (!msgData.ok) {
-        console.error('Telegram sendMessage failed:', JSON.stringify(msgData));
-        return false;
-      }
-    }    return true;
+      console.log('No image for deal, skipping Telegram post:', deal.url);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.error('Telegram post failed:', e.message);
     return false;
@@ -170,54 +161,72 @@ async function postToTelegram(deal) {
 }
 
 async function postToFacebook(deal) {
-  const pageToken = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
-  const pageId = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
-  if (!pageToken || !pageId) return { ok: false, error: 'Missing FB credentials' };
+  const pageToken = process.env.FACEBOOK_PAGE_TOKEN;
+  const pageId = process.env.FACEBOOK_PAGE_ID;
+  if (!pageToken || !pageId) return false;
 
-  const storeIcon = deal.store === 'walmart' ? '\u{1F6D2}' : '\u{1F6CD}\uFE0F';
+  const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
-  const codeLine = deal.promoCode ? '\n\u{1F3F7} Code: ' + deal.promoCode : '';
+  const codeLine = deal.promoCode ? '\n🏷 Code: ' + deal.promoCode : '';
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
-  const message = '\u{1F525} New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
-    '\u{1F4E6} ' + (deal.title || storeName + ' Deal') + '\n\n' +
-    '💰 ' + (deal.discount ? deal.discount + '% OFF' : 'Check link for details') + codeLine + '\n\n' +
-    '👉 ' + deal.url + '\n\n#ad';
+  const message = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
+    '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
+    '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
+    '👉 ' + deal.url;
 
   try {
     if (deal.imageUrl) {
-      const tok = pageToken;
-      const pid = pageId;
-      const photoRes = await fetch('https://graph.facebook.com/v19.0/' + pid + '/photos', {
+      const res = await fetch('https://graph.facebook.com/v19.0/' + pageId + '/photos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: deal.imageUrl, caption: message, access_token: tok }),
+        body: JSON.stringify({ url: deal.imageUrl, caption: message, access_token: pageToken }),
       });
-      const photoData = await photoRes.json();
-      if (photoData.id) return { ok: true, postId: photoData.id };
-      const feedRes = await fetch('https://graph.facebook.com/v19.0/' + pid + '/feed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, link: deal.url, access_token: tok }),
-      });
-      const feedData = await feedRes.json();
-      if (feedData.id) return { ok: true, postId: feedData.id, via: 'feed' };
-      return { ok: false, error: feedData.error?.message || photoData.error?.message || 'API error' };
+      const data = await res.json();
+      if (data.error) {
+        await fetch('https://graph.facebook.com/v19.0/' + pageId + '/feed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, link: deal.url, access_token: pageToken }),
+        });
+      }
+    } else {
+      return false;
     }
-    // No image — try text-only feed post
-    const tok = pageToken;
-    const pid = pageId;
-    const noImgRes = await fetch('https://graph.facebook.com/v19.0/' + pid + '/feed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, link: deal.url, access_token: tok }),
-    });
-    const noImgData = await noImgRes.json();
-    if (noImgData.id) return { ok: true, postId: noImgData.id, via: 'feed-text' };
-    return { ok: false, error: noImgData.error?.message || 'FB API error' };
+    return true;
   } catch (e) {
-    return { ok: false, error: e.message };
+    console.error('Facebook post failed:', e.message);
+    return false;
   }
 }
+
+// Clean title: strip "Amazon.com:" prefix and decode HTML entities
+function cleanTitle(title) {
+  if (!title) return null;
+  const cleaned = title
+    .replace(/^Amazon\.com\s*[:\-]\s*/i, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || null;
+}
+
+// Validate deal fields — must have real title, URL, and price/discount before posting
+function isValidDeal(deal) {
+  const raw = (deal.title || '').trim();
+  const lower = raw.toLowerCase();
+  if (!raw) return { valid: false, reason: 'SKIPPED: Product title not found' };
+  if (lower === 'amazon.com') return { valid: false, reason: 'SKIPPED: Title is only "Amazon.com"' };
+  if (lower === 'message not delivered') return { valid: false, reason: 'SKIPPED: Email error — title is "Message not delivered"' };
+  if (lower === 'amazon deal') return { valid: false, reason: 'SKIPPED: Generic fallback title with no real product info' };
+  if (!deal.url) return { valid: false, reason: 'SKIPPED: No Amazon URL found' };
+  if (!deal.price && !deal.discount) return { valid: false, reason: 'SKIPPED: No price or discount percentage found' };
+  return { valid: true };
+}
+
 export default async (req, context) => {
   const queueStore = getStore("deal-queue");
   const submissionsStore = getStore("submissions");
@@ -239,7 +248,6 @@ export default async (req, context) => {
       deal.title = scraped.title || deal.title;
       deal.price = deal.price || scraped.price;
       if (scraped.image) {
-        // Try to upload to R2 first for reliable delivery
         const r2Url = await fetchAndUploadImage(scraped.image, deal.asin);
         deal.imageUrl = r2Url || scraped.image;
       }
@@ -247,15 +255,40 @@ export default async (req, context) => {
   }
 
   // If no image found, put deal back at front of queue and skip for now
+  if (!deal.imageUrl) {
+    console.log('No image found for deal, requeueing:', deal.url);
+    queue.unshift(deal);
+    await queueStore.setJSON('queue', queue);
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'No image found, deal requeued',
+      url: deal.url,
+      queueRemaining: queue.length,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // Clean deal title before validation and posting
+  deal.title = cleanTitle(deal.title);
+
+  // Validate — skip and log if deal does not meet minimum requirements
+  const validation = isValidDeal(deal);
+  if (!validation.valid) {
+    console.log('[post-queued-deal]', validation.reason, '| URL:', deal.url);
+    await queueStore.setJSON('queue', queue);
+    return new Response(JSON.stringify({
+      success: true,
+      skipped: true,
+      reason: validation.reason,
+      queueRemaining: queue.length,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
   const telegramOk = await postToTelegram(deal);
-  const fbResult = await postToFacebook(deal);
-  const facebookOk = fbResult?.ok === true;
-  const facebookError = fbResult?.ok ? null : (fbResult?.error || 'Unknown error');
-  const facebookPostId = fbResult?.postId || null;
+  const facebookOk = await postToFacebook(deal);
 
   // Only save to submissions if posted successfully
   if (telegramOk) {
-  const submission = {
+    const submission = {
       id: deal.id,
       asin: deal.asin || null,
       title: deal.title,
@@ -268,7 +301,6 @@ export default async (req, context) => {
       source: 'email',
       store: deal.store || 'amazon',
       status: 'approved',
-      postedToFacebook: facebookOk,
       sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -280,20 +312,6 @@ export default async (req, context) => {
     try { index = await submissionsStore.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
     index.unshift(deal.id);
     await submissionsStore.setJSON('index', index);
-  // Keep telegram-posted dedup store in sync so post-deals-to-telegram.mjs doesn't repost this deal
-  try {
-    const postedStore = getStore("telegram-posted");
-    let postedIds = [];
-    try {
-      const postedData = await postedStore.get("posted-ids", { type: "json" });
-      if (postedData && Array.isArray(postedData)) postedIds = postedData;
-    } catch (e) {}
-    postedIds.push(deal.id);
-    if (postedIds.length > 500) postedIds = postedIds.slice(-500);
-    await postedStore.set("posted-ids", JSON.stringify(postedIds));
-  } catch (e) {
-    console.error("Failed to sync telegram-posted store:", e.message);
-  }
   }
 
   await queueStore.setJSON('queue', queue);
@@ -304,12 +322,10 @@ export default async (req, context) => {
     imageUrl: deal.imageUrl,
     telegramOk,
     facebookOk,
-  facebookError,
-    facebookPostId,
     queueRemaining: queue.length,
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
 export const config = {
-  schedule: '*/10 * * * *',
+  schedule: '*/5 * * * *',
 };
