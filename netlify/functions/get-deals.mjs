@@ -29,7 +29,7 @@ async function getApprovedSellerDeals() {
       if (isGarbageSubmission(record)) continue;   // skip bounces, empty titles, error messages
       const expiresAt = new Date(record.expiresOn).getTime();
       if (!isNaN(expiresAt) && expiresAt < now) continue;
-      // Extract a real ASIN — never use the internal record.id
+      // Extract a real ASIN â never use the internal record.id
       const storedUrl = record.productUrl || record.url || '';
       const urlAsin = storedUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
       const validAsin = (record.asin && /^[A-Z0-9]{10}$/i.test(record.asin))
@@ -38,7 +38,7 @@ async function getApprovedSellerDeals() {
 
       approved.push({
         id: record.id,
-        asin: validAsin || null,   // null for promo/multi-product deals — never the internal ID
+        asin: validAsin || null,   // null for promo/multi-product deals â never the internal ID
         title: record.productTitle || record.title,
         image: record.image || record.photoUrl || record.imageUrl || null,
         price: record.price,
@@ -68,7 +68,7 @@ export default async () => {
     const base = data || {
       generatedAt: null,
       deals: [],
-      message: "No deals fetched yet — first scheduled run hasn't completed.",
+      message: "No deals fetched yet â first scheduled run hasn't completed.",
     };
 
     // Filter out flagged/suspicious Amazon deals from public view
@@ -77,11 +77,19 @@ export default async () => {
     // Combine all deals and sort newest first
     const allDeals = [...sellerDeals, ...amazonDeals];
     allDeals.sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
+  // Deduplicate by ASIN to prevent duplicate deals
+  const seen = new Map();
+  for (const deal of allDeals) {
+    const key = deal.asin || deal.url;
+    if (key && !seen.has(key)) seen.set(key, deal);
+  }
+  const deduped = Array.from(seen.values());
+
 
     const combined = {
       ...base,
       generatedAt: new Date().toISOString(),
-      deals: allDeals,
+      deals: deduped,
     };
 
     return new Response(JSON.stringify(combined), {
