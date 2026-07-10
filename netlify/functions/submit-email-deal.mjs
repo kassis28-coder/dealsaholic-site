@@ -120,10 +120,30 @@ async function fetchAmazonMeta(amazonUrl) {
     const title =
       html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
-    // FIX: og:image returns the correct /images/I/ format — no /images/P/ fallback
-    const image =
-      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
-      || null;
+    // Extract image: try og:image (both attribute orderings), then data-old-hires,
+    // then the data-a-dynamic-image JSON blob Amazon uses for product carousels.
+    const image = (() => {
+      // og:image — property before content
+      let m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+      if (m) return m[1];
+      // og:image — content before property (reversed attribute order)
+      m = html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+      if (m) return m[1];
+      // High-res image stored in data-old-hires on the main product image tag
+      m = html.match(/data-old-hires=["']([^"']+)["']/i);
+      if (m) return m[1];
+      // data-a-dynamic-image is a JSON map of { url: [w,h] } — take the first key
+      m = html.match(/data-a-dynamic-image=["'](\{[^"']+\})["']/i);
+      if (m) {
+        try {
+          const parsed = JSON.parse(m[1].replace(/&quot;/g, '"'));
+          const url = Object.keys(parsed)[0];
+          if (url && url.startsWith('http')) return url;
+        } catch (_) { /* ignore */ }
+      }
+      return null;
+    })();
+
     const priceMatch =
       html.match(/["']priceAmount["']\s*:\s*["']?([\d.]+)["']?/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
@@ -143,6 +163,77 @@ async function fetchAmazonMeta(amazonUrl) {
       asin: asinFromRedirect, finalUrl: redirectUrl,
     };
   }
+}
+
+// ─── Amazon scraper: price + image fallback ──────────────────────────────────
+// Returns { price: number|null, image: string|null }
+// Called when fetchAmazonMeta couldn't get price or image from the product page.
+
+async function scrapeAmazonData(asin) {
+  try {
+    const res = await fetch(`https://www.amazon.com/dp/${asin}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+    });
+    if (!res.ok) return { price: null, image: null };
+    const html = await res.text();
+
+    // ── Price ──
+    let price = null;
+    const pricePatterns = [
+      /"priceAmount"\s*:\s*"?([\d.]+)"?/,
+      /"dealPrice"\s*:\s*\{"value"\s*:\s*([\d.]+)/,
+      /class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)<\/span><span[^>]*class=["'][^"']*a-price-fraction[^"']*["'][^>]*>(\d+)/,
+      /id=["']priceblock_dealprice["'][^>]*>\s*\$([\d,]+\.?\d*)/,
+      /id=["']priceblock_ourprice["'][^>]*>\s*\$([\d,]+\.?\d*)/,
+    ];
+    for (const pattern of pricePatterns) {
+      const m = html.match(pattern);
+      if (m) {
+        const v = pattern.toString().includes('price-whole')
+          ? parseFloat(`${m[1].replace(/,/g,'')}.${m[2]}`)
+          : parseFloat(m[1].replace(/,/g,''));
+        if (!isNaN(v) && v > 0) { price = v; break; }
+      }
+    }
+
+    // ── Image ──
+    let image = null;
+    let im = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+    if (im) { image = im[1]; }
+    if (!image) {
+      im = html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+      if (im) image = im[1];
+    }
+    if (!image) {
+      im = html.match(/data-old-hires=["']([^"']+)["']/i);
+      if (im) image = im[1];
+    }
+    if (!image) {
+      im = html.match(/data-a-dynamic-image=["'](\{[^"']+\})["']/i);
+      if (im) {
+        try {
+          const parsed = JSON.parse(im[1].replace(/&quot;/g, '"'));
+          const url = Object.keys(parsed)[0];
+          if (url && url.startsWith('http')) image = url;
+        } catch (_) { /* ignore */ }
+      }
+    }
+
+    return { price, image };
+  } catch (e) {
+    console.error(`scrapeAmazonData(${asin}) failed:`, e.message);
+    return { price: null, image: null };
+  }
+}
+
+// Thin alias kept for callers that only need price
+async function scrapeAmazonPrice(asin) {
+  return (await scrapeAmazonData(asin)).price;
 }
 
 // ─── Text helpers ──────────────────────────────────────────────────────────
@@ -748,6 +839,42 @@ export default async (req, context) => {
       } else {
         console.log(`[email=${messageId}][Block] title-search returned no result for "${block.title}"`);
       }
+    }
+
+    // ── Fallback: scrape Amazon when price or image is missing ────────────────
+    // Handles price ranges (e.g. "$14.99-19.99"), missing sale price, or missing
+    // image (can happen when Amazon blocks og:image on the first fetch).
+    const needsPrice = asin && !block.salePrice && !priceFromMeta;
+    const needsImage = asin && !imageUrl;
+    if (needsPrice || needsImage) {
+      console.log(`[email=${messageId}][Block] scraping Amazon for ASIN ${asin} (price=${needsPrice} image=${needsImage})`);
+      const scraped = await scrapeAmazonData(asin);
+
+      if (needsImage && scraped.image) {
+        imageUrl = scraped.image;
+        console.log(`[email=${messageId}][Block] scraped image for ASIN ${asin}`);
+      }
+
+      if (needsPrice && scraped.price !== null) {
+        priceFromMeta = `$${scraped.price.toFixed(2)}`;
+        console.log(`[email=${messageId}][Block] scraped price=${priceFromMeta} for ASIN ${asin}`);
+        // Recalculate discount from original price if not already set
+        if (!block.discount && block.originalPrice) {
+          const origStr = block.originalPrice.replace(/^\$/, '').trim();
+          const rangeM = origStr.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
+          const origValue = rangeM ? parseFloat(rangeM[2]) : parseFloat(origStr);
+          if (!isNaN(origValue) && origValue > scraped.price && origValue > 0) {
+            const pct = Math.round((1 - scraped.price / origValue) * 100);
+            if (pct >= 5 && pct <= 95) {
+              block.discount = String(pct);
+              console.log(`[email=${messageId}][Block] discount=${pct}% (orig=$${origValue} scraped=$${scraped.price})`);
+            }
+          }
+        }
+      }
+
+      // Re-evaluate status now that we may have image and/or price
+      if (asin && affiliateUrl && imageUrl && dealTitle && !isGarbageText(dealTitle)) status = 'approved';
     }
 
     // ── Skip duplicate ASINs within the same email ────────────────────────────
