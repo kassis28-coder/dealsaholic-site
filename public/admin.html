@@ -457,8 +457,8 @@ ${isEditing ? `
 </div>
 ` : ''}
 <div class="actions">
-${s.status === 'pending' && !isEmail ? `
-${s.needsAffiliateLink ? `<div class="link-edit-row"><input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here"></div>` : ''}
+${s.status === 'pending' ? `
+${s.needsAffiliateLink && !isEmail ? `<div class="link-edit-row"><input type="text" id="link-${s.id}" placeholder="Paste your affiliate link here"></div>` : ''}
 <button class="btn btn--approve" onclick="review('${s.id}', 'approve')">✅ Approve</button>
 <button class="btn btn--reject" onclick="review('${s.id}', 'reject')">❌ Reject</button>
 ` : ''}
