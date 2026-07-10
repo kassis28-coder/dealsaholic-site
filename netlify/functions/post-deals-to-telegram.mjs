@@ -9,6 +9,15 @@ const POSTED_STORE_NAME = "telegram-posted";
 const PHOTO_CAPTION_LIMIT = 1024;
 const TEXT_MESSAGE_LIMIT = 4096;
 
+// Strip Amazon image modifier junk (e.g. ".jpg_BO30,255,255,255_QL100_.jpg")
+// so stored image URLs are clean before sending to Telegram.
+function cleanAmazonImageUrl(url) {
+  if (!url) return url;
+  const m = url.match(/(https:\/\/m\.media-amazon\.com\/images\/[A-Z]\/[A-Za-z0-9+%]+)/i);
+  if (m) return m[1] + '._SL1500_.jpg';
+  return url;
+}
+
 function truncate(str, max) {
   if (!str) return str;
   return str.length > max ? str.slice(0, max - 3) + "..." : str;
@@ -125,7 +134,7 @@ export default async function handler() {
   ].filter(Boolean);
 
   const fullMessage = messageLines.join("\n");
-  const imageUrl = deal.image || deal.imageUrl || null;
+  const imageUrl = cleanAmazonImageUrl(deal.image || deal.imageUrl || null);
   let telegramSuccess = false;
 
   // ── Post to Telegram ────────────────────────────────────────────────────────
