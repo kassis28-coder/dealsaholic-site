@@ -9,6 +9,14 @@ const FB_PAGE_ID =
   process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
+// Strip Amazon image modifier junk before posting to Facebook.
+function cleanAmazonImageUrl(url) {
+  if (!url) return url;
+  const m = url.match(/(https:\/\/m\.media-amazon\.com\/images\/[A-Z]\/[A-Za-z0-9+%]+)/i);
+  if (m) return m[1] + '._SL1500_.jpg';
+  return url;
+}
+
 // ── Facebook API helper ───────────────────────────────────────────────────────
 async function postDealToFacebook(deal) {
   if (!FB_PAGE_TOKEN || !FB_PAGE_ID) {
@@ -18,7 +26,7 @@ async function postDealToFacebook(deal) {
   }
 
   const caption = buildCaption(deal);
-  const imageUrl = deal.image || deal.imageUrl || null;
+  const imageUrl = cleanAmazonImageUrl(deal.image || deal.imageUrl || null);
 
   if (imageUrl) {
     console.log(`[FB] Attempting /photos for deal "${deal.title?.slice(0, 60)}"`);
