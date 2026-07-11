@@ -448,7 +448,8 @@ export default async (req, context) => {
   // ── END DEDUPLICATION ────────────────────────────────────────────────────────
 
   const telegramOk = await postToTelegram(deal);
-  const facebookOk = await postToFacebook(deal);
+  // DISABLED 2026-07-11: Facebook posting disabled — duplicate bug fix in progress
+  const facebookOk = false; // was: await postToFacebook(deal);
 
   // ── FIX: Re-add to queue if BOTH platforms failed — don't silently lose deals ─
   if (!telegramOk && !facebookOk) {
