@@ -1,7 +1,6 @@
 import { getStore } from "@netlify/blobs";
 
 // ─── Facebook Graph API version ────────────────────────────────────────────
-// v19.0 was deprecated April 2025 — broken as of July 2026. Use v21.0.
 const FB_API_VERSION = 'v21.0';
 
 // ============================================================
@@ -96,7 +95,39 @@ async function fetchAndUploadImage(imageUrl, asin) {
   }
 }
 
+// FIX: Multi-method image scraping so deals are not stuck requeueing forever.
+// Methods tried in order:
+//   1. Direct SSL image URL — fast, no HTML parsing needed
+//   2. Amazon ad-system widget — follows redirect to real image CDN URL
+//   3. Scrape og:image / hiRes from the product page HTML
 async function getAmazonImage(asin) {
+  // Method 1: Direct image URL pattern (works for most ASINs without scraping)
+  const directUrl = `https://images-na.ssl-images-amazon.com/images/P/${asin}.01._SL300_.jpg`;
+  try {
+    const testRes = await fetch(directUrl, { method: 'HEAD' });
+    const ct = testRes.headers.get('content-type') || '';
+    if (testRes.ok && ct.startsWith('image/')) {
+      console.log(`[getAmazonImage] Method 1 (direct SSL) succeeded for ${asin}`);
+      return { title: null, price: null, image: directUrl };
+    }
+  } catch (e) {
+    console.error('[getAmazonImage] Method 1 failed:', e.message);
+  }
+
+  // Method 2: Amazon ad widget — redirects to actual product image on CDN
+  const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
+  try {
+    const widgetRes = await fetch(widgetUrl, { redirect: 'follow' });
+    const ct = widgetRes.headers.get('content-type') || '';
+    if (widgetRes.ok && ct.startsWith('image/')) {
+      console.log(`[getAmazonImage] Method 2 (ad widget) succeeded for ${asin}: ${widgetRes.url}`);
+      return { title: null, price: null, image: widgetRes.url };
+    }
+  } catch (e) {
+    console.error('[getAmazonImage] Method 2 failed:', e.message);
+  }
+
+  // Method 3: Scrape product page HTML
   try {
     const res = await fetch('https://www.amazon.com/dp/' + asin, {
       headers: {
@@ -119,24 +150,22 @@ async function getAmazonImage(asin) {
         || html.match(/id="landingImage"[^>]+src="(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
         || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/m\.media-amazon\.com\/images\/I\/[^"']+)["']/i)?.[1]
         || null;
-      if (image) return { title, price, image };
+      if (image) {
+        console.log(`[getAmazonImage] Method 3 (scrape) succeeded for ${asin}`);
+        return { title, price, image };
+      }
     }
   } catch (e) {
-    console.error('Scrape failed:', e.message);
+    console.error('[getAmazonImage] Method 3 failed:', e.message);
   }
 
-  // Fallback: Amazon widget URL (usually accessible even when main page is blocked)
-  const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL250_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
-  try {
-    const testRes = await fetch(widgetUrl, { method: 'HEAD' });
-    if (testRes.ok) return { title: null, price: null, image: widgetUrl };
-  } catch (e) {}
-
+  console.error(`[getAmazonImage] All methods failed for ASIN ${asin}`);
   return null;
 }
 
 // ============================================================
 // SOCIAL POSTING
+// FIX: All emojis removed — they corrupt on Facebook/Telegram UTF-8 pipeline
 // ============================================================
 
 async function postToTelegram(deal) {
@@ -147,23 +176,22 @@ async function postToTelegram(deal) {
     return false;
   }
 
-  const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
-  const codeLine = deal.promoCode ? '\n🏷 Code: ' + deal.promoCode : '';
+  const codeLine = deal.promoCode ? '\nCode: ' + deal.promoCode : '';
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
-  const caption = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
-    '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
-    '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
-    '👉 ' + deal.url;
+  const caption = '<b>New Deal Alert!</b>\n\n' + storeName + '\n\n' +
+    '<b>' + (deal.title || storeName + ' Deal') + '</b>\n\n' +
+    'Price: <b>' + (deal.price || 'Check link') + '</b>' + discountLine + codeLine + '\n\n' +
+    '<a href="' + deal.url + '">Grab this deal!</a>';
   const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
 
   try {
-    // Try sendPhoto first
+    // Try sendPhoto first (only if image available)
     if (deal.imageUrl) {
       const res = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption }),
+        body: JSON.stringify({ chat_id: chatId, photo: deal.imageUrl, caption: safeCaption, parse_mode: 'HTML' }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -173,11 +201,11 @@ async function postToTelegram(deal) {
       console.error('[Telegram] sendPhoto failed:', JSON.stringify(data), '— falling back to sendMessage');
     }
 
-    // Fallback: send as text message (works even when image URL is inaccessible)
+    // Fallback: send as HTML message (works even when image URL is inaccessible)
     const msgRes = await fetch('https://api.telegram.org/bot' + botToken + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: safeCaption }),
+      body: JSON.stringify({ chat_id: chatId, text: safeCaption, parse_mode: 'HTML' }),
     });
     const msgData = await msgRes.json();
     if (msgData.ok) {
@@ -200,17 +228,16 @@ async function postToFacebook(deal) {
     return false;
   }
 
-  const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
   const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
-  const codeLine = deal.promoCode ? '\n🏷 Code: ' + deal.promoCode : '';
+  const codeLine = deal.promoCode ? '\nCode: ' + deal.promoCode : '';
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
-  const message = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
-    '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
-    '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
-    '👉 ' + deal.url;
+  const message = 'New Deal Alert!\n\n' + storeName + '\n\n' +
+    (deal.title || storeName + ' Deal') + '\n\n' +
+    'Price: ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
+    'Shop now: ' + deal.url + '\n\n#ad #deals #amazon #dealsaholic #shopping #sale';
 
   try {
-    // Try photo post first
+    // Try photo post first (only if image available)
     if (deal.imageUrl) {
       const photoRes = await fetch(`https://graph.facebook.com/${FB_API_VERSION}/${pageId}/photos`, {
         method: 'POST',
@@ -375,7 +402,7 @@ export default async (req, context) => {
   // Pull the next deal — keep a reference so we can re-add it on failure
   const deal = queue.shift();
 
-  // ── Re-fetch image from Amazon (more robust than submit-time scraping) ──────
+  // ── Re-fetch image from Amazon using 3-method scraper ───────────────────────
   if (deal.store === 'amazon' && deal.asin) {
     const scraped = await getAmazonImage(deal.asin);
     if (scraped) {
@@ -388,14 +415,28 @@ export default async (req, context) => {
     }
   }
 
-  // ── If still no image after re-fetch: requeue and try again next cycle ──────
+  // ── No image after all scraping attempts — requeue with retry counter ────────
+  // Max 5 retries then drop to prevent infinite loop. Each retry is ~5min apart.
   if (!deal.imageUrl) {
-    console.log('[post-queued-deal] No image found — requeueing:', deal.url);
-    queue.unshift(deal);
+    const retries = (deal.imageRetries || 0) + 1;
+    const maxRetries = 5;
+    if (retries >= maxRetries) {
+      console.log(`[post-queued-deal] No image after ${retries} attempts — dropping deal:`, deal.url);
+      await queueStore.setJSON('queue', queue);
+      return new Response(JSON.stringify({
+        success: true,
+        skipped: true,
+        reason: `No image after ${maxRetries} scraping attempts`,
+        url: deal.url,
+        queueRemaining: queue.length,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    console.log(`[post-queued-deal] No image (attempt ${retries}/${maxRetries}) — requeueing:`, deal.url);
+    queue.unshift({ ...deal, imageRetries: retries });
     await queueStore.setJSON('queue', queue);
     return new Response(JSON.stringify({
       success: true,
-      message: 'No image found, deal requeued',
+      message: `No image found, deal requeued (attempt ${retries}/${maxRetries})`,
       url: deal.url,
       queueRemaining: queue.length,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -448,8 +489,7 @@ export default async (req, context) => {
   // ── END DEDUPLICATION ────────────────────────────────────────────────────────
 
   const telegramOk = await postToTelegram(deal);
-  // DISABLED 2026-07-11: Facebook posting disabled — duplicate bug fix in progress
-  const facebookOk = false; // was: await postToFacebook(deal);
+  const facebookOk = await postToFacebook(deal);
 
   // ── FIX: Re-add to queue if BOTH platforms failed — don't silently lose deals ─
   if (!telegramOk && !facebookOk) {
@@ -475,7 +515,7 @@ export default async (req, context) => {
       discountPercent: deal.discount ? parseInt(deal.discount) : null,
       url: deal.url,
       image: deal.imageUrl || null,
-      imageUrl: deal.imageUrl || null,   // keep both field names for compatibility
+      imageUrl: deal.imageUrl || null,
       discountCode: deal.promoCode || null,
       source: 'email',
       store: deal.store || 'amazon',
