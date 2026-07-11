@@ -124,6 +124,7 @@ function shouldSkipDeal(deal, postedIds, now) {
   if ((deal.facebookFailCount || 0) >= MAX_FAIL_COUNT) return "too-many-failures";
   if (deal.expiresOn && new Date(deal.expiresOn).getTime() < now) return "expired";
   if (!deal.title || !deal.url) return "missing-title-or-url";
+  if (!deal.discountCode && !deal.couponPct) return "no-promo-code"; // require a promo/coupon code
   return null;
 }
 
