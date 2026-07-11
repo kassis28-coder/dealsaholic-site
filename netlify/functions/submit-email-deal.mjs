@@ -143,7 +143,6 @@ async function fetchAmazonMeta(amazonUrl) {
       }
       return null;
     })();
-
     const priceMatch =
       html.match(/["']priceAmount["']\s*:\s*["']?([\d.]+)["']?/)
       || html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
@@ -164,6 +163,7 @@ async function fetchAmazonMeta(amazonUrl) {
     };
   }
 }
+
 
 // ─── Amazon scraper: price + image fallback ──────────────────────────────────
 // Returns { price: number|null, image: string|null }
@@ -262,7 +262,7 @@ function stripHtml(html) {
 // Preserves line breaks so the block parser can find markers line by line.
 function stripHtmlKeepLines(html) {
   return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<style[^>]*>\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|li|h[1-6]|table|section|ul|ol)>/gi, '\n')
@@ -286,9 +286,9 @@ function isGarbageText(s) {
   if (plusMatches.length > 3) return true;
   if (/googleusercontent|googleapis|gstatic|promocode/i.test(decoded)) return true;
   if (/dummy_textarea|position.*absolute|overflow.*hidden|opacity.*0|emailBody=|<!DOCTYPE|<html|ExternalClass|MsoNormal|font-size|margin:|padding:|border:/i.test(decoded)) return true;
-  if (/here\s+is\s+a\s+list|for\s+your\s+reference|original\s+price\s*:/i.test(decoded)) return true;
+  if (/here\s+is\s+a\s+list|for\s+your\s+reference|original\s+price\s+:/i.test(decoded)) return true;
   // FIX: Reject common email boilerplate phrases that are NOT product titles
-  if (/save\s+\d+\s*%\s+on\s+(?:the\s+)?eligible/i.test(decoded)) return true;
+  if (/save\s+\d+\s+%\s+on\s+(?:the\s+)?eligible/i.test(decoded)) return true;
   if (/terms\s+and\s+conditions|must\s+sign\s+in|redeem\s+this\s+promotion|unsubscribe|privacy\s+policy|view\s+in\s+browser|click\s+here\s+to/i.test(decoded)) return true;
   if (/you\s+must\s+|please\s+note\s+|this\s+email\s+|dear\s+customer|dear\s+friend/i.test(decoded)) return true;
   const letters = (decoded.match(/[a-zA-Z\s]/g) || []).length;
@@ -375,12 +375,8 @@ function extractFieldsFromBlock(block, prevTail) {
   const promoCode = codeMatch ? codeMatch[1].toUpperCase() : null;
 
   // ── Coupon percentage ──────────────────────────────────────────────────────
-  const couponPctMatch = block.match(/(?<![a-zA-Z])coupon\s*[:：]\s*(\d{1,3})\s*%/i);
-  const couponPct = couponPctMatch
-    ? (promoCode && couponPctMatch[0].includes(promoCode) ? null : couponPctMatch[1])
-    : null;
-
-  // ── Sale price ────────────────────────────────────────────────────────────
+  const couponPctMatch = block.match(/(?<![a-zA-Z])coupon\s*[:：]\\ʊ�K�JWʉK�JN�ۜ���\۔�H��\۔�X]���
+��[���H	����\۔�X]��K�[��Y\���[���JH��[���\۔�X]��WJB���[���8� 8� �[H�X�H8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 8� 
   const PRICE_PATTERN = /\$?\s*([\d]+(?:\.[\d]+)?(?:\s*[-–]\s*[\d]+(?:\.[\d]+)?)?)/;
   const saleLabelRe = new RegExp(
     '(?:deal\\s*price|discount\\s*price|product\\s*price|sale\\s*price' +
@@ -532,6 +528,62 @@ function extractTitleFromBlock(blockText, strategy) {
   }
 
   return null;
+}
+
+// Extracts Amazon product URLs from raw HTML that uses redirect/tracking links.
+// Amazon promotional emails ("Save XX% on eligible item(s)") embed the real
+// product URL URL-encoded inside a gp/r.html redirect or a clicks.em.amazon.com
+// tracking link, e.g.:
+//   href="https://www.amazon.com/gp/r.html?...&amp;U=https%3A%2F%2Fwww.amazon.com%2Fdp%2FB0ABC123..."
+// After stripHtmlKeepLines() those href values are lost entirely.
+// This function pulls ASINs out of the raw HTML BEFORE stripping so Strategy 0
+// can find them.
+function extractAmazonUrlsFromHtml(html) {
+  const urls = [];
+  const seen = new Set();
+
+  function addAsin(asin) {
+    if (!asin || seen.has(asin)) return;
+    seen.add(asin);
+    urls.push(`https://www.amazon.com/dp/${asin.toUpperCase()}`);
+  }
+
+  // --- Strategy A: href with gp/r.html?...&U=<encoded-product-url> ---
+  const hrefPattern = /href=["']([^"']{20,})["']/gi;
+  for (const m of html.matchAll(hrefPattern)) {
+    const href = m[1].replace(/&amp;/g, '&');
+
+    if (/amazon\.com\/gp\/r[\.\?]/i.test(href)) {
+      try {
+        const u = new URL(href);
+        const productUrl = u.searchParams.get('U');
+        if (productUrl) {
+          const decoded = decodeURIComponent(productUrl);
+          const asin = decoded.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+            || decoded.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
+          if (asin) { addAsin(asin); continue; }
+        }
+      } catch (_) {}
+    }
+
+    // Direct ASIN in href
+    const asin = href.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
+      || href.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
+    if (asin) addAsin(asin);
+  }
+
+  // --- Strategy B: URL-encoded /dp%2FASIN inside query strings ---
+  for (const m of html.matchAll(/\/dp%2F([A-Z0-9]{10})/gi)) addAsin(m[1]);
+
+  // --- Strategy C: clicks.em.amazon.com tracking links (resolved later) ---
+  for (const m of html.matchAll(/https?:\/\/clicks\.em\.amazon\.com\/[^\s"'<>]+/gi)) {
+    if (!seen.has(m[0])) { seen.add(m[0]); urls.push(m[0]); }
+  }
+
+  if (urls.length > 0) {
+    console.log(`[extractAmazonUrlsFromHtml] found ${urls.length} URL(s) in raw HTML`);
+  }
+  return urls;
 }
 
 // ─── Block splitting ───────────────────────────────────────────────────────
@@ -746,7 +798,18 @@ export default async (req, context) => {
   content = maybeUrlDecode(content);
   const lineText = stripHtmlKeepLines(content);
 
-  const blocks = parseEmailIntoProductBlocks(lineText);
+  // Amazon promotional emails ("Save XX% on eligible item(s)") embed product
+  // URLs inside HTML redirect/tracking links (gp/r.html?...&U=<encoded-url>).
+  // Those href values are stripped by stripHtmlKeepLines, so Strategy 0 in
+  // parseEmailIntoProductBlocks finds zero /dp/ASIN URLs and returns empty.
+  // Fix: extract the real product URLs from the raw HTML, then append them to
+  // lineText as plain-text lines so Strategy 0 can find and process them.
+  const htmlProductUrls = extractAmazonUrlsFromHtml(content);
+  const enrichedLineText = htmlProductUrls.length > 0
+    ? lineText + '\n\n' + htmlProductUrls.join('\n')
+    : lineText;
+
+  const blocks = parseEmailIntoProductBlocks(enrichedLineText);
   console.log(`[Parser] email="${messageId || 'unknown'}" blocks=${blocks.length} debug=${debugMode} force=${forceMode}`);
 
   // ── Debug mode: return JSON preview, no saves ──────────────────────────────
@@ -763,202 +826,20 @@ export default async (req, context) => {
       imageUrl: null,
       startDate: block.startDate || null,
       endDate: block.endDate || null,
-      flags: {
-        asinMissing: !block.asinFromUrl && !!block.promocodeUrl,
-        hasPromocode: !!block.promocodeUrl,
-      },
-    }));
-    return new Response(JSON.stringify({ debug: true, messageId, count: blocks.length, deals: preview }, null, 2), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // ── Normal mode: enrich, validate, dedup, save to Blobs, queue approved deals ─
-  const store = getStore("submissions");
-  const queueStore = getStore("deal-queue");
-  const savedIds = [];
-  const skippedDuplicates = [];
-  const deals = [];
-  const queueItems = [];
-  const seenAsins = new Set();  // dedup within this email
-
-  // Load cross-email dedup indexes once before the loop
-  const { asinIndex, urlIndex, asinPromoIndex } = await loadDedupIndexes(store);
-  let dedupIndexDirty = false;  // only write indexes if something was saved
-
-  for (const block of blocks) {
-    let affiliateUrl = '';
-    let imageUrl = null;
-    let dealTitle = block.title;
-    let asin = null;
-    let status = 'pending';
-    let priceFromMeta = null;   // price scraped from Amazon product page
-
-    // ── CASE 1: Real /dp/ or /gp/product/ URL — ASIN is known ───────────────
-    if (block.realUrl) {
-      console.log(`[email=${messageId}][Block] real URL asin=${block.asinFromUrl || '?'} url=${block.realUrl}`);
-      const meta = await fetchAmazonMeta(block.realUrl);
-      asin = block.asinFromUrl || meta?.asin || null;
-      affiliateUrl = asin
-        ? `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`
-        : (block.realUrl.includes('tag=')
-          ? block.realUrl
-          : `${block.realUrl}${block.realUrl.includes('?') ? '&' : '?'}tag=${PARTNER_TAG}`);
-      // FIX: Image comes from Amazon scrape only — never /images/P/ fallback
-      imageUrl = meta?.image || null;
-      dealTitle = (meta?.title && !isGarbageText(meta.title) ? meta.title : null)
-        || block.title
-        || null;
-      // Capture price from the scraped Amazon page
-      priceFromMeta = meta?.price || null;
-      if (asin && affiliateUrl && imageUrl && dealTitle && !isGarbageText(dealTitle)) status = 'approved';
-      console.log(`[email=${messageId}][Block] asin=${asin} image=${imageUrl ? 'YES' : 'no'} price=${block.salePrice || priceFromMeta || block.discount || 'none'} title="${String(dealTitle || '').substring(0, 50)}"`);
-    }
-
-    // ── CASE 2: /promocode/ URL — ASIN unknown ────────────────────────────────
-    // FIX: These are skipped entirely by strict validation below (no ASIN, no image).
-    // Do not save partial records; admin cannot reliably fix them.
-    else if (block.promocodeUrl) {
-      console.log(`[email=${messageId}][Block] SKIP promocode URL (no ASIN): ${block.promocodeUrl}`);
-      // Leave asin=null, imageUrl=null, dealTitle=block.title — validation will skip.
-    }
-
-    // ── CASE 3: Title only — search Amazon by title ───────────────────────────
-    else if (block.title) {
-      console.log(`[email=${messageId}][Block] no URL — searching Amazon by title: "${block.title}"`);
-      const searchResult = await searchAmazonByTitle(block.title);
-      if (searchResult) {
-        asin = searchResult.asin;
-        affiliateUrl = searchResult.url;
-        // FIX: image from searchAmazonByTitle already returns null instead of /images/P/
-        imageUrl = searchResult.image;
-        dealTitle = block.title;
-        if (asin && affiliateUrl && imageUrl && !isGarbageText(dealTitle)) status = 'approved';
-        console.log(`[email=${messageId}][Block] title-search asin=${asin} image=${imageUrl ? 'YES' : 'no'}`);
-      } else {
-        console.log(`[email=${messageId}][Block] title-search returned no result for "${block.title}"`);
-      }
-    }
-
-    // ── Fallback: scrape Amazon when price or image is missing ────────────────
-    // Handles price ranges (e.g. "$14.99-19.99"), missing sale price, or missing
-    // image (can happen when Amazon blocks og:image on the first fetch).
-    const needsPrice = asin && !block.salePrice && !priceFromMeta;
-    const needsImage = asin && !imageUrl;
-    if (needsPrice || needsImage) {
-      console.log(`[email=${messageId}][Block] scraping Amazon for ASIN ${asin} (price=${needsPrice} image=${needsImage})`);
-      const scraped = await scrapeAmazonData(asin);
-
-      if (needsImage && scraped.image) {
-        imageUrl = scraped.image;
-        console.log(`[email=${messageId}][Block] scraped image for ASIN ${asin}`);
-      }
-
-      if (needsPrice && scraped.price !== null) {
-        priceFromMeta = `$${scraped.price.toFixed(2)}`;
-        console.log(`[email=${messageId}][Block] scraped price=${priceFromMeta} for ASIN ${asin}`);
-        // Recalculate discount from original price if not already set
-        if (!block.discount && block.originalPrice) {
-          const origStr = block.originalPrice.replace(/^\$/, '').trim();
-          const rangeM = origStr.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
-          const origValue = rangeM ? parseFloat(rangeM[2]) : parseFloat(origStr);
-          if (!isNaN(origValue) && origValue > scraped.price && origValue > 0) {
-            const pct = Math.round((1 - scraped.price / origValue) * 100);
-            if (pct >= 5 && pct <= 95) {
-              block.discount = String(pct);
-              console.log(`[email=${messageId}][Block] discount=${pct}% (orig=$${origValue} scraped=$${scraped.price})`);
-            }
-          }
-        }
-      }
-
-      // Re-evaluate status now that we may have image and/or price
-      if (asin && affiliateUrl && imageUrl && dealTitle && !isGarbageText(dealTitle)) status = 'approved';
-    }
-
-    // ── Skip duplicate ASINs within the same email ────────────────────────────
-    if (asin && seenAsins.has(asin)) {
-      console.log(`[email=${messageId}][SKIP] Same-email duplicate ASIN=${asin}`);
-      continue;
-    }
-    if (asin) seenAsins.add(asin);
-
-    // ── Cross-email dedup check ───────────────────────────────────────────────
-    // Check if this ASIN / URL / ASIN+promo already exists in the submissions store.
-    // Pass force=true in the query string to skip this check during testing.
-    if (!forceMode) {
-      const dup = checkDuplicate(asin, affiliateUrl, block.promoCode || null, asinIndex, urlIndex, asinPromoIndex);
-      if (dup.isDuplicate) {
-        console.log(
-          `[email=${messageId}][SKIP-DUP] Duplicate by ${dup.reason} — ` +
-          `asin=${asin} existingId=${dup.existingId} title="${String(dealTitle || '').substring(0, 50)}"`
-        );
-        skippedDuplicates.push({ asin, reason: dup.reason, existingId: dup.existingId });
-        continue;
-      }
-    } else if (asin) {
-      // force mode: log that we're ignoring the dedup check
-      const dup = checkDuplicate(asin, affiliateUrl, block.promoCode || null, asinIndex, urlIndex, asinPromoIndex);
-      if (dup.isDuplicate) {
-        console.log(
-          `[email=${messageId}][FORCE] Overriding duplicate by ${dup.reason} — ` +
-          `asin=${asin} existingId=${dup.existingId} (force=true, NOT re-saving)`
-        );
-        // Even with force=true we don't re-save — the deal already exists.
-        // force=true just means "don't error, keep processing the rest of the email".
-        skippedDuplicates.push({ asin, reason: dup.reason, existingId: dup.existingId, forced: true });
-        continue;
-      }
-    }
-
-    // ── VALIDATION: ASIN + title + URL + price/discount required at submit time ─
-    // Image is NOT required here — post-queued-deal.mjs has more robust image
-    // fetching (multiple scraping methods + R2 upload) and will re-fetch at post time.
-    // Requiring image here would block valid deals when Amazon temporarily 403s the scraper.
-    const hasPriceOrDiscount = !!(block.salePrice || block.discount || priceFromMeta);
-    const hasValidTitle = !!(dealTitle && !isGarbageText(dealTitle));
-    if (!asin || !hasValidTitle || !affiliateUrl || !hasPriceOrDiscount) {
-      console.log(
-        `[SKIP] Missing required field(s) — ` +
-        `asin=${!!asin} title=${hasValidTitle} url=${!!affiliateUrl} ` +
-        `price=${hasPriceOrDiscount} ` +
-        `— "${String(dealTitle ?? '').substring(0, 60)}"`
-      );
-      continue;
-    }
-
-    const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-
-    const submission = {
-      id,
-      asin,                            // ← stored so dedup and post-queued-deal can use it
-      title: dealTitle,
-      price: block.salePrice || priceFromMeta || null,
-      originalPrice: block.originalPrice || null,
-      discount: block.discount || null,
-      url: affiliateUrl,
-      imageUrl,
-      discountCode: block.promoCode || null,
-      couponPct: block.couponPct || null,
-      source: "email",
-      sourceMessageId: messageId || null,   // → which email this came from
-      status,
-      asinMissing: false,
-      sponsored: false,
-      createdAt: new Date().toISOString(),
-      startDate: block.startDate || null,
-      expiresOn: block.endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    };
-
-    await store.setJSON(id, submission);
-
-    // Register in dedup indexes immediately so subsequent blocks in the same loop
-    // don't create duplicates for the same ASIN (safety net on top of seenAsins).
-    registerInDedupIndexes(id, asin, affiliateUrl, block.promoCode || null, asinIndex, urlIndex, asinPromoIndex);
-    dedupIndexDirty = true;
-
-    console.log(`[email=${messageId}][SAVED] id=${id} asin=${asin} status=${status} title="${String(dealTitle || '').substring(0, 50)}"`);
+  ������������(���������ͥ�5��ͥ��者�������ͥ�ɽ�Uɰ�������������ɽ������Uɰ�(�����������Aɽ������耄��������ɽ������Uɰ�(��������(��������(����ɕ��ɸ���܁I�����͔�)M=8���ɥ�����쁑��՜���Ք�����ͅ��%�����չ�聉����̹����Ѡ���������ɕ٥�܁����ձ���Ȥ���(�������х��������(��������������쀝
+��ѕ�еQ����耝�������ѥ����ͽ�����(�������(���((������R�R �9�ɵ�������聕�ɥ����م����є���������ٔͅ�Ѽ�	���̰��ՕՔ����ɽٕ������̃�R (������Ё�ѽɔ�􁝕�Mѽɔ���Չ���ͥ��̈��(������Ё�ՕՕMѽɔ�􁝕�Mѽɔ��������ՕՔ���(������Ёٕͅ�%�̀�mt�(������Ёͭ�����������ѕ̀�mt�(������Ё����̀�mt�(������Ё�ՕՕ%ѕ�̀�mt�(������Ё͕��ͥ�̀􁹕܁M�Р�쀀���������ݥѡ���ѡ�́�����((�����1�����ɽ�̵�����������������́���������ɔ�ѡ������(������Ё쁅ͥ�%���ఁ�ɱ%���ఁ�ͥ�Aɽ��%�������݅�Ё��������%����̡�ѽɔ��(����Ё�����%��������􁙅�͔쀀��������ɥє������́���ͽ��ѡ����ٕ݅́ͅ�((����Ȁ�����Ё��������������̤��(������Ё�������ѕUɰ�􀜜�(������Ё�����Uɰ��ձ��(������Ё����Q�ѱ��􁉱����ѥѱ��(������Ё�ͥ���ձ��(������Ё�х��̀����������(������Ё�ɥ��ɽ�5�ф��ձ�쀀�����ɥ���͍Ʌ�����ɽ����齸��ɽ�ՍЁ����((��������R�R �
+M���I����������Ȁ�����ɽ�Սм�UI0��P�M%8��́���ݸ��R�R�R�R�R�R�R�R�R�R�R�R�R�R�R (��������������ɕ��Uɰ���(���������ͽ��������m�����������ͅ��%��um	����t�ɕ���UI0��ͥ���퉱�����ͥ�ɽ�Uɰ���������ɰ��퉱����ɕ��Uɱ����(����������Ё��ф��݅�Ё��э���齹5�ф�������ɕ��Uɰ��(�������ͥ��􁉱�����ͥ�ɽ�Uɰ������ф���ͥ������ձ��(�������������ѕUɰ��ͥ�(����������������輽��ܹ���齸����������ͥ���х����AIQ9I}Q��(��������耡������ɕ��Uɰ�����Ց�̠�х����(������������������ɕ��Uɰ(����������聀�퉱����ɕ��Uɱ��퉱����ɕ��Uɰ�����Ց�̠�����������耜���х����AIQ9I}Q����(���������%`�%���������́�ɽ����齸�͍Ʌ������䃊P���ٕȀ������̽@����������(�����������Uɰ�􁵕ф������������ձ��(����������Q�ѱ��􀡵�ф��ѥѱ���������ɉ���Q��С��ф�ѥѱ�������ф�ѥѱ��聹ձ��(�����������������ѥѱ�(������������ձ��(���������
+����ɔ��ɥ����ɽ��ѡ��͍Ʌ������齸�����(�������ɥ��ɽ�5�ф�􁵕ф���ɥ�������ձ��(�����������ͥ������������ѕUɰ���������Uɰ��������Q�ѱ���������ɉ���Q��С����Q�ѱ�����х��̀􀝅��ɽٕ���(���������ͽ��������m�����������ͅ��%��um	����t��ͥ����ͥ�􁥵�����������Uɰ����eL��耝�����ɥ����퉱����ͅ��Aɥ�������ɥ��ɽ�5�ф������������͍�չЁ����������ѥѱ���M�ɥ�������Q�ѱ����������Չ��ɥ���������􉀤�(�����((��������R�R �
+M��耽�ɽ��������UI0��P�M%8�չ���ݸ��R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R (�������%`�Q��͔��ɔ�ͭ��������ѥɕ�䁉���ɥ�Ёم����ѥ�������܀����M%8������������(�����������Ёٔͅ����ѥ���ɕ��ɑ�쁅����������Ёɕ�����䁙���ѡ���(������͔������������ɽ������Uɰ���(���������ͽ��������m�����������ͅ��%��um	����t�M-%@��ɽ�������UI0�����M%8�耑퉱�����ɽ������Uɱ����(���������1��ٔ��ͥ���ձ��������Uɰ��ձ�������Q�ѱ��������ѥѱ���P�م����ѥ���ݥ���ͭ���(�����((��������R�R �
+M���Q�ѱ�����䃊P�͕�ɍ����齸���ѥѱ���R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R (������͔�����������ѥѱ����(���������ͽ��������m�����������ͅ��%��um	����t����UI0��P�͕�ɍ�������齸���ѥѱ�耈�퉱����ѥѱ�􉀤�(����������Ё͕�ɍ�I��ձЀ�݅�Ё͕�ɍ���齹	�Q�ѱ��������ѥѱ���(����������͕�ɍ�I��ձФ��(���������ͥ���͕�ɍ�I��ձй�ͥ��(���������������ѕUɰ��͕�ɍ�I��ձй�ɰ�(�����������%`聥������ɽ��͕�ɍ���齹	�Q�ѱ����ɕ���ɕ��ɹ́�ձ�����ѕ������������̽@�(�������������Uɰ��͕�ɍ�I��ձй������(������������Q�ѱ��􁉱����ѥѱ��(�������������ͥ������������ѕUɰ���������Uɰ��������ɉ���Q��С����Q�ѱ�����х��̀􀝅��ɽٕ���(�����������ͽ��������m�����������ͅ��%��um	����t�ѥѱ��͕�ɍ���ͥ����ͥ�􁥵�����������Uɰ����eL��耝�������(������􁕱͔��(�����������ͽ��������m�����������ͅ��%��um	����t�ѥѱ��͕�ɍ��ɕ��ɹ������ɕ�ձЁ��Ȁ��퉱����ѥѱ�􉀤�(�������(�����(((��������R�R ���������͍Ʌ�����齸�ݡ����ɥ����ȁ�������́���ͥ����R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R (�������!�����́�ɥ���Ʌ���̀���������и�����䈤�����ͥ���ͅ����ɥ�����ȁ���ͥ��(�������������������������ݡ�����齸������́��饵�������ѡ������Ё��э���(��������Ё�����Aɥ����ͥ������������ͅ��Aɥ��������ɥ��ɽ�5�ф�(��������Ё�����%������ͥ�����������Uɰ�(�������������Aɥ�����������%�������(���������ͽ��������m�����������ͅ��%��um	����t�͍Ʌ�������齸���ȁM%8���ͥ���ɥ����������Aɥ��􁥵�����������%���������(����������Ё͍Ʌ�����݅�Ё͍Ʌ����齹�ф��ͥ���((���������������%��������͍Ʌ������������(�������������Uɰ��͍Ʌ����������(�����������ͽ��������m�����������ͅ��%��um	����t�͍Ʌ������������ȁM%8���ͥ�����(�������((���������������Aɥ������͍Ʌ�����ɥ������ձ����(���������ɥ��ɽ�5�ф�􁀐��͍Ʌ�����ɥ���ѽ�ᕐ�ȥ���(�����������ͽ��������m�����������ͅ��%��um	����t�͍Ʌ�����ɥ������ɥ��ɽ�5�х􁙽ȁM%8���ͥ�����(�����������I�����ձ�є���͍�չЁ�ɽ���ɥ�������ɥ��������Ё��ɕ���͕�(���������������������͍�չЀ����������ɥ�����Aɥ�����(��������������Ё�ɥ�M�Ȁ􁉱�����ɥ�����Aɥ���ɕ�������yp���������ɥ����(��������������ЁɅ���4��ɥ�M�ȹ��э���x�mq��t��q̩l��Muq̨�mq��t������(��������������Ё�ɥ�Y��Ք��Ʌ���4������͕���СɅ���5l�t������͕���С�ɥ�M�Ȥ�(�����������������9�8��ɥ�Y��Ք������ɥ�Y��Ք���͍Ʌ�����ɥ�������ɥ�Y��Ք�������(����������������Ё��Ѐ�5�Ѡ�ɽչ���Ā��͍Ʌ�����ɥ������ɥ�Y��Ք���������(������������������Ѐ��Ԁ�����Ѐ���Ԥ��(����������������������͍�չЀ�M�ɥ�����Ф�(�����������������ͽ��������m�����������ͅ��%��um	����t���͍�չ������������ɥ������ɥ�Y��Օ�͍Ʌ�������͍Ʌ�����ɥ�������(�������������(�����������(���������(�������((���������I���م�Յє��х��́��܁ѡ�Ёݔ���䁡�ٔ������������ȁ�ɥ��(�����������ͥ������������ѕUɰ���������Uɰ��������Q�ѱ���������ɉ���Q��С����Q�ѱ�����х��̀􀝅��ɽٕ���(�����((��������R�R �M�����������є�M%9́ݥѡ���ѡ��ͅ����������R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R (���������ͥ�����͕��ͥ�̹��̡�ͥ�����(���������ͽ��������m�����������ͅ��%��umM-%At�M�����������������є�M%8���ͥ�����(���������ѥ�Ք�(�����(���������ͥ���͕��ͥ�̹�����ͥ���((��������R�R �
+ɽ�̵�������������������R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R�R (�������
+��������ѡ�́M%8���UI0���M%8��ɽ�����ɕ��䁕���́���ѡ���Չ���ͥ��́�ѽɔ�(�������A��́��ɍ����Ք����ѡ���Օ����ɥ���Ѽ�ͭ���ѡ�́��������ɥ���ѕ�ѥ���(�����������ɍ�5������(����������Ё����􁍡���������є��ͥ����������ѕUɰ���������ɽ��
+��������ձ����ͥ�%���ఁ�ɱ%���ఁ�ͥ�Aɽ��%�����(����������������������є���(�����������ͽ�������(�����������m�����������ͅ��%��umM-%@�UAt�������є��䀑����ɕ�ͽ��P����(������������ͥ����ͥ����ѥ��%����������ѥ��%��ѥѱ���M�ɥ�������Q�ѱ����������Չ��ɥ����������(����������(��������ͭ�����������ѕ̹��͠�쁅ͥ���ɕ�ͽ�聑���ɕ�ͽ������ѥ��%�聑������ѥ��%�����(�����������ѥ�Ք�(�������(����􁕱͔������ͥ����(�����������ɍ������聱���ѡ�Ёݔ�ɔ�����ɥ���ѡ�������������(����������Ё����􁍡���������є��ͥ����������ѕUɰ���������ɽ��
+��������ձ����ͥ�%���ఁ�ɱ%���ఁ�ͥ�Aɽ��%�����(����������������������є���(�����������ͽ�������(�����������m�����������ͅ��%��um=I
+t�=ٕ�ɥ������������є��䀑����ɕ�ͽ��P����(������������ͥ����ͥ����ѥ��%����������ѥ��%�􀡙�ɍ����Ք��9=P�ɔ�ͅ٥����(����������(�����������ٕ��ݥѠ���ɍ����Ք�ݔ�����Ёɔ�ٔͅ��P�ѡ���������ɕ��䁕���̸(�������������ɍ����Ք����Ё����̀�����Ё��ɽȰ�������ɽ���ͥ���ѡ��ɕ�Ё���ѡ���������(��������ͭ�����������ѕ̹��͠�쁅ͥ���ɕ�ͽ�聑���ɕ�ͽ������ѥ��%�聑������ѥ��%�����ɍ�����Ք����(�����������ѥ�Ք�(�������(�����((��������R�R �Y1%Q%=8�M%8���ѥѱ����UI0����ɥ�����͍�չЁɕ�եɕ���Ё�Չ��Ёѥ����R (�������%������́9=P�ɕ�եɕ����ɔ��P����е�ՕՕ���������́��́��ɔ�ɽ���Ё�����(���������э�������ձѥ����͍Ʌ�������ѡ��̀��Hȁ������������ݥ���ɔ���э���Ё���Ёѥ���(�������I��եɥ�����������ɔ�ݽձ��������م��������́ݡ�����齸�ѕ���Ʌɥ�����́ѡ��͍Ʌ��ȸ(��������Ё���Aɥ��=��͍�չЀ􀄄�������ͅ��Aɥ��������������͍�չЁ����ɥ��ɽ�5�ф��(��������Ё���Y����Q�ѱ��􀄄�����Q�ѱ���������ɉ���Q��С����Q�ѱ����(����������ͥ���������Y����Q�ѱ�������������ѕUɰ��������Aɥ��=��͍�չФ��(���������ͽ�������(���������mM-%At�5��ͥ���ɕ�եɕ��������̤��P����(����������ͥ���섅�ͥ��ѥѱ�������Y����Q�ѱ���ɰ��섅�������ѕUɱ􁀀�(����������ɥ��������Aɥ��=��͍�չ�􁀀�(����������P����M�ɥ�������Q�ѱ����������Չ��ɥ����������(��������(���������ѥ�Ք�(�����((��������Ё���􀝕����������є���ܠ����������5�Ѡ�Ʌ�������ѽM�ɥ����ؤ�ͱ����Ȱ�ؤ�((��������Ё�Չ���ͥ�����(���������(�������ͥ������������������������������@��ѽɕ��ͼ��������������е�ՕՕ������������͔���(������ѥѱ�聑���Q�ѱ��(�������ɥ��聉�����ͅ��Aɥ�������ɥ��ɽ�5�ф�����ձ��(�������ɥ�����Aɥ��聉������ɥ�����Aɥ�������ձ��(��������͍�չ�聉�������͍�չЁ����ձ��(�������ɰ聅������ѕUɰ�(�����������Uɰ�(��������͍�չ�
+���聉������ɽ��
+��������ձ��(������������A��聉�����������A�Ё����ձ��(������ͽ�ɍ�耉�������(������ͽ�ɍ�5��ͅ��%�聵��ͅ��%������ձ���������@�ݡ����������ѡ�́������ɽ�(�������х��̰(�������ͥ�5��ͥ��聙��͔�(����������ͽɕ�聙��͔�(�������ɕ�ѕ��聹�܁�є���ѽ%M=M�ɥ�����(�������х���є聉������х���є�����ձ��(����������ɕ�=�聉���������є������܁�є��є���ܠ����܀���Ѐ������������������ѽ%M=M�ɥ�����(������((�����݅�Ё�ѽɔ�͕�)M=8������Չ���ͥ����((�������I����ѕȁ��������������́�������ѕ��ͼ��Չ͕�Օ�Ё�����́���ѡ��ͅ�������(�����������Ё�ɕ�є��������ѕ́��ȁѡ��ͅ���M%8��ͅ���䁹�Ё���ѽ�����͕��ͥ�̤�(����ɕ���ѕ�%�����%����̡�����ͥ����������ѕUɰ���������ɽ��
+��������ձ����ͥ�%���ఁ�ɱ%���ఁ�ͥ�Aɽ��%�����(���������%�����������Ք�((���console.log(`[email=${messageId}][SAVED] id=${id} asin=${asin} status=${status} title="${String(dealTitle || '').substring(0, 50)}"`);
 
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: block.salePrice || priceFromMeta || null, url: affiliateUrl, imageUrl });
@@ -1007,16 +888,16 @@ export default async (req, context) => {
 
   const telegramMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `👧 <b>New Deal Alert!</b>\n\n🛽 <b>${deals[0].title}</b>\n\n🊰 <b>${deals[0].price || 'Check link'}</b>\n\n🔢 <a href="${deals[0].url}">👎 Grab this deal!</a>`
-      : `💧 <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
-        `${i + 1}. 🛽 <b>${d.title}</b>\n   🊰 <b>${d.price || 'Check link'}</b>\n   🔢 <a href="${d.url}">Grab deal</a>`
+      ? `<b>New Deal Alert!</b>\n\n<b>${deals[0].title}</b>\n\nPrice: <b>${deals[0].price || 'Check link'}</b>\n\n<a href="${deals[0].url}">Grab this deal!</a>`
+      : `<b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, i) =>
+        `${i + 1}. <b>${d.title}</b>\n   Price: <b>${d.price || 'Check link'}</b>\n   <a href="${d.url}">Grab deal</a>`
       ).join('\n\n');
 
   const facebookMessage = deals.length === 0 ? null
     : deals.length === 1
-      ? `💧 New Deal Alert!\n\n🛽 ${deals[0].title}\n\n🊰 ${deals[0].price || 'Check link'}\n\n🔢 ${deals[0].url}\n\n#ad #deals #amazon #dealsaholic #shopping #sale`
-      : `💧 ${deals.length} New Deals Alert!\n\n` + deals.map((d, i) =>
-        `${i + 1}. 🛽 ${d.title}\n   🊰 ${d.price || 'Check link'}\n   🔢 ${d.url}`
+      ? `New Deal Alert!\n\n${deals[0].title}\n\nPrice: ${deals[0].price || 'Check link'}\n\nShop now: ${deals[0].url}\n\n#ad #deals #amazon #dealsaholic #shopping #sale`
+      : `${deals.length} New Deals Alert!\n\n` + deals.map((d, i) =>
+        `${i + 1}. ${d.title}\n   Price: ${d.price || 'Check link'}\n   Shop now: ${d.url}`
       ).join('\n\n') + '\n\n#ad #deals #amazon #dealsaholic #shopping #sale';
 
   return new Response(JSON.stringify({
