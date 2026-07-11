@@ -552,6 +552,5 @@ export default async (req, context) => {
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
-export const config = {
-  schedule: '*/5 * * * *',
-};
+// Schedule disabled — social posting now handled by post-to-facebook.mjs and post-deals-to-telegram.mjs
+// export const config = { schedule: '*/10 * * * *' };
