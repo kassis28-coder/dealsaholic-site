@@ -54,6 +54,7 @@ export default async function handler(req) {
   const dryRun   = url.searchParams.get("dry") === "1";
   const hours    = parseInt(url.searchParams.get("hours") || String(DEFAULT_HOURS), 10);
   const deleteAll = url.searchParams.get("all") === "1"; // delete ALL deal posts, not just missing-code
+  const limit     = parseInt(url.searchParams.get("limit") || "25", 10); // max posts to delete per call
 
   if (password !== ADMIN_PASSWORD) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -87,13 +88,14 @@ export default async function handler(req) {
       else     toKeep.push(entry);
     }
 
-    console.log(`[CLEANUP] to_delete=${toDelete.length} to_keep=${toKeep.length}`);
+    console.log(`[CLEANUP] to_delete=${toDelete.length} to_keep=${toKeep.length} limit=${limit}`);
 
+    const batch   = toDelete.slice(0, limit); // apply limit
     const deleted = [];
     const failed  = [];
 
     if (!dryRun) {
-      for (const post of toDelete) {
+      for (const post of batch) {
         try {
           await deletePost(post.id);
           console.log(`[CLEANUP] DELETED ${post.id}: "${post.preview.slice(0, 60)}"`);
@@ -111,10 +113,12 @@ export default async function handler(req) {
         dry_run: dryRun,
         hours_checked: hours,
         total_posts: posts.length,
-        to_delete: toDelete,
+        to_delete_total: toDelete.length,
+        to_delete: dryRun ? toDelete.slice(0, limit) : batch,
         deleted: dryRun ? [] : deleted,
         failed: dryRun ? [] : failed,
         kept_count: toKeep.length,
+        remaining: Math.max(0, toDelete.length - limit),
       }, null, 2),
       { headers: { "Content-Type": "application/json" } }
     );
