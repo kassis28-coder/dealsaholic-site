@@ -95,16 +95,18 @@ export default async function handler(req) {
     const failed  = [];
 
     if (!dryRun) {
-      for (const post of batch) {
-        try {
-          await deletePost(post.id);
+      // Delete in parallel to stay well within the 10s function timeout
+      const results = await Promise.allSettled(batch.map(post => deletePost(post.id)));
+      results.forEach((result, i) => {
+        const post = batch[i];
+        if (result.status === "fulfilled") {
           console.log(`[CLEANUP] DELETED ${post.id}: "${post.preview.slice(0, 60)}"`);
           deleted.push(post);
-        } catch (err) {
-          console.error(`[CLEANUP] FAILED ${post.id}: ${err.message}`);
-          failed.push({ ...post, error: err.message });
+        } else {
+          console.error(`[CLEANUP] FAILED ${post.id}: ${result.reason?.message}`);
+          failed.push({ ...post, error: result.reason?.message });
         }
-      }
+      });
     }
 
     return new Response(
