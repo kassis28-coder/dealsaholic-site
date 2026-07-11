@@ -1,41 +1,37 @@
-import { getStore } from "@netlify/blobs";
+// cleanup-facebook-posts.mjs
+// One-time cleanup: delete deal posts missing promo codes from the last N hours.
 
-// ââ Env vars ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const FB_PAGE_TOKEN =
   process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
 const FB_PAGE_ID =
   process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-// How far back to look (10 hours in ms)
-const LOOKBACK_MS = 10 * 60 * 60 * 1000;
+// Default: 10 hours. Pass ?hours=24 to extend.
+const DEFAULT_HOURS = 10;
 
-// A post is "bad" (missing deal info) if its message lacks a price line AND
-// lacks a promo code line. We delete posts that look like they came from the
-// broken caption builder (no ð° price, no ð· Code:, no âï¸ coupon).
-function isBadPost(message = "") {
-  const hasPrice     = /ð°/.test(message);
-  const hasCode      = /ð·\s*Code:/i.test(message) || /âï¸/.test(message);
-  const hasShopLink  = /ð/.test(message);
-  // Only target posts that look like our deal posts (have the shop link emoji)
-  // but are missing price AND promo code info.
-  if (!hasShopLink) return false;          // not our post
-  if (hasPrice && hasCode) return false;   // looks complete
-  return true;                             // missing price or promo code
+// Identify our automated deal posts by plain-text markers (no emoji â avoids encoding issues).
+// A post is "ours" if it contains "New Deal Alert!" or "Shop now:".
+// A post is "bad" if it is ours AND is missing a promo code line ("Code:").
+function isBadPost(message) {
+  if (!message) return false;
+  const isDealPost = message.includes("New Deal Alert!") || message.includes("Shop now:");
+  if (!isDealPost) return false;          // not our automated post â skip
+  const hasCode = message.includes("Code:") ||
+                  message.toLowerCase().includes("coupon") ||
+                  message.toLowerCase().includes("promo code");
+  return !hasCode;                         // bad if no promo code info
 }
 
-async function getRecentPagePosts() {
+async function getRecentPosts(hours) {
   if (!FB_PAGE_TOKEN || !FB_PAGE_ID) {
     throw new Error("Missing FB_PAGE_TOKEN or FB_PAGE_ID env vars");
   }
-
-  const since = Math.floor((Date.now() - LOOKBACK_MS) / 1000);
-  const url = `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/feed` +
+  const since = Math.floor((Date.now() - hours * 3600 * 1000) / 1000);
+  const url =
+    `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/feed` +
     `?fields=id,message,created_time,story` +
-    `&since=${since}` +
-    `&limit=100` +
-    `&access_token=${FB_PAGE_TOKEN}`;
-
+    `&since=${since}&limit=100&access_token=${FB_PAGE_TOKEN}`;
   const res = await fetch(url);
   const data = await res.json();
   if (data.error) throw new Error(`FB API: ${data.error.message}`);
@@ -48,15 +44,16 @@ async function deletePost(postId) {
     { method: "DELETE" }
   );
   const data = await res.json();
-  if (data.error) throw new Error(`Delete ${postId}: ${data.error.message}`);
+  if (data.error) throw new Error(data.error.message);
   return data.success;
 }
 
 export default async function handler(req) {
-  // Require admin password â never run as scheduled
   const url      = new URL(req.url);
   const password = url.searchParams.get("password");
   const dryRun   = url.searchParams.get("dry") === "1";
+  const hours    = parseInt(url.searchParams.get("hours") || String(DEFAULT_HOURS), 10);
+  const deleteAll = url.searchParams.get("all") === "1"; // delete ALL deal posts, not just missing-code
 
   if (password !== ADMIN_PASSWORD) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -64,22 +61,27 @@ export default async function handler(req) {
     });
   }
 
-  console.log(`[CLEANUP] Starting â dry_run=${dryRun} lookback=10h`);
+  console.log(`[CLEANUP] dry=${dryRun} hours=${hours} deleteAll=${deleteAll}`);
 
   try {
-    const posts = await getRecentPagePosts();
-    console.log(`[CLEANUP] Found ${posts.length} posts in last 10h`);
+    const posts = await getRecentPosts(hours);
+    console.log(`[CLEANUP] Found ${posts.length} posts in last ${hours}h`);
 
     const toDelete = [];
     const toKeep   = [];
 
     for (const post of posts) {
-      const bad = isBadPost(post.message);
+      const msg = post.message || post.story || "";
+      const isDeal = msg.includes("New Deal Alert!") || msg.includes("Shop now:");
+      const bad    = deleteAll ? isDeal : isBadPost(msg);
+
       const entry = {
         id: post.id,
         created_time: post.created_time,
-        preview: (post.message || post.story || "").slice(0, 120),
-        reason: bad ? "missing-price-or-promo-code" : null,
+        preview: msg.slice(0, 150),
+        reason: bad
+          ? (deleteAll ? "all-deal-posts" : "missing-promo-code")
+          : null,
       };
       if (bad) toDelete.push(entry);
       else     toKeep.push(entry);
@@ -87,33 +89,35 @@ export default async function handler(req) {
 
     console.log(`[CLEANUP] to_delete=${toDelete.length} to_keep=${toKeep.length}`);
 
-    const deleted  = [];
-    const failed   = [];
+    const deleted = [];
+    const failed  = [];
 
     if (!dryRun) {
       for (const post of toDelete) {
         try {
           await deletePost(post.id);
-          console.log(`[CLEANUP] â Deleted ${post.id}: "${post.preview.slice(0, 60)}"`);
+          console.log(`[CLEANUP] DELETED ${post.id}: "${post.preview.slice(0, 60)}"`);
           deleted.push(post);
         } catch (err) {
-          console.error(`[CLEANUP] â Failed to delete ${post.id}: ${err.message}`);
+          console.error(`[CLEANUP] FAILED ${post.id}: ${err.message}`);
           failed.push({ ...post, error: err.message });
         }
       }
     }
 
-    return new Response(JSON.stringify({
-      success: true,
-      dry_run: dryRun,
-      total_posts_checked: posts.length,
-      to_delete: toDelete,
-      deleted: dryRun ? [] : deleted,
-      failed: dryRun ? [] : failed,
-      kept: toKeep,
-    }, null, 2), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        dry_run: dryRun,
+        hours_checked: hours,
+        total_posts: posts.length,
+        to_delete: toDelete,
+        deleted: dryRun ? [] : deleted,
+        failed: dryRun ? [] : failed,
+        kept_count: toKeep.length,
+      }, null, 2),
+      { headers: { "Content-Type": "application/json" } }
+    );
 
   } catch (err) {
     console.error("[CLEANUP] Error:", err.message);
