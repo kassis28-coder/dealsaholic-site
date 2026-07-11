@@ -14,17 +14,37 @@ const MAX_FAIL_COUNT = 3;
 const MAX_POSTED_IDS = 2000;
 
 // ââ Caption builder âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Field-name mapping â different ingest paths store under different names:
+//   submit-email-deal.mjs  â imageUrl, discount (string %), discountCode, couponPct
+//   post-queued-deal.mjs   â image, discountPercent (number), discountCode
 function buildCaption(deal) {
+  // Normalise field variants
+  const imageUrl   = deal.image || deal.imageUrl || null;           // used by caller too
+  const discountPct = deal.discountPercent || deal.discount || null; // "40" or 40
+  const couponPct   = deal.couponPct || null;
+
   const lines = ["ð¥ New Deal Alert!", "", deal.title || "Amazing Deal"];
+
+  // Price line
   if (deal.price) {
     lines.push("");
-    lines.push(
-      deal.originalPrice && deal.discountPercent
-        ? `ð° ${deal.price} (was ${deal.originalPrice} â ${deal.discountPercent}% off!)`
-        : `ð° ${deal.price}`
-    );
+    if (deal.originalPrice && discountPct) {
+      lines.push(`ð° ${deal.price} (was ${deal.originalPrice} â ${discountPct}% off!)`);
+    } else if (discountPct) {
+      lines.push(`ð° ${deal.price} â ${discountPct}% off!`);
+    } else {
+      lines.push(`ð° ${deal.price}`);
+    }
+  } else if (discountPct) {
+    lines.push("", `ð· ${discountPct}% off!`);
   }
+
+  // Coupon % (clip coupon deals)
+  if (couponPct) lines.push(`âï¸ Extra ${couponPct}% coupon â clip at checkout`);
+
+  // Promo code
   if (deal.discountCode) lines.push(`ð· Code: ${deal.discountCode}`);
+
   lines.push("", `ð Shop now: ${deal.url}`, "", "#ad #deals #dealsaholic #sale #shopping");
   return lines.join("\n");
 }
