@@ -20,25 +20,19 @@ function formatExpiry(isoString) {
 
 function buildCaption(deal) {
   const lines = [];
-
   lines.push(`🛍️ ${deal.title}`);
   lines.push(`💰 Deal Price: ${deal.price}`);
-
   if (deal.originalPrice) lines.push(`🏷️ Original Price: ${deal.originalPrice}`);
   if (deal.discount)      lines.push(`🔥 Save ${deal.discount}%`);
   if (deal.discountCode)  lines.push(`🎟️ Promo Code: ${deal.discountCode}`);
-
   lines.push(`🔗 ${deal.url}`);
-
   const expiry = formatExpiry(deal.expiresOn);
   if (expiry) lines.push(`⏰ Expires: ${expiry}`);
-
   lines.push('\n#ad');
-
   return lines.join('\n');
 }
 
-// ── Validation — skip instead of posting incomplete content ──────────────────
+// ── Validation ───────────────────────────────────────────────────────────────
 
 function validateDeal(deal) {
   const errors = [];
@@ -49,14 +43,29 @@ function validateDeal(deal) {
   return errors;
 }
 
+// ── Deduplication: compare DB deal against live Facebook page posts ──────────
+
+async function isAlreadyPostedOnFacebook(deal, pageId, token) {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/${pageId}/posts?fields=message&limit=50&access_token=${token}`
+    );
+    const data = await res.json();
+    if (!data.data || !Array.isArray(data.data)) return false;
+    return data.data.some(post => {
+      const msg = post.message || '';
+      return (deal.url && msg.includes(deal.url)) ||
+             (deal.title && msg.includes(deal.title));
+    });
+  } catch (err) {
+    console.warn('[post-to-facebook] FB dedup check failed (non-blocking):', err.message);
+    return false; // fail open — don't block posting if the check errors
+  }
+}
+
 // ── Facebook Graph API call ──────────────────────────────────────────────────
 
-async function postToFacebook(deal) {
-  const pageId = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
-  const token  = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
-
-  if (!pageId || !token) throw new Error('Missing FB_PAGE_ID or FB_PAGE_TOKEN env vars');
-
+async function postToFacebook(deal, pageId, token) {
   const caption  = buildCaption(deal);
   const imageUrl = deal.imageUrl;
 
@@ -79,6 +88,14 @@ async function postToFacebook(deal) {
 
 export default async (_req, _context) => {
   const submissionsStore = getStore('submissions');
+  const pageId = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
+  const token  = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
+
+  if (!pageId || !token) {
+    return new Response(JSON.stringify({ success: false, error: 'Missing FB_PAGE_ID or FB_PAGE_TOKEN' }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   let index = [];
   try { index = (await submissionsStore.get('index', { type: 'json' })) || []; } catch { index = []; }
@@ -89,7 +106,7 @@ export default async (_req, _context) => {
     });
   }
 
-  // Find first approved deal not yet posted to Facebook
+  // Find first approved deal not yet marked posted in DB
   let targetDeal = null;
   let targetId   = null;
 
@@ -107,6 +124,21 @@ export default async (_req, _context) => {
 
   if (!targetDeal) {
     return new Response(JSON.stringify({ success: true, message: 'No unposted deals found' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Secondary dedup: check live Facebook page posts to catch anything not flagged in DB
+  const alreadyOnFacebook = await isAlreadyPostedOnFacebook(targetDeal, pageId, token);
+  if (alreadyOnFacebook) {
+    console.log(`[post-to-facebook] Deal ${targetId} already on FB page — syncing DB flag`);
+    await submissionsStore.setJSON(targetId, {
+      ...targetDeal,
+      facebookPosted: true,
+      facebookPostedAt: new Date().toISOString(),
+      facebookReconciled: true,
+    });
+    return new Response(JSON.stringify({ success: true, reconciled: true, dealId: targetId, message: 'Already on Facebook, DB synced' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -130,7 +162,7 @@ export default async (_req, _context) => {
   // Post to Facebook
   let fbResult;
   try {
-    fbResult = await postToFacebook(targetDeal);
+    fbResult = await postToFacebook(targetDeal, pageId, token);
   } catch (err) {
     console.error('[post-to-facebook] FB API error:', err.message);
     return new Response(JSON.stringify({ success: false, error: err.message }), {
@@ -138,7 +170,7 @@ export default async (_req, _context) => {
     });
   }
 
-  // Mark posted
+  // Mark posted in DB
   await submissionsStore.setJSON(targetId, {
     ...targetDeal,
     facebookPosted: true,
