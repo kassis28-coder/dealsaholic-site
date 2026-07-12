@@ -87,23 +87,21 @@
 
   // Safely decode URL-encoded + HTML-entity-encoded strings
   function safeDecode(val) {
-    if (!val) return '';
-    let result = val;
-    try {
-      const once = safeDecode(result);
-      if (once !== result) {
-        result = once;
-        try { result = safeDecode(result); } catch(e) {}
-      }
-    } catch(e) {}
-    result = result
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-    return result;
-  }
+  if (!val) return '';
+
+  let result = val;
+
+  try {
+    result = decodeURIComponent(result);
+  } catch (e) {}
+
+  return result
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
 
   function cleanDealTitle(raw) {
     return raw.replace(/^Amazon\.com\s*[:\-]\s*/i, '').trim();
