@@ -6,7 +6,7 @@ function truncate(str, max) {
   return str.length <= max ? str : str.slice(0, max - 3) + '...';
 }
 
-// ── Telegram API call ──────────────────────────────────────────────────
+// ── Telegram API call ────────────────────────────────────────────────────────
 
 async function postToTelegram(deal) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -16,9 +16,9 @@ async function postToTelegram(deal) {
     throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID env vars');
   }
 
-  const titleLine = deal.title ? `<b^${deal.title}</b>` : '🛍️ <b>Amazon Deal</b>';
-  const priceLine = deal.price ? `💐 <b>${deal.price}</b>` : '';
-  const promoLine = deal.promoCode ? `🎟 Code: <code>${deal.promoCode}</code>` : '';
+  const titleLine = deal.title ? `🛍️ <b>${deal.title}</b>` : '🛍️ <b>Amazon Deal</b>';
+  const priceLine = deal.price ? `💰 <b>${deal.price}</b>` : '';
+  const promoLine = deal.discountCode ? `🎟️ Code: <code>${deal.discountCode}</code>` : '';
   const linkLine = deal.url ? `🔗 <a href="${deal.url}">Grab this deal!</a>` : '';
   const caption = truncate(
     [titleLine, priceLine, promoLine, linkLine].filter(Boolean).join('\n\n'),
