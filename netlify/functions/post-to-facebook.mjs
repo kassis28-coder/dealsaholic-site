@@ -59,7 +59,7 @@ async function isAlreadyPostedOnFacebook(deal, pageId, token) {
     });
   } catch (err) {
     console.warn('[post-to-facebook] FB dedup check failed (non-blocking):', err.message);
-    return false; // fail open — don't block posting if the check errors
+    return false;
   }
 }
 
@@ -84,6 +84,19 @@ async function postToFacebook(deal, pageId, token) {
   }
 }
 
+// ── Soft-lock helpers ────────────────────────────────────────────────────────
+// Netlify Blobs has no atomic CAS. We use a facebookProcessing flag written
+// BEFORE calling Facebook to shrink the race window to near-zero.
+// A stale lock (crashed run) is expired after LOCK_TTL_MS.
+
+const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function isProcessingLocked(deal) {
+  if (!deal.facebookProcessing) return false;
+  const lockedAt = new Date(deal.facebookProcessingAt || 0).getTime();
+  return Date.now() - lockedAt < LOCK_TTL_MS;
+}
+
 // ── Main scheduled handler ───────────────────────────────────────────────────
 
 export default async (_req, _context) => {
@@ -106,7 +119,7 @@ export default async (_req, _context) => {
     });
   }
 
-  // Find first approved deal not yet marked posted in DB
+  // Find first approved deal not yet posted and not currently being processed
   let targetDeal = null;
   let targetId   = null;
 
@@ -116,6 +129,7 @@ export default async (_req, _context) => {
     if (!deal) continue;
     if (deal.status !== 'approved') continue;
     if (deal.facebookPosted === true) continue;
+    if (isProcessingLocked(deal)) continue;
     if (!deal.url) continue;
     targetDeal = deal;
     targetId   = id;
@@ -128,13 +142,22 @@ export default async (_req, _context) => {
     });
   }
 
-  // Secondary dedup: check live Facebook page posts to catch anything not flagged in DB
+  // SOFT LOCK -- write facebookProcessing=true before touching Facebook.
+  // Any concurrent invocation reading this deal will now skip it.
+  await submissionsStore.setJSON(targetId, {
+    ...targetDeal,
+    facebookProcessing: true,
+    facebookProcessingAt: new Date().toISOString(),
+  });
+
+  // Secondary dedup: check live Facebook page posts
   const alreadyOnFacebook = await isAlreadyPostedOnFacebook(targetDeal, pageId, token);
   if (alreadyOnFacebook) {
-    console.log(`[post-to-facebook] Deal ${targetId} already on FB page — syncing DB flag`);
+    console.log(`[post-to-facebook] Deal ${targetId} already on FB page -- syncing DB flag`);
     await submissionsStore.setJSON(targetId, {
       ...targetDeal,
       facebookPosted: true,
+      facebookProcessing: false,
       facebookPostedAt: new Date().toISOString(),
       facebookReconciled: true,
     });
@@ -143,13 +166,14 @@ export default async (_req, _context) => {
     });
   }
 
-  // Validate — skip and mark done if required fields are missing
+  // Validate
   const errors = validateDeal(targetDeal);
   if (errors.length > 0) {
     console.error(`[post-to-facebook] Skipping deal ${targetId}: ${errors.join(', ')}`);
     await submissionsStore.setJSON(targetId, {
       ...targetDeal,
       facebookPosted: true,
+      facebookProcessing: false,
       facebookSkipped: true,
       facebookSkipReason: errors.join(', '),
       facebookPostedAt: new Date().toISOString(),
@@ -164,16 +188,19 @@ export default async (_req, _context) => {
   try {
     fbResult = await postToFacebook(targetDeal, pageId, token);
   } catch (err) {
+    // Release the lock so the next run can retry
     console.error('[post-to-facebook] FB API error:', err.message);
+    await submissionsStore.setJSON(targetId, { ...targetDeal, facebookProcessing: false });
     return new Response(JSON.stringify({ success: false, error: err.message }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Mark posted in DB
+  // SUCCESS -- mark posted and release lock
   await submissionsStore.setJSON(targetId, {
     ...targetDeal,
     facebookPosted: true,
+    facebookProcessing: false,
     facebookPostedAt: new Date().toISOString(),
     facebookPostId: fbResult.id || null,
   });
