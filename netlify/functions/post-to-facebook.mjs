@@ -13,7 +13,7 @@ function buildCaption(deal) {
     if (deal.discount) parts.push(`${priceStr} — ${deal.discount}% OFF`);
     else parts.push(priceStr);
   }
-  if (deal.promoCode) parts.push(`🎟️ Promo code: ${deal.promoCode}`);
+  if (deal.discountCode) parts.push(`🎟️ Promo code: ${deal.discountCode}`);
   if (deal.url) parts.push(`🔗 ${deal.url}`);
   parts.push('\n#deals #amazon #dealsaholic #shopping #sale');
 
