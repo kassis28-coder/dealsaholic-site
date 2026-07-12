@@ -58,7 +58,7 @@ function extractAmazonUrls(text) {
     /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
     /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
 ];
-  ];
+  
   const urls = [];
   for (const pattern of patterns) {
     [...text.matchAll(new RegExp(pattern.source, 'gi'))].forEach(m => urls.push(m[0]));
