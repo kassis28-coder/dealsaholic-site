@@ -136,6 +136,7 @@ export default async (_req, _context) => {
         console.log(`${TAG} Deal ${id} skipped — facebookProcessing=true (locked ${Math.round(ageMs / 1000)}s ago)`);
         continue;
       }
+      // Lock is stale (>30 min) — previous run crashed. Clear it and claim the deal.
       console.warn(`${TAG} Deal ${id} — stale lock detected (${Math.round(ageMs / 60000)} min old). Clearing and retrying.`);
     }
 
@@ -154,10 +155,21 @@ export default async (_req, _context) => {
 
   console.log(`${TAG} Selected deal:`);
   console.log(`${TAG}   Deal ID:           ${targetId}`);
-  console.log(`${TAG}   Title:             ${targetDeal.title}`);
   console.log(`${TAG}   facebookPosted:    ${targetDeal.facebookPosted ?? false}`);
   console.log(`${TAG}   facebookProcessing:${targetDeal.facebookProcessing ?? false}`);
+  console.log(`${TAG} Full deal object from DB:`);
+  console.log(JSON.stringify({
+    title: targetDeal.title,
+    price: targetDeal.price,
+    originalPrice: targetDeal.originalPrice,
+    discount: targetDeal.discount,
+    discountCode: targetDeal.discountCode,
+    url: targetDeal.url,
+    imageUrl: targetDeal.imageUrl,
+    expiresOn: targetDeal.expiresOn,
+  }, null, 2));
 
+  // ── Step 4 & 5: Set processing lock immediately ──────────────────────────
   console.log(`${TAG} Setting processing lock...`);
   await store.setJSON(targetId, {
     ...targetDeal,
@@ -165,6 +177,7 @@ export default async (_req, _context) => {
     facebookProcessingStarted: new Date().toISOString(),
   });
 
+  // ── Secondary dedup: check live Facebook posts ───────────────────────────
   console.log(`${TAG} Checking live Facebook page for existing post...`);
   const alreadyOnFacebook = await isAlreadyPostedOnFacebook(targetDeal, pageId, token);
   if (alreadyOnFacebook) {
@@ -181,6 +194,7 @@ export default async (_req, _context) => {
     });
   }
 
+  // ── Validate required fields ─────────────────────────────────────────────
   const errors = validateDeal(targetDeal);
   if (errors.length > 0) {
     console.error(`${TAG} Validation failed for deal ${targetId}: ${errors.join(', ')} — skipping permanently.`);
@@ -197,11 +211,17 @@ export default async (_req, _context) => {
     });
   }
 
+  // ── Step 6: Post to Facebook ─────────────────────────────────────────────
+  const previewCaption = buildCaption(targetDeal);
+  console.log(`${TAG} ================ FACEBOOK POST ================`);
+  console.log(previewCaption);
+  console.log(`${TAG} ===============================================`);
   console.log(`${TAG} Posting to Facebook...`);
   let fbResult;
   try {
     fbResult = await postToFacebook(targetDeal, pageId, token);
   } catch (err) {
+    // ── Step 8: Failure — release lock, log error ────────────────────────
     console.error(`${TAG} Facebook post FAILED for deal ${targetId}: ${err.message}`);
     await store.setJSON(targetId, {
       ...targetDeal,
@@ -214,6 +234,7 @@ export default async (_req, _context) => {
     });
   }
 
+  // ── Step 7: Success — mark posted and release lock ───────────────────────
   console.log(`${TAG} Facebook success. Post ID: ${fbResult.id || 'n/a'}`);
   console.log(`${TAG} Updating facebookPosted=true for deal ${targetId}...`);
   await store.setJSON(targetId, {
