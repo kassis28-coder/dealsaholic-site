@@ -52,10 +52,12 @@ async function fetchAmazonMeta(amazonUrl) {
 }
 
 function extractAmazonUrls(text) {
-  const patterns = [
+ const patterns = [
     /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
+    /https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode)\/[A-Za-z0-9]+[^\s"'<>]*/gi,
     /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
     /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
+];
   ];
   const urls = [];
   for (const pattern of patterns) {
@@ -86,7 +88,7 @@ export default async (req, context) => {
     try { emailBody = await req.text(); } catch (e) { emailBody = ''; }
   }
 
-  const content = (emailBody || title).trim();
+const content = (emailBody + " " + title + " " + snippet).trim();
 
   let claudeData = null;
   let rawSnippet = snippet;
@@ -135,11 +137,32 @@ export default async (req, context) => {
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
     if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
     const asin = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
-    const affiliateUrl = asin
-      ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
-      : dealUrl
-      ? (dealUrl.includes('tag=') ? dealUrl : dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20')
-      : '';
+    const affiliateUrl = dealUrl
+  ? (() => {
+      let url = dealUrl;
+
+      // If ASIN exists, always create clean affiliate product URL
+      if (asin) {
+        return 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20';
+      }
+
+      // Amazon promo/coupon pages need affiliate tag too
+      if (
+        url.includes('/promocode/') ||
+        url.includes('/promotion/') ||
+        url.includes('/gp/promocode/')
+      ) {
+        return url.includes('tag=')
+          ? url
+          : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
+      }
+
+      // Any other Amazon URL
+      return url.includes('tag=')
+        ? url
+        : url + (url.includes('?') ? '&' : '?') + 'tag=kethya08-20';
+    })()
+  : '';
     const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
     const dealTitle = meta?.title
       || (dealUrl === primaryUrl ? claudeData?.title : null)
