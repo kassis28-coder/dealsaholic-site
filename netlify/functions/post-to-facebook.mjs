@@ -1,5 +1,9 @@
 import { getStore } from "@netlify/blobs";
 
+// Stale lock timeout: if facebookProcessing=true but started >30 min ago,
+// the previous run crashed — treat as stale and clear the lock.
+const LOCK_STALE_MS = 30 * 60 * 1000;
+
 // ── Expiry formatter ─────────────────────────────────────────────────────────
 
 function formatExpiry(isoString) {
@@ -84,52 +88,58 @@ async function postToFacebook(deal, pageId, token) {
   }
 }
 
-// ── Soft-lock helpers ────────────────────────────────────────────────────────
-// Netlify Blobs has no atomic CAS. We use a facebookProcessing flag written
-// BEFORE calling Facebook to shrink the race window to near-zero.
-// A stale lock (crashed run) is expired after LOCK_TTL_MS.
-
-const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-function isProcessingLocked(deal) {
-  if (!deal.facebookProcessing) return false;
-  const lockedAt = new Date(deal.facebookProcessingAt || 0).getTime();
-  return Date.now() - lockedAt < LOCK_TTL_MS;
-}
-
 // ── Main scheduled handler ───────────────────────────────────────────────────
 
 export default async (_req, _context) => {
-  const submissionsStore = getStore('submissions');
+  const TAG   = '[post-to-facebook]';
+  const store = getStore('submissions');
   const pageId = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
   const token  = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
 
   if (!pageId || !token) {
+    console.error(`${TAG} ABORT: Missing FB_PAGE_ID or FB_PAGE_TOKEN env vars`);
     return new Response(JSON.stringify({ success: false, error: 'Missing FB_PAGE_ID or FB_PAGE_TOKEN' }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
+  // ── Step 1: Load index ───────────────────────────────────────────────────
   let index = [];
-  try { index = (await submissionsStore.get('index', { type: 'json' })) || []; } catch { index = []; }
+  try { index = (await store.get('index', { type: 'json' })) || []; } catch { index = []; }
+  console.log(`${TAG} Index loaded. Total deals: ${index.length}`);
 
   if (index.length === 0) {
+    console.log(`${TAG} No deals in index. Exiting.`);
     return new Response(JSON.stringify({ success: true, message: 'No deals in index' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Find first approved deal not yet posted and not currently being processed
+  // ── Step 2 & 3: Find first deal that is unposted and not locked ──────────
   let targetDeal = null;
   let targetId   = null;
 
   for (const id of index) {
     let deal = null;
-    try { deal = await submissionsStore.get(id, { type: 'json' }); } catch { continue; }
+    try { deal = await store.get(id, { type: 'json' }); } catch { continue; }
     if (!deal) continue;
     if (deal.status !== 'approved') continue;
+
+    // Step 2: Skip if already posted
     if (deal.facebookPosted === true) continue;
-    if (isProcessingLocked(deal)) continue;
+
+    // Step 3: Skip if processing lock is active (and not stale)
+    if (deal.facebookProcessing === true) {
+      const startedAt  = new Date(deal.facebookProcessingStarted || 0).getTime();
+      const ageMs      = Date.now() - startedAt;
+      if (ageMs < LOCK_STALE_MS) {
+        console.log(`${TAG} Deal ${id} skipped — facebookProcessing=true (locked ${Math.round(ageMs / 1000)}s ago)`);
+        continue;
+      }
+      // Lock is stale (>30 min) — previous run crashed. Clear it and claim the deal.
+      console.warn(`${TAG} Deal ${id} — stale lock detected (${Math.round(ageMs / 60000)} min old). Clearing and retrying.`);
+    }
+
     if (!deal.url) continue;
     targetDeal = deal;
     targetId   = id;
@@ -137,40 +147,48 @@ export default async (_req, _context) => {
   }
 
   if (!targetDeal) {
+    console.log(`${TAG} No unposted deals available. Exiting.`);
     return new Response(JSON.stringify({ success: true, message: 'No unposted deals found' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // SOFT LOCK -- write facebookProcessing=true before touching Facebook.
-  // Any concurrent invocation reading this deal will now skip it.
-  await submissionsStore.setJSON(targetId, {
+  console.log(`${TAG} Selected deal:`);
+  console.log(`${TAG}   Deal ID:           ${targetId}`);
+  console.log(`${TAG}   Title:             ${targetDeal.title}`);
+  console.log(`${TAG}   facebookPosted:    ${targetDeal.facebookPosted ?? false}`);
+  console.log(`${TAG}   facebookProcessing:${targetDeal.facebookProcessing ?? false}`);
+
+  // ── Step 4 & 5: Set processing lock immediately  ──────────────────────────
+  console.log(`${TAG} Setting processing lock...`);
+  await store.setJSON(targetId, {
     ...targetDeal,
     facebookProcessing: true,
-    facebookProcessingAt: new Date().toISOString(),
+    facebookProcessingStarted: new Date().toISOString(),
   });
 
-  // Secondary dedup: check live Facebook page posts
+  // ── Secondary dedup: check live Facebook posts ───────────────────────────
+  console.log(`${TAG} Checking live Facebook page for existing post...`);
   const alreadyOnFacebook = await isAlreadyPostedOnFacebook(targetDeal, pageId, token);
   if (alreadyOnFacebook) {
-    console.log(`[post-to-facebook] Deal ${targetId} already on FB page -- syncing DB flag`);
-    await submissionsStore.setJSON(targetId, {
+    console.log(`${TAG} Deal ${targetId} already on Facebook — syncing DB flag.`);
+    await store.setJSON(targetId, {
       ...targetDeal,
       facebookPosted: true,
       facebookProcessing: false,
       facebookPostedAt: new Date().toISOString(),
       facebookReconciled: true,
     });
-    return new Response(JSON.stringify({ success: true, reconciled: true, dealId: targetId, message: 'Already on Facebook, DB synced' }), {
+    return new Response(JSON.stringify({ success: true, reconciled: true, dealId: targetId }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Validate
+  // ── Validate required fields ──────────────────────────────────────────────
   const errors = validateDeal(targetDeal);
   if (errors.length > 0) {
-    console.error(`[post-to-facebook] Skipping deal ${targetId}: ${errors.join(', ')}`);
-    await submissionsStore.setJSON(targetId, {
+    console.error(`${TAG} Validation failed for deal ${targetId}: ${errors.join(', ')} — skipping permanently.`);
+    await store.setJSON(targetId, {
       ...targetDeal,
       facebookPosted: true,
       facebookProcessing: false,
@@ -183,29 +201,36 @@ export default async (_req, _context) => {
     });
   }
 
-  // Post to Facebook
+  // ── Step 6: Post to Facebook ─────────────────────────────────────────────
+  console.log(`${TAG} Posting to Facebook...`);
   let fbResult;
   try {
     fbResult = await postToFacebook(targetDeal, pageId, token);
   } catch (err) {
-    // Release the lock so the next run can retry
-    console.error('[post-to-facebook] FB API error:', err.message);
-    await submissionsStore.setJSON(targetId, { ...targetDeal, facebookProcessing: false });
+    // ── Step 8: Failure — release lock, log error ────────────────────────
+    console.error(`${TAG} Facebook post FAILED for deal ${targetId}: ${err.message}`);
+    await store.setJSON(targetId, {
+      ...targetDeal,
+      facebookProcessing: false,
+      facebookLastError: err.message,
+      facebookLastAttempt: new Date().toISOString(),
+    });
     return new Response(JSON.stringify({ success: false, error: err.message }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // SUCCESS -- mark posted and release lock
-  await submissionsStore.setJSON(targetId, {
+  // ── Step 7: Success — mark posted and release lock ───────────────────────
+  console.log(`${TAG} Facebook success. Post ID: ${fbResult.id || 'n/a'}`);
+  console.log(`${TAG} Updating facebookPosted=true for deal ${targetId}...`);
+  await store.setJSON(targetId, {
     ...targetDeal,
     facebookPosted: true,
     facebookProcessing: false,
     facebookPostedAt: new Date().toISOString(),
     facebookPostId: fbResult.id || null,
   });
-
-  console.log(`[post-to-facebook] Posted deal ${targetId}: ${targetDeal.title}`);
+  console.log(`${TAG} Done. Deal "${targetDeal.title}" successfully posted and marked.`);
 
   return new Response(
     JSON.stringify({ success: true, dealId: targetId, title: targetDeal.title, facebookPostId: fbResult.id || null }),
