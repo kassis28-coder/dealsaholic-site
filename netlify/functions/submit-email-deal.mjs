@@ -1,5 +1,6 @@
 import { getStore } from "@netlify/blobs";
 
+// ── Unchanged: follow redirect to resolve ASIN ───────────────────────────────
 async function followRedirectForAsin(amazonUrl) {
   try {
     const res = await fetch(amazonUrl, {
@@ -15,6 +16,7 @@ async function followRedirectForAsin(amazonUrl) {
   }
 }
 
+// ── Unchanged: fetch Amazon page metadata ────────────────────────────────────
 async function fetchAmazonMeta(amazonUrl) {
   const { asin: asinFromRedirect, finalUrl: redirectUrl } = await followRedirectForAsin(amazonUrl);
   try {
@@ -51,14 +53,13 @@ async function fetchAmazonMeta(amazonUrl) {
   }
 }
 
+// ── Unchanged: extract Amazon URLs from text ─────────────────────────────────
 function extractAmazonUrls(text) {
- const patterns = [
+  const patterns = [
     /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
-    /https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode)\/[A-Za-z0-9]+[^\s"'<>]*/gi,
     /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
     /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
-];
-  
+  ];
   const urls = [];
   for (const pattern of patterns) {
     [...text.matchAll(new RegExp(pattern.source, 'gi'))].forEach(m => urls.push(m[0]));
@@ -66,6 +67,7 @@ function extractAmazonUrls(text) {
   return urls;
 }
 
+// ── Unchanged: strip HTML tags ────────────────────────────────────────────────
 function stripHtml(html) {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -74,6 +76,71 @@ function stripHtml(html) {
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ').trim();
+}
+
+// ── FIX 2: Remove automated error message appended to real email content ─────
+function cleanEmailContent(text) {
+  const markers = [
+    /&emailText=/i,
+    /This is an automated message/i,
+    /Your deals could NOT be processed/i,
+    /Reason\s*:\s*Duplicate/i,
+  ];
+  let cleaned = text;
+  for (const marker of markers) {
+    const idx = cleaned.search(marker);
+    if (idx !== -1) cleaned = cleaned.slice(0, idx);
+  }
+  return cleaned.trim();
+}
+
+// ── FIX 3: Split email into individual numbered product blocks ────────────────
+function splitProductBlocks(text) {
+  // Detect lines starting with "1 Product name:", "2 Product Name:", etc.
+  const blockStartRegex = /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame/g;
+  const matches = [...text.matchAll(blockStartRegex)];
+  if (matches.length <= 1) return [text]; // single product or unnumbered
+  const blocks = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end = matches[i + 1]?.index ?? text.length;
+    blocks.push(text.slice(start, end).trim());
+  }
+  return blocks.filter(b => b.length > 10);
+}
+
+// ── FIX 4 & 5 & 6: Extract all fields from a single product block ─────────────
+function extractProductData(block) {
+  // FIX 5: Title from "Product name:" label only — no random line guessing
+  const titleMatch = block.match(/Product\s*[Nn]ame\s*[:\s]+([^\n]+)/i);
+  let title = titleMatch?.[1]?.trim().substring(0, 150) || null;
+  if (title) title = title.replace(/amazon\.com\s*/gi, '').replace(/\s*[|:]\s*amazon\b.*/i, '').trim();
+
+  // FIX 4: Price extracted from THIS block only
+  const priceMatch = block.match(/(?:Deal\s*Price|Final\s*Price|Sale\s*Price|Price)\s*[:\s]+\$?([\d.,]+)/i);
+  const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
+
+  // Original price from this block only
+  const origMatch = block.match(/(?:Original\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
+  const originalPrice = origMatch ? '$' + origMatch[1].replace(/,/g, '') : null;
+
+  // Discount % from this block only
+  const discountMatch = block.match(/(\d+)\s*%\s*(?:off|discount)/i);
+  const discount = discountMatch?.[1] || null;
+
+  // FIX 4: Discount code from THIS block only — never the first code found in the whole email
+  const codeMatch = block.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im);
+  const discountCode = codeMatch?.[1]?.trim() || null;
+
+  // FIX 6: Amazon URL — prefer /dp/ link; fall back to promo or short links in this block
+  const dpMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/([A-Z0-9]{10})[^\s"'<>]*/i);
+  const promoMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode)\/[A-Za-z0-9]+[^\s"'<>]*/i);
+  const shortMatch = block.match(/https?:\/\/(?:amzn\.to|a\.co)\/[A-Za-z0-9\/]+/i);
+
+  const asin = dpMatch?.[1] || null; // ASIN only from /dp/ links
+  const rawUrl = dpMatch?.[0] || promoMatch?.[0] || shortMatch?.[0] || null;
+
+  return { title, price, originalPrice, discount, discountCode, rawUrl, asin };
 }
 
 export default async (req, context) => {
@@ -88,158 +155,97 @@ export default async (req, context) => {
     try { emailBody = await req.text(); } catch (e) { emailBody = ''; }
   }
 
-const decodeEmail = (text) => {
-  try {
-    return decodeURIComponent(text.replace(/\+/g, " "));
-  } catch {
-    return text;
-  }
-};
+  const rawContent = (emailBody || title).trim();
 
-const content = decodeEmail(
-  (emailBody + " " + title + " " + snippet).trim()
-);
+  // FIX 2: Strip automated error message text before any parsing
+  const cleanedText = cleanEmailContent(stripHtml(rawContent));
 
-  let claudeData = null;
-  let rawSnippet = snippet;
-  try {
-    const parsed = JSON.parse(content);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      if (parsed.title || parsed.amazonUrl) claudeData = parsed;
-      if (parsed.snippet) rawSnippet = parsed.snippet;
-      if (parsed.emailSnippet) rawSnippet = rawSnippet || parsed.emailSnippet;
-      if (parsed.emailBody) {
-        emailBody = parsed.emailBody;
-        try {
-          const inner = JSON.parse(parsed.emailBody);
-          if (inner && typeof inner === 'object' && (inner.title || inner.amazonUrl)) claudeData = inner;
-        } catch (e) {}
-      }
-    }
-  } catch (e) {}
-
-  const plainText = stripHtml(content);
-  const emailProductName =
-  plainText.match(/Product name:\s*(.+)/i)?.[1]?.trim() || null;
-
-const emailFinalPrice =
-  plainText.match(/Final Price:\s*\$?([\d.]+)/i)?.[1]
-    ? '$' + plainText.match(/Final Price:\s*\$?([\d.]+)/i)?.[1]
-    : null;
-
-const emailOriginalPrice =
-  plainText.match(/Reg\. Price:\s*\$?([\d.]+)/i)?.[1]
-    ? '$' + plainText.match(/Reg\. Price:\s*\$?([\d.]+)/i)?.[1]
-    : null;
-
-const emailCode =
-  plainText.match(/(?:40%\s*off\s*with\s*code|code)\s*:\s*([A-Z0-9]{6,12})/i)?.[1]
-    || null;
-  const allUrls = [];
-  if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
-  extractAmazonUrls(content).forEach(u => allUrls.push(u));
-  extractAmazonUrls(plainText).forEach(u => allUrls.push(u));
-  if (rawSnippet) {
-    extractAmazonUrls(rawSnippet).forEach(u => allUrls.push(u));
-    extractAmazonUrls(stripHtml(rawSnippet)).forEach(u => allUrls.push(u));
-  }
-
-  const uniqueUrls = [...new Set(allUrls)];
-  const primaryUrl = uniqueUrls[0] || null;
-  let primaryMeta = null;
-  if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
-
-  const sharedPrice =
-  emailFinalPrice ||
-  claudeData?.price ||
-  primaryMeta?.price ||
-  plainText.match(/\$[\d,.]+/)?.[0] ||
-  null;
-  const originalPrice =
-  emailOriginalPrice ||
-  claudeData?.originalPrice ||
-  null;
-  const discount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
-  const discountCode =
-  emailCode ||
-  claudeData?.discountCode ||
-  plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] ||
-  null;
-  const submissionsStore = getStore("submissions");
-  const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 20) : [null];
+  const store = getStore('submissions');
   const savedIds = [];
   const deals = [];
 
-  for (const dealUrl of urlsToProcess) {
-    let meta = dealUrl === primaryUrl ? primaryMeta : null;
-    if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
-    const asin = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
-const affiliateUrl = (() => {
-  if (!dealUrl) return '';
+  // FIX 3: Split into per-product blocks (handles single and multi-product emails)
+  const blocks = splitProductBlocks(cleanedText);
 
-  if (asin) {
-    return `https://www.amazon.com/dp/${asin}?tag=kethya08-20`;
-  }
+  for (const block of blocks) {
+    // FIX 4 & 5 & 6: All fields extracted from this block independently
+    const { title: blockTitle, price, originalPrice, discount, discountCode, rawUrl, asin: blockAsin } = extractProductData(block);
 
-  if (dealUrl.includes('tag=kethya08-20')) {
-    return dealUrl;
-  }
+    // Must have a URL to be a valid deal
+    if (!rawUrl) continue;
 
-  return dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20';
-})();
-    const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
-    const dealTitle = emailProductName
-      || meta?.title
-      || (dealUrl === primaryUrl ? claudeData?.title : null)
-      || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
-      || 'Amazon Deal';
-    const dealPrice =
-  sharedPrice ||
-  meta?.price ||
-  (dealUrl === primaryUrl ? claudeData?.price : null);
+    let asin = blockAsin;
+    let meta = null;
+
+    // FIX 6: If URL is a promo/short link (no ASIN), try to resolve ASIN via redirect
+    if (!asin) {
+      const redirectResult = await followRedirectForAsin(rawUrl);
+      asin = redirectResult.asin || null;
+    }
+
+    // Fetch Amazon metadata for title/image enrichment
+    meta = await fetchAmazonMeta(rawUrl);
+    if (meta?.asin && !asin) asin = meta.asin;
+
+    // Affiliate URL: ASIN-based /dp/ link preferred (affiliate tag unchanged)
+    const affiliateUrl = asin
+      ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
+      : rawUrl.includes('tag=')
+      ? rawUrl
+      : rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20';
+
+    // FIX 6: Image always built from ASIN when available
+    const imageUrl = asin
+      ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`
+      : meta?.image || null;
+
+    // FIX 5: Title priority: block "Product name:" label → Amazon meta → fallback
+    const finalTitle = blockTitle || meta?.title || 'Amazon Deal';
+
+    // FIX 4: Price priority: block price → Amazon meta price (never global/shared price)
+    const finalPrice = price || meta?.price || null;
+
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
-    // Save to submissions store — this is the single source of truth.
-    // Social posting is handled by post-to-facebook.mjs and post-deals-to-telegram.mjs
-    // which read facebookPosted/telegramPosted flags directly from this store.
     const submission = {
-  id,
-  title: dealTitle,
-  price: dealPrice || null,
-  originalPrice: originalPrice || null,
-  discount: discount || null,
-  url: affiliateUrl,
-  imageUrl,
-  discountCode: discountCode || null,
-  source: "email",
-  status: "pending",
-  sponsored: false,
+      id,
+      title: finalTitle,
+      price: finalPrice,
+      originalPrice: originalPrice || null,
+      discount: discount || null,
+      url: affiliateUrl,
+      imageUrl,
+      discountCode: discountCode || null,
+      source: 'email',
+      status: 'pending',   // FIX 1: always pending — no auto-approval
+      sponsored: false,
       facebookPosted: false,
       telegramPosted: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
-    await submissionsStore.setJSON(id, submission);
+
+    await store.setJSON(id, submission);
     savedIds.push(id);
-    deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
+    deals.push({ id, title: finalTitle, price: finalPrice, url: affiliateUrl, imageUrl });
 
     let index = [];
-    try { index = await submissionsStore.get("index", { type: "json" }) || []; } catch (e) { index = []; }
+    try { index = await store.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
     index.unshift(id);
-    await submissionsStore.setJSON("index", index);
+    await store.setJSON('index', index);
     await new Promise(r => setTimeout(r, 10));
   }
 
-  // Social posting is now handled by dedicated scheduled functions (post-to-facebook.mjs,
-  // post-deals-to-telegram.mjs) that read directly from the submissions store.
-  // This function only saves deals to the database.
-
   return new Response(JSON.stringify({
-    success: true, count: deals.length, ids: savedIds, deals,
-    amazonUrlsFound: uniqueUrls.length,
-    title: deals[0]?.title || null, price: deals[0]?.price || null,
-    url: deals[0]?.url || null, imageUrl: deals[0]?.imageUrl || null,
-  }), { status: 200, headers: { "Content-Type": "application/json" } });
+    success: true,
+    count: deals.length,
+    ids: savedIds,
+    deals,
+    title: deals[0]?.title || null,
+    price: deals[0]?.price || null,
+    url: deals[0]?.url || null,
+    imageUrl: deals[0]?.imageUrl || null,
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 
-export const config = { path: "/api/submit-email-deal" };
+export const config = { path: '/api/submit-email-deal' };
