@@ -251,5 +251,6 @@ export default async (_req, _context) => {
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   );
 };
-
-export const config = { schedule: '*/0 * * * *' };
+export const config = {
+  schedule: "0 */3 * * *"
+};
