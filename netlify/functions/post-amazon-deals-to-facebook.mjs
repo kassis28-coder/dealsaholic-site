@@ -24,14 +24,15 @@ function buildCaption(deal, style = 0) {
     lines.push(`🔥 Save ${deal.discountPercent}%`);
   }
 
-  lines.push("");
-  lines.push(`🔗 ${deal.url}`);
+lines.push("");
+lines.push(`🔗 ${deal.url}`);
 
-  lines.push("");
-  lines.push("#ad");
+lines.push("");
+lines.push("⚠️ Price valid at the time posted but may change at any time.");
+lines.push("#ad");
 
-  return lines.join("\n");
-}
+return lines.join("\n");
+  }
 
 function validateDeal(deal) {
   if (!deal.title) return false;
