@@ -250,4 +250,4 @@ export default async function handler(req) {
   try { await run(); } catch (err) { console.error("Scheduled error:", err.message); }
 }
 
-export const config = { schedule: "0 */3 * * *" };
+export const config = {};
