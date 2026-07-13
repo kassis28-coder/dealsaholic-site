@@ -1,11 +1,23 @@
 import { getStore } from "@netlify/blobs";
 
 function buildCaption(deal, style = 0) {
-  const headlines = [
-    "🔥 Amazon Deal Alert",
-    "⚡ Limited Time Deal",
-    "🛒 Amazon Savings Alert",
-  ];
+const headlines = [
+  "🔥 Amazon Deal Alert",
+  "⚡ Limited Time Deal",
+  "🛒 Amazon Savings Alert",
+  "💥 Today's Hot Deal",
+  "🚨 Price Drop Alert",
+  "✨ Deal You Don't Want To Miss",
+  "🏷️ Big Savings Alert",
+  "🔥 Hidden Amazon Deal",
+  "💰 Amazing Price Drop",
+  "🛍️ Shopper's Pick",
+  "⭐ Top Deal Find",
+  "🎯 Deal Worth Checking Out",
+  "⏰ Hurry Before It’s Gone",
+  "🔥 Trending Deal Alert",
+  "💎 Great Find Today",
+];
 
   const lines = [];
 
@@ -25,11 +37,23 @@ function buildCaption(deal, style = 0) {
   lines.push("");
   lines.push(`🔗 ${deal.url}`);
 
-  lines.push("");
+const siteCTAs = [
+  "🌟 See all current deals:",
+  "🔥 More deals updated daily:",
+  "🛒 Find more amazing deals:",
+  "💎 Discover today's best savings:",
+  "🏷️ Browse more discounts:",
+  "✨ More deals waiting for you:",
+  "🚀 New deals added every day:",
+  "👀 Looking for more bargains?",
+  "🛍️ Shop more deals here:",
+  "⭐ Don't miss today's deals:",
+];
 
-lines.push("🌟 See all current deals:");
+lines.push("");
+
+lines.push(siteCTAs[Math.floor(Date.now() / 3600000) % siteCTAs.length]);
 lines.push("https://deals-aholic.com");
-
 lines.push("");
 
 lines.push("⚠️ Price valid at the time posted but may change at any time.");
