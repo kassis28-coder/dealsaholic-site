@@ -286,28 +286,29 @@ let posted = [];
 
   if (targets.length === 0) {
 
-   await store.setJSON(
-  "posted",
-  posted
-);
+  await store.setJSON(
+    "posted",
+    posted
+  );
 
-await store.delete("posting-lock");
+  await store.delete("posting-lock");
 
-
-return new Response(
-  JSON.stringify({
-    success:true,
-    message:"No new Amazon deals to post"
-  }),
-  {
-    headers:{
-      "Content-Type":"application/json"
+  return new Response(
+    JSON.stringify({
+      success:true,
+      message:"No new Amazon deals to post"
+    }),
+    {
+      headers:{
+        "Content-Type":"application/json"
+      }
     }
-  }
-);
+  );
 
-  const results = [];
+}  // <-- ADD THIS BRACKET HERE
 
+
+const results = [];
 
 
   for (const deal of targets) {
