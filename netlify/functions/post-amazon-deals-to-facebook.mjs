@@ -1,7 +1,5 @@
 import { getStore } from "@netlify/blobs";
 
-const LOCK_STALE_MS = 30 * 60 * 1000;
-
 function buildCaption(deal, style = 0) {
   const headlines = [
     "🔥 Amazon Deal Alert",
@@ -24,15 +22,16 @@ function buildCaption(deal, style = 0) {
     lines.push(`🔥 Save ${deal.discountPercent}%`);
   }
 
-lines.push("");
-lines.push(`🔗 ${deal.url}`);
+  lines.push("");
+  lines.push(`🔗 ${deal.url}`);
 
-lines.push("");
-lines.push("⚠️ Price valid at the time posted but may change at any time.");
-lines.push("#ad");
+  lines.push("");
+  lines.push("⚠️ Price valid at the time posted but may change at any time.");
+  lines.push("#ad");
 
-return lines.join("\n");
-  }
+  return lines.join("\n");
+}
+
 
 function validateDeal(deal) {
   if (!deal.title) return false;
@@ -43,6 +42,7 @@ function validateDeal(deal) {
 
   return true;
 }
+
 
 async function alreadyPosted(deal, pageId, token) {
   try {
@@ -106,9 +106,8 @@ async function postToFacebook(deal, pageId, token) {
 }
 
 
-export default async () => {
 
-  const TAG = "[post-amazon-facebook]";
+export default async () => {
 
   const pageId =
     process.env.FB_PAGE_ID ||
@@ -138,30 +137,10 @@ export default async () => {
   const dealStore = getStore("deals");
 
 
-  let data;
-
-  try {
-
-    data = await dealStore.get(
-      "latest",
-      {type:"json"}
-    );
-
-  } catch(err){
-
-    return new Response(
-      JSON.stringify({
-        success:false,
-        error:err.message
-      }),
-      {
-        status:500,
-        headers:{
-          "Content-Type":"application/json"
-        }
-      }
-    );
-  }
+  const data = await dealStore.get(
+    "latest",
+    {type:"json"}
+  );
 
 
   if (!data || !Array.isArray(data.deals)) {
@@ -197,7 +176,8 @@ export default async () => {
 
 
 
-  let target = null;
+  const targets = [];
+
 
 
   for (const deal of data.deals) {
@@ -227,20 +207,22 @@ export default async () => {
     if (exists) {
 
       posted.push(key);
-
       continue;
 
     }
 
 
-    target = deal;
-    break;
+    targets.push(deal);
+
+
+    if (targets.length >= 3)
+      break;
 
   }
 
 
 
-  if (!target) {
+  if (targets.length === 0) {
 
     await store.setJSON(
       "posted",
@@ -264,17 +246,45 @@ export default async () => {
 
 
 
-  const result =
-    await postToFacebook(
-      target,
-      pageId,
-      token
-    );
+  const results = [];
 
 
-  posted.push(
-    target.asin || target.url
-  );
+
+  for (const deal of targets) {
+
+    try {
+
+      const result =
+        await postToFacebook(
+          deal,
+          pageId,
+          token
+        );
+
+
+      posted.push(
+        deal.asin || deal.url
+      );
+
+
+      results.push({
+        title: deal.title,
+        facebookId: result.id
+      });
+
+
+    } catch (err) {
+
+      console.error(
+        "Failed posting deal:",
+        deal.title,
+        err.message
+      );
+
+    }
+
+  }
+
 
 
   await store.setJSON(
@@ -283,11 +293,11 @@ export default async () => {
   );
 
 
+
   return new Response(
     JSON.stringify({
       success:true,
-      title:target.title,
-      facebookId:result.id
+      posted:results
     }),
     {
       headers:{
@@ -301,5 +311,5 @@ export default async () => {
 
 
 export const config = {
-  schedule:"*/0 * * * *"
+  schedule:"0 * * * *"
 };
