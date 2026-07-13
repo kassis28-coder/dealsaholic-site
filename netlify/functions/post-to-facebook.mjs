@@ -1,4 +1,4 @@
-cimportc{ getStore } from "@netlify/blobs";
+importc{ getStore } from "@netlify/blobs";
 
 // Stale lock timeout: if facebookProcessing=true but started >30 min ago,
 // the previous run crashed — treat as stale and clear the lock.
