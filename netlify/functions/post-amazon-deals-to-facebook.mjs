@@ -64,9 +64,9 @@ async function alreadyPosted(deal, pageId, token) {
       const msg = post.message || "";
 
       return (
-        msg.includes(deal.title) ||
-        msg.includes(deal.asin)
-      );
+  (deal.asin && msg.includes(deal.asin)) ||
+  (deal.title && msg.includes(deal.title.substring(0,40)))
+);
     });
 
   } catch (err) {
@@ -194,8 +194,9 @@ export default async () => {
 
 
     const key =
-      deal.asin ||
-      deal.url;
+  deal.asin ||
+  deal.url ||
+  deal.title;
 
 
     if (posted.includes(key))
@@ -212,8 +213,11 @@ export default async () => {
 
     if (exists) {
 
-      posted.push(key);
-      continue;
+      posted.push(
+  deal.asin ||
+  deal.url ||
+  deal.title
+);
 
     }
 
