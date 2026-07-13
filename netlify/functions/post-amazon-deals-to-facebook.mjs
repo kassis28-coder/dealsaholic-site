@@ -256,40 +256,36 @@ let posted = [];
 
 
     const exists =
-      await alreadyPosted(
-        deal,
-        pageId,
-        token
-      );
+  await alreadyPosted(
+    deal,
+    pageId,
+    token
+  );
 
 
-    if (exists) {
-
-      posted.push(
-  deal.asin ||
-  deal.url ||
-  deal.title
-);
-
-    }
+if (exists) {
+  posted.push(key);
+  continue;
+}
 
 
-    targets.push(deal);
+targets.push(deal);
 
 
-    if (targets.length >= 5)
-      break;
-
+if (targets.length >= 5)
+  break;
   }
 
 
 
   if (targets.length === 0) {
 
-  await store.setJSON(
-    "posted",
-    posted
-  );
+ await store.setJSON(
+  "posted",
+  posted
+);
+
+await store.delete("posting-lock");
 
   await store.delete("posting-lock");
 
