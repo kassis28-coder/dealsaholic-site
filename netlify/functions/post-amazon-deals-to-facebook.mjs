@@ -215,7 +215,7 @@ export default async () => {
     targets.push(deal);
 
 
-    if (targets.length >= 3)
+    if (targets.length >= 5)
       break;
 
   }
