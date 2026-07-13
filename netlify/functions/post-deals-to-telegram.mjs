@@ -155,4 +155,4 @@ export default async (_req, _context) => {
   );
 };
 
-export const config = { schedule: '*/10 * * * *' };
+export const config = { schedule: '*/30 * * * *' };
