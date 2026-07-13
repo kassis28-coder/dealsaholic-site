@@ -106,8 +106,8 @@ async function postToFacebook(deal, pageId, token) {
 
   const caption = buildCaption(
     deal,
-    Math.floor(Date.now() / 3600000)
-  );
+    Math.floor(Math.random() * 15)
+);
 
   const params = new URLSearchParams({
     url: deal.image,
