@@ -1,4 +1,4 @@
-import { getStore } from "@netlify/blobs";
+cimportc{ getStore } from "@netlify/blobs";
 
 // Stale lock timeout: if facebookProcessing=true but started >30 min ago,
 // the previous run crashed — treat as stale and clear the lock.
@@ -252,4 +252,4 @@ export default async (_req, _context) => {
   );
 };
 
-export const config = { schedule: '*/15 * * * *' };
+export const config = { schedule: '*/30 * * * *' };
