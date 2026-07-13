@@ -60,8 +60,14 @@ function buildCaption(deal) {
   }
 
   lines.push("");
-  lines.push("⚠️ Price valid at the time posted but may change at any time.");
-  lines.push("#ad");
+
+lines.push("🔥 More deals updated daily:");
+lines.push("https://deals-aholic.com");
+
+lines.push("");
+
+lines.push("⚠️ Price valid at the time posted but may change at any time.");
+lines.push("#ad");
 
   return lines.join("\n");
 }
