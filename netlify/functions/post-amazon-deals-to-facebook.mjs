@@ -1,5 +1,7 @@
 import { getStore } from "@netlify/blobs";
 
+const LOCK_STALE_MS = 30 * 60 * 1000;
+
 function buildCaption(deal, style = 0) {
 const headlines = [
   "🔥 Amazon Deal Alert",
@@ -193,7 +195,33 @@ export default async () => {
   const store = getStore("amazon-facebook-posts");
 
 
-  let posted = [];
+// Prevent multiple Facebook runs posting the same deals
+const existingLock = await store.get("posting-lock", { type: "json" });
+
+if (
+  existingLock &&
+  existingLock.startedAt &&
+  Date.now() - new Date(existingLock.startedAt).getTime() < LOCK_STALE_MS
+) {
+  return new Response(
+    JSON.stringify({
+      success: true,
+      message: "Facebook Amazon posting already running"
+    }),
+    {
+      headers:{
+        "Content-Type":"application/json"
+      }
+    }
+  );
+}
+
+await store.setJSON("posting-lock", {
+  startedAt: new Date().toISOString()
+});
+
+
+let posted = [];
 
   try {
     posted =
@@ -258,27 +286,25 @@ export default async () => {
 
   if (targets.length === 0) {
 
-    await store.setJSON(
-      "posted",
-      posted
-    );
+   await store.setJSON(
+  "posted",
+  posted
+);
+
+await store.delete("posting-lock");
 
 
-    return new Response(
-      JSON.stringify({
-        success:true,
-        message:"No new Amazon deals to post"
-      }),
-      {
-        headers:{
-          "Content-Type":"application/json"
-        }
-      }
-    );
-
+return new Response(
+  JSON.stringify({
+    success:true,
+    message:"No new Amazon deals to post"
+  }),
+  {
+    headers:{
+      "Content-Type":"application/json"
+    }
   }
-
-
+);
 
   const results = [];
 
