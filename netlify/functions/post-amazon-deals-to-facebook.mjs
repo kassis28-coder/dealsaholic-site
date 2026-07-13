@@ -287,7 +287,6 @@ if (targets.length >= 5)
 
 await store.delete("posting-lock");
 
-  await store.delete("posting-lock");
 
   return new Response(
     JSON.stringify({
