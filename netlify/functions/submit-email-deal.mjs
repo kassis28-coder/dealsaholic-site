@@ -203,9 +203,17 @@ const affiliateUrl = (() => {
     // Social posting is handled by post-to-facebook.mjs and post-deals-to-telegram.mjs
     // which read facebookPosted/telegramPosted flags directly from this store.
     const submission = {
-      id, title: dealTitle, price: dealPrice || null, originalPrice: originalPrice || null,
-      discount: discount || null, url: affiliateUrl, imageUrl, discountCode: discountCode || null,
-      source: "email", status: affiliateUrl ? "approved" : "pending", sponsored: false,
+  id,
+  title: dealTitle,
+  price: dealPrice || null,
+  originalPrice: originalPrice || null,
+  discount: discount || null,
+  url: affiliateUrl,
+  imageUrl,
+  discountCode: discountCode || null,
+  source: "email",
+  status: "pending",
+  sponsored: false,
       facebookPosted: false,
       telegramPosted: false,
       createdAt: new Date().toISOString(),
