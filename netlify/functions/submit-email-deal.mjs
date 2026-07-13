@@ -119,6 +119,22 @@ const content = decodeEmail(
   } catch (e) {}
 
   const plainText = stripHtml(content);
+  const emailProductName =
+  plainText.match(/Product name:\s*(.+)/i)?.[1]?.trim() || null;
+
+const emailFinalPrice =
+  plainText.match(/Final Price:\s*\$?([\d.]+)/i)?.[1]
+    ? '$' + plainText.match(/Final Price:\s*\$?([\d.]+)/i)?.[1]
+    : null;
+
+const emailOriginalPrice =
+  plainText.match(/Reg\. Price:\s*\$?([\d.]+)/i)?.[1]
+    ? '$' + plainText.match(/Reg\. Price:\s*\$?([\d.]+)/i)?.[1]
+    : null;
+
+const emailCode =
+  plainText.match(/(?:40%\s*off\s*with\s*code|code)\s*:\s*([A-Z0-9]{6,12})/i)?.[1]
+    || null;
   const allUrls = [];
   if (claudeData?.amazonUrl) allUrls.push(claudeData.amazonUrl);
   extractAmazonUrls(content).forEach(u => allUrls.push(u));
@@ -133,11 +149,22 @@ const content = decodeEmail(
   let primaryMeta = null;
   if (primaryUrl) primaryMeta = await fetchAmazonMeta(primaryUrl);
 
-  const sharedPrice = claudeData?.price || primaryMeta?.price || plainText.match(/\$[\d,.]+/)?.[0] || null;
-  const originalPrice = claudeData?.originalPrice || null;
+  const sharedPrice =
+  emailFinalPrice ||
+  claudeData?.price ||
+  primaryMeta?.price ||
+  plainText.match(/\$[\d,.]+/)?.[0] ||
+  null;
+  const originalPrice =
+  emailOriginalPrice ||
+  claudeData?.originalPrice ||
+  null;
   const discount = claudeData?.discount || plainText.match(/(\d+)\s*%\s*(?:off|discount)/i)?.[1] || null;
-  const discountCode = claudeData?.discountCode || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
-
+  const discountCode =
+  emailCode ||
+  claudeData?.discountCode ||
+  plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1] ||
+  null;
   const submissionsStore = getStore("submissions");
   const urlsToProcess = uniqueUrls.length > 0 ? uniqueUrls.slice(0, 20) : [null];
   const savedIds = [];
@@ -161,11 +188,15 @@ const affiliateUrl = (() => {
   return dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20';
 })();
     const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
-    const dealTitle = meta?.title
+    const dealTitle = emailProductName
+      || meta?.title
       || (dealUrl === primaryUrl ? claudeData?.title : null)
       || plainText.split(/[\n.!?]/).find(l => l.trim().length > 10 && !l.includes('http'))?.trim().substring(0, 150)
       || 'Amazon Deal';
-    const dealPrice = meta?.price || (dealUrl === primaryUrl ? claudeData?.price : null) || sharedPrice;
+    const dealPrice =
+  sharedPrice ||
+  meta?.price ||
+  (dealUrl === primaryUrl ? claudeData?.price : null);
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
     // Save to submissions store — this is the single source of truth.
