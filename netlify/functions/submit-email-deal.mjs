@@ -88,7 +88,17 @@ export default async (req, context) => {
     try { emailBody = await req.text(); } catch (e) { emailBody = ''; }
   }
 
-const content = (emailBody + " " + title + " " + snippet).trim();
+const decodeEmail = (text) => {
+  try {
+    return decodeURIComponent(text.replace(/\+/g, " "));
+  } catch {
+    return text;
+  }
+};
+
+const content = decodeEmail(
+  (emailBody + " " + title + " " + snippet).trim()
+);
 
   let claudeData = null;
   let rawSnippet = snippet;
