@@ -196,12 +196,8 @@ export default async (req, context) => {
       ? rawUrl
       : rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20';
 
-    // FIX 6: Image always built from ASIN when available
-    const imageUrl = asin
-      ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`
-      : meta?.image || null;
-
-    // FIX 5: Title priority: block "Product name:" label → Amazon meta → fallback
+       // Image: prefer og:image from Amazon page (real I/ format); ASIN P/ URL is a 1×1 fallback only
+    const imageUrl = meta?.image || (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);   // FIX 5: Title priority: block "Product name:" label → Amazon meta → fallback
     const finalTitle = blockTitle || meta?.title || 'Amazon Deal';
 
     // FIX 4: Price priority: block price → Amazon meta price (never global/shared price)
