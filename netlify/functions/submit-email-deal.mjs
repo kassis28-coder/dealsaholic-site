@@ -1,7 +1,7 @@
 import { getStore } from "@netlify/blobs";
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
-const AFFILIATE_TAG = 'kethya08-20';
+const AFFILIATE_TAG = 'daholic-20';
 const AMAZON_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
   'Accept-Language': 'en-US,en;q=0.9',
