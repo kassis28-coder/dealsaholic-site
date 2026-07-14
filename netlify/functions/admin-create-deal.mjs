@@ -2,7 +2,7 @@ import { getStore } from "@netlify/blobs";
 
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
-const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
+const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
