@@ -53,20 +53,6 @@ async function fetchAmazonMeta(amazonUrl) {
   }
 }
 
-// ── Unchanged: extract Amazon URLs from text ─────────────────────────────────
-function extractAmazonUrls(text) {
-  const patterns = [
-    /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
-    /https?:\/\/amzn\.to\/[A-Za-z0-9]+/gi,
-    /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
-  ];
-  const urls = [];
-  for (const pattern of patterns) {
-    [...text.matchAll(new RegExp(pattern.source, 'gi'))].forEach(m => urls.push(m[0]));
-  }
-  return urls;
-}
-
 // ── Unchanged: strip HTML tags ────────────────────────────────────────────────
 function stripHtml(html) {
   return html
@@ -98,51 +84,72 @@ function cleanEmailContent(text) {
 
 // ── FIX 3: Split email into individual numbered product blocks ────────────────
 function splitProductBlocks(text) {
-  // Detect lines starting with "1 Product name:", "2 Product Name:", etc.
-  const blockStartRegex = /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame/g;
-  const matches = [...text.matchAll(blockStartRegex)];
-  if (matches.length <= 1) return [text]; // single product or unnumbered
-  const blocks = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i].index;
-    const end = matches[i + 1]?.index ?? text.length;
-    blocks.push(text.slice(start, end).trim());
+  // Try two formats:
+  // A: "1 Product name:" on same line (e.g. "1 Product name: Shirt")
+  // B: "1." or "1)" on its own line (e.g. "1.\nProduct name: Shirt")
+  const patterns = [
+    /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame/g,
+    /(?:^|\n)\s*\d+[.)]\s*(?:\n|$)/g,
+  ];
+  for (const regex of patterns) {
+    const matches = [...text.matchAll(regex)];
+    if (matches.length > 1) {
+      const blocks = [];
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index;
+        const end = matches[i + 1]?.index ?? text.length;
+        blocks.push(text.slice(start, end).trim());
+      }
+      return blocks.filter(b => b.length > 10);
+    }
   }
-  return blocks.filter(b => b.length > 10);
+  return [text]; // single product or unnumbered
 }
 
 // ── FIX 4 & 5 & 6: Extract all fields from a single product block ─────────────
 function extractProductData(block) {
-  // FIX 5: Title from "Product name:" label only — no random line guessing
+  // FIX 5: Title from "Product name:" label only
   const titleMatch = block.match(/Product\s*[Nn]ame\s*[:\s]+([^\n]+)/i);
   let title = titleMatch?.[1]?.trim().substring(0, 150) || null;
   if (title) title = title.replace(/amazon\.com\s*/gi, '').replace(/\s*[|:]\s*amazon\b.*/i, '').trim();
 
-  // FIX 4: Price extracted from THIS block only
-  const priceMatch = block.match(/(?:Deal\s*Price|Final\s*Price|Sale\s*Price|Price)\s*[:\s]+\$?([\d.,]+)/i);
+  // FIX 4: Only match explicit sale price labels — NOT "Reg. Price" or "Original Price"
+  const priceMatch = block.match(/(?:Deal\s*Price|Final\s*Price|Sale\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
   const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
 
-  // Original price from this block only
-  const origMatch = block.match(/(?:Original\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
+  // Original price — also handles "Reg. Price"
+  const origMatch = block.match(/(?:Original\s*Price|Reg\.?\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
   const originalPrice = origMatch ? '$' + origMatch[1].replace(/,/g, '') : null;
 
   // Discount % from this block only
   const discountMatch = block.match(/(\d+)\s*%\s*(?:off|discount)/i);
   const discount = discountMatch?.[1] || null;
 
-  // FIX 4: Discount code from THIS block only — never the first code found in the whole email
-  const codeMatch = block.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im);
+  // FIX 4: Discount code — line-start first, then "with code:XXX" mid-line
+  const codeMatch = block.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im)
+    || block.match(/\bwith\s+code\s*[:\s]+([A-Z0-9]{4,20})/i)
+    || block.match(/\bcode\s*[:\s]+([A-Z0-9]{4,20})\b/i);
   const discountCode = codeMatch?.[1]?.trim() || null;
 
-  // FIX 6: Amazon URL — prefer /dp/ link; fall back to promo or short links in this block
+  // FIX 6: Amazon URL — prefer /dp/ link; fall back to promo or short links
   const dpMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/([A-Z0-9]{10})[^\s"'<>]*/i);
   const promoMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode)\/[A-Za-z0-9]+[^\s"'<>]*/i);
   const shortMatch = block.match(/https?:\/\/(?:amzn\.to|a\.co)\/[A-Za-z0-9\/]+/i);
 
-  const asin = dpMatch?.[1] || null; // ASIN only from /dp/ links
+  const asin = dpMatch?.[1] || null;
   const rawUrl = dpMatch?.[0] || promoMatch?.[0] || shortMatch?.[0] || null;
 
-  return { title, price, originalPrice, discount, discountCode, rawUrl, asin };
+  // Expiration date from "End Date:", "Expires:", etc.
+  const expMatch = block.match(/(?:End\s*Date|Expir(?:es?|ation)\s*(?:Date)?)\s*[:\s]+([^\n]+)/i);
+  let expiresOn = null;
+  if (expMatch?.[1]) {
+    try {
+      const d = new Date(expMatch[1].trim());
+      if (!isNaN(d.getTime())) expiresOn = d.toISOString();
+    } catch {}
+  }
+
+  return { title, price, originalPrice, discount, discountCode, rawUrl, asin, expiresOn };
 }
 
 export default async (req, context) => {
@@ -170,8 +177,7 @@ export default async (req, context) => {
   const blocks = splitProductBlocks(cleanedText);
 
   for (const block of blocks) {
-    // FIX 4 & 5 & 6: All fields extracted from this block independently
-    const { title: blockTitle, price, originalPrice, discount, discountCode, rawUrl, asin: blockAsin } = extractProductData(block);
+    const { title: blockTitle, price, originalPrice, discount, discountCode, rawUrl, asin: blockAsin, expiresOn } = extractProductData(block);
 
     // Must have a URL to be a valid deal
     if (!rawUrl) continue;
@@ -189,18 +195,20 @@ export default async (req, context) => {
     meta = await fetchAmazonMeta(rawUrl);
     if (meta?.asin && !asin) asin = meta.asin;
 
-    // Affiliate URL: ASIN-based /dp/ link preferred (affiliate tag unchanged)
+    // Affiliate URL: ASIN-based /dp/ link preferred
     const affiliateUrl = asin
       ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
       : rawUrl.includes('tag=')
       ? rawUrl
       : rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20';
 
-       // Image: prefer og:image from Amazon page (real I/ format); ASIN P/ URL is a 1×1 fallback only
-    const imageUrl = meta?.image || (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);   // FIX 5: Title priority: block "Product name:" label → Amazon meta → fallback
+    // Image: prefer og:image from Amazon page; ASIN P/ URL is a 1x1 fallback only
+    const imageUrl = meta?.image || (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);
+
+    // Title priority: block "Product name:" label → Amazon meta → fallback
     const finalTitle = blockTitle || meta?.title || 'Amazon Deal';
 
-    // FIX 4: Price priority: block price → Amazon meta price (never global/shared price)
+    // Price priority: block price → Amazon meta price
     const finalPrice = price || meta?.price || null;
 
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -215,12 +223,12 @@ export default async (req, context) => {
       imageUrl,
       discountCode: discountCode || null,
       source: 'email',
-      status: 'pending',   // FIX 1: always pending — no auto-approval
+      status: 'pending',
       sponsored: false,
       facebookPosted: false,
       telegramPosted: false,
       createdAt: new Date().toISOString(),
-      expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresOn: expiresOn || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     await store.setJSON(id, submission);
