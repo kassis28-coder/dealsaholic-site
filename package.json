@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Automated daily Amazon deals site for dealsaholic, powered by Netlify Functions + Netlify Blobs",
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "sharp": "^0.33.5"
   },
   "engines": {
     "node": ">=18"
