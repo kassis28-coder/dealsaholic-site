@@ -307,7 +307,7 @@ const productImgResized = await sharp(imgBuffer)
 .png()
 .toBuffer();
 
-const pMeta = await sharp(productImgResized).metadata();
+const pMetA = await sharp(productImgResized).metadata();
 const pW = pMeta.width, pH = pMeta.height;
 
 // 4. Center the resized image on a filled background the same size as the placeholder
@@ -737,7 +737,7 @@ queueRemaining: queue.length,
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-// ── DEDUPLICATION CHECK ──────────────────────────────────
+// ── DEDUPLICATION CHECK ──────────────────────────────────────────────────────
 const { asinIndex, urlIndex } = await loadDedupIndexes(submissionsStore);
 const dupCheck = await findDuplicateDeal(submissionsStore, deal, asinIndex, urlIndex);
 
@@ -845,8 +845,5 @@ queueRemaining: queue.length,
 };
 
 // Schedule disabled — social posting now handled by post-to-facebook.mjs and post-deals-to-telegram.mjs
-// export const config = { schedule: '*/10 * * * *' };
-
-mjs
 // export const config = { schedule: '*/10 * * * *' };
 
