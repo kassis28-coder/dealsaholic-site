@@ -9,7 +9,6 @@ const AMAZON_HEADERS = {
 };
 
 // ── AFFILIATE LINK — every Amazon URL MUST pass through this ─────────────────
-// normalizeAmazonUrl() → appendAffiliateTag() → final saved URL
 function appendAffiliateTag(url) {
   if (!url) return null;
   try {
@@ -23,10 +22,19 @@ function appendAffiliateTag(url) {
 }
 
 function normalizeAmazonUrl(rawUrl, asin) {
-  // Prefer clean /dp/ URL when ASIN is known
   if (asin) return appendAffiliateTag(`https://www.amazon.com/dp/${asin}`);
-  // Otherwise append tag to the raw URL (always — never skip)
   return appendAffiliateTag(rawUrl);
+}
+
+// ── NORMALIZE URL for dedup (strip query params, lowercase) ─────────────────
+function normalizeUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    return (u.hostname + u.pathname).toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return url.toLowerCase().trim();
+  }
 }
 
 // ── FOLLOW REDIRECT to resolve ASIN ─────────────────────────────────────────
@@ -47,22 +55,15 @@ async function followRedirectForAsin(amazonUrl) {
 
 // ── IMAGE EXTRACTION — multiple strategies ───────────────────────────────────
 
-// Strategy A: og:image / twitter:image meta tags (attribute order-independent)
 function extractOgImage(html) {
-  // property before content
   return html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
-    // content before property
     || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1]
-    // twitter:image property first
     || html.match(/<meta[^>]+property=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
-    // twitter:image name first
     || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
-    // content before twitter:image name
     || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i)?.[1]
     || null;
 }
 
-// Strategy B: Amazon CDN <img> tags and bare URLs in email HTML
 function extractImagesFromEmailHtml(rawHtml) {
   const seen = new Set();
   const images = [];
@@ -71,7 +72,6 @@ function extractImagesFromEmailHtml(rawHtml) {
     if (url && !seen.has(url)) { seen.add(url); images.push(url); }
   };
 
-  // <img src="..."> tags with Amazon CDN hosts
   for (const m of rawHtml.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)) {
     const src = m[1];
     if (src && (
@@ -82,25 +82,25 @@ function extractImagesFromEmailHtml(rawHtml) {
     )) add(src);
   }
 
-  // Bare Amazon CDN image URLs anywhere in the HTML
   for (const m of rawHtml.matchAll(/https?:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images-amazon\.com|ssl-images-amazon\.com)\/images\/[^\s"'<>]+/gi)) {
     add(m[0]);
   }
 
-  // Filter out known tiny thumbnails
   return images.filter(u =>
     !u.includes('._SL75_') && !u.includes('._SS40_') && !u.includes('_SX38_') &&
     !u.includes('._SL30_') && !u.includes('1x1') && !u.includes('pixel')
   );
 }
 
-// Strategy C: fetch product page for og:image when only ASIN is known
 async function fetchProductPageImage(asin) {
   try {
     const res = await fetch(`https://www.amazon.com/dp/${asin}`, { headers: AMAZON_HEADERS, redirect: 'follow' });
     if (!res.ok) return null;
-    const img = extractOgImage(await res.text());
-    return img;
+    const html = await res.text();
+    // Try hiRes JSON first (most reliable), then og:image
+    const hiRes = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1];
+    return hiRes || extractOgImage(html);
   } catch { return null; }
 }
 
@@ -122,21 +122,29 @@ async function fetchAmazonMeta(amazonUrl) {
     let title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
       || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
 
-    // Image: try og:image first
-    let image = extractOgImage(html);
+    let image = html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || html.match(/"large":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1]
+      || extractOgImage(html);
 
-    // Promo pages stay at promocode URL — scan body for /dp/ ASIN links
     if (!asin || !image) {
       const bodyAsin = html.match(/\/dp\/([A-Z0-9]{10})[/"'?\s]/i)?.[1];
       if (bodyAsin && !asin) asin = bodyAsin;
-      // Fetch real product page for image if promo page had no og:image
       if (asin && !image) image = await fetchProductPageImage(asin);
     }
 
-    // Fallback: Amazon CDN images embedded in the page HTML itself
     if (!image) {
       const pageImages = extractImagesFromEmailHtml(html);
       if (pageImages.length > 0) image = pageImages[0];
+    }
+
+    // Amazon ad widget fallback — works even when scraping is blocked
+    if (!image && asin) {
+      const widgetUrl = `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL300_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1`;
+      try {
+        const wRes = await fetch(widgetUrl, { redirect: 'follow' });
+        const ct = wRes.headers.get('content-type') || '';
+        if (wRes.ok && ct.startsWith('image/')) image = wRes.url;
+      } catch {}
     }
 
     const priceMatch = html.match(/["']priceAmount["']\s*:\s*["']?([\d.]+)["']?/)
@@ -154,30 +162,26 @@ async function fetchAmazonMeta(amazonUrl) {
   }
 }
 
-// ── EXTRACT ALL AMAZON URLs (Strategy 2 — used as fallback) ─────────────────
+// ── EXTRACT ALL AMAZON URLs ───────────────────────────────────────────────────
 function extractAmazonUrls(text) {
   const patterns = [
-    // /dp/ and /gp/product/ links (ASIN-bearing)
     /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
-    // Promo / coupon / deal / goldbox / subscribe-and-save / savings
-    /https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode|deal|gp\/goldbox|gp\/subscribe-and-save|savings|coupons|gp\/deal)[^\s"'<>]*/gi,
-    // Any other amazon.com URL (catch-all)
+    /https?:\/\/(?www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode|deal|gp\/goldbox|gp\/subscribe-and-save|savings|coupons|gp\/deal)[^\s"'<>]*/gi,
     /https?:\/\/(?:www\.)?amazon\.com\/[a-zA-Z0-9\-_\/+%?=&#@!.]{5,}[^\s"'<>]*/gi,
-    // Short links
     /https?:\/\/(?:amzn\.to|a\.co)\/[A-Za-z0-9\/]+/gi,
   ];
   const seen = new Set();
   const urls = [];
   for (const pattern of patterns) {
     for (const m of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
-      const url = m[0].replace(/[.,;)\]>'"]+$/, ''); // strip trailing punctuation
+      const url = m[0].replace(/[.,;)\]]*$/, '');
       if (!seen.has(url)) { seen.add(url); urls.push(url); }
     }
   }
   return urls;
 }
 
-// ── STRIP HTML TAGS ───────────────────────────────────────────────────────────
+// ── STRIP HTML TAGS ─────────────────────────────────────────────────────────────
 function stripHtml(html) {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -209,8 +213,8 @@ function cleanEmailContent(text) {
 // ── STRATEGY 1: Split numbered product blocks ─────────────────────────────────
 function splitProductBlocks(text) {
   const patterns = [
-    /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame/g,   // "1 Product name: ..."
-    /(?:^|\n)\s*\d+[.)]\s*(?:\n|$)/g,          // "1." or "1)" on its own line
+    /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame/g,
+    /(?:^|\n)\s*\d+[.)]\s*(?:\n|$)/g,
   ];
   for (const regex of patterns) {
     const matches = [...text.matchAll(regex)];
@@ -224,40 +228,34 @@ function splitProductBlocks(text) {
       return blocks.filter(b => b.length > 10);
     }
   }
-  return [text]; // single block fallback
+  return [text];
 }
 
-// ── STRATEGY 1: Extract fields from a structured product block ───────────────
+// ── STRATEGY 1: Extract fields from a structured product block ────────────────
 function extractProductData(block) {
-  // Title from explicit "Product name:" label
   const titleMatch = block.match(/Product\s*[Nn]ame\s*[:\s]+([^\n]+)/i);
   let title = titleMatch?.[1]?.trim().substring(0, 150) || null;
   if (title) title = title
     .replace(/amazon\.com\s*/gi, '').replace(/\s*[|:]\s*amazon\b.*/i, '')
     .replace(/^\d+%\s*off\s+/i, '')
     .replace(/^hotsales\s+/i, '')
-    .replace(/\s*[—–]\s*only\s+\$[\d.]+[^!]*!?\s*$/i, '')
+    .replace(/\s*[—–]\sonly\s+\$[\d.]+[^-]!?\s*$/i, '')
     .trim();
 
-  // Sale price (explicit labels only — NOT "Reg. Price")
   const priceMatch = block.match(/(?:Deal\s*Price|Final\s*Price|Sale\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
   const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
 
-  // Original price (including "Reg. Price")
   const origMatch = block.match(/(?:Original\s*Price|Reg\.?\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
   const originalPrice = origMatch ? '$' + origMatch[1].replace(/,/g, '') : null;
 
-  // Discount percentage
-  const discountMatch = block.match(/(\d+)\s*%\s*(?:off|discount|save)/i);
+  const discountMatch = block.match(/(\d+*%\s*(?:off|discount|save)/i);
   const discount = discountMatch?.[1] || null;
 
-  // Coupon code — line-start first, then "with code:XXX" mid-line
   const codeMatch = block.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im)
     || block.match(/\bwith\s+code\s*[:\s]+([A-Z0-9]{4,20})/i)
     || block.match(/\bcode\s*[:\s]+([A-Z0-9]{4,20})\b/i);
   const discountCode = codeMatch?.[1]?.trim() || null;
 
-  // URLs — ALL Amazon URL types, in priority order
   const dpMatch    = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/([A-Z0-9]{10})[^\s"'<>]*/i);
   const promoMatch = block.match(/https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode|deal|gp\/goldbox|gp\/subscribe-and-save|savings|coupons|gp\/deal)[^\s"'<>]*/i);
   const shortMatch = block.match(/https?:\/\/(?:amzn\.to|a\.co)\/[A-Za-z0-9\/]+/i);
@@ -266,7 +264,6 @@ function extractProductData(block) {
   const asin   = dpMatch?.[1] || null;
   const rawUrl = dpMatch?.[0] || promoMatch?.[0] || shortMatch?.[0] || anyAmazon?.[0] || null;
 
-  // Expiration date
   const expMatch = block.match(/(?:End\s*Date|Expir(?:es?|ation)\s*(?:Date)?)\s*[:\s]+([^\n]+)/i);
   let expiresOn = null;
   if (expMatch?.[1]) {
@@ -281,18 +278,18 @@ function extractProductData(block) {
 
 // ── STRATEGY 4: Extract title from plain-text email ───────────────────────────
 function extractFallbackTitle(text) {
-  // "Save X% on Product Name"
   const saveMatch = text.match(/save\s+\d+%\s+(?:on\s+)?(.{10,150}?)(?:\n|$)/i);
   if (saveMatch) return saveMatch[1].trim().substring(0, 150);
-  // "X% off Product Name"
   const offMatch = text.match(/\d+%\s+off\s+(?:on\s+)?(.{10,150}?)(?:\n|$)/i);
   if (offMatch) return offMatch[1].trim().substring(0, 150);
-  // First non-empty non-URL line
   const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('http') && l.length > 8);
   return lines[0]?.substring(0, 150) || null;
 }
 
 // ── SAVE ONE DEAL to Netlify Blobs ───────────────────────────────────────────
+// BUG FIX: status was 'pending' — both post-to-facebook.mjs and
+// post-deals-to-telegram.mjs skip deals where status !== 'approved'.
+// Email deals were permanently stuck and never posted.
 async function saveDeal(store, fields) {
   const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
   const submission = {
@@ -305,10 +302,10 @@ async function saveDeal(store, fields) {
     imageUrl:      fields.imageUrl      || null,
     discountCode:  fields.discountCode  || null,
     source:        'email',
-    status:        'pending',
+    status:        'approved',          // FIX: was 'pending' — schedulers require 'approved'
     sponsored:     false,
-    facebookPosted: false,
-    telegramPosted: false,
+    facebookPosted:  false,             // FIX: explicit flag for post-to-facebook.mjs
+    telegramPosted:  false,             // FIX: explicit flag for post-deals-to-telegram.mjs
     createdAt:     new Date().toISOString(),
     expiresOn:     fields.expiresOn || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   };
@@ -335,15 +332,30 @@ export default async (req, context) => {
 
   const rawHtml = (emailBody || emailTitle).trim();
 
+  console.log(`[EMAIL-PARSER] ━━━ Email received ━━━`);
+  console.log(`[EMAIL-PARSER] Method: ${req.method} | Subject: "${emailTitle}" | Body length: ${rawHtml.length} chars`);
+
   // ── STRATEGY 3: Extract Amazon CDN images from raw email HTML BEFORE stripping
   const emailImages = extractImagesFromEmailHtml(rawHtml);
-  console.log(`[EMAIL-PARSER] Subject: "${emailTitle}" | CDN images in email HTML: ${emailImages.length}`);
+  console.log(`[EMAIL-PARSER] CDN images found in email HTML: ${emailImages.length}`);
+  if (emailImages.length > 0) console.log(`[EMAIL-PARSER] First CDN image: ${emailImages[0]}`);
 
   const cleanedText = cleanEmailContent(stripHtml(rawHtml));
+  console.log(`[EMAIL-PARSER] Cleaned text length: ${cleanedText.length} chars`);
+  console.log(`[EMAIL-PARSER] Cleaned text preview: "${cleanedText.substring(0, 200).replace(/\n/g, ' ')}"`);
 
-  const store   = getStore('submissions');
+  const store = getStore('submissions');
+
+  // ── DEDUP: load indexes once upfront ─────────────────────────────────────────
+  // BUG FIX: No dedup existed before — same email processed twice created
+  // duplicate DB entries, both of which got posted to Facebook/Telegram.
+  let asinIndex = {}, urlIndex = {};
+  try { asinIndex = await store.get('asin-index', { type: 'json' }) || {}; } catch {}
+  try { urlIndex  = await store.get('url-index',  { type: 'json' }) || {}; } catch {}
+  console.log(`[EMAIL-PARSER] Dedup index loaded: ${Object.keys(asinIndex).length} ASINs, ${Object.keys(urlIndex).length} URLs`);
+
   const savedIds = [];
-  const deals   = [];
+  const deals    = [];
 
   // ════════════════════════════════════════════════════════════════════════════
   // STRATEGY 1: Structured numbered product blocks ("1 Product name:" or "1.")
@@ -357,7 +369,7 @@ export default async (req, context) => {
       discountCode, rawUrl: structuredUrl, asin: blockAsin, expiresOn,
     } = extractProductData(block);
 
-    // ── STRATEGY 2 (block-level): if structured parse found no URL, scan for any Amazon URL
+    // Strategy 2 (block-level): if structured parse found no URL, scan for any Amazon URL
     let resolvedUrl = structuredUrl;
     if (!resolvedUrl) {
       const fallbackUrls = extractAmazonUrls(block);
@@ -366,7 +378,7 @@ export default async (req, context) => {
     }
 
     if (!resolvedUrl) {
-      console.log(`[EMAIL-PARSER] SKIP block — no Amazon URL. Preview: "${block.substring(0, 80).replace(/\n/g, ' ')}"`);
+      console.log(`[EMAIL-PARSER] SKIP block — no Amazon URL found. Preview: "${block.substring(0, 80).replace(/\n/g, ' ')}"`);
       continue;
     }
 
@@ -375,52 +387,69 @@ export default async (req, context) => {
       const r = await followRedirectForAsin(resolvedUrl);
       asin = r.asin || null;
     }
+    console.log(`[EMAIL-PARSER] ASIN resolved: ${asin || 'none'} (tracking ID will be: ${asin ? 'tag='+AFFILIATE_TAG+' via /dp/ASIN' : 'tag='+AFFILIATE_TAG+' appended to raw URL'})`);
 
-    // Fetch Amazon page metadata (title, image, ASIN from page)
+    // ── DEDUP CHECK (block) ──────────────────────────────────────────────────
+    const affiliateUrlForDedup = normalizeAmazonUrl(resolvedUrl, asin);
+    const normUrlForDedup = normalizeUrl(affiliateUrlForDedup);
+    if (asin && asinIndex[asin]) {
+      console.log(`[EMAIL-PARSER] DUPLICATE — ASIN ${asin} already in DB as ${asinIndex[asin]}. Skipping block.`);
+      continue;
+    }
+    if (normUrlForDedup && urlIndex[normUrlForDedup]) {
+      console.log(`[EMAIL-PARSER] DUPLICATE — URL already in DB as ${urlIndex[normUrlForDedup]}. Skipping block.`);
+      continue;
+    }
+
     const meta = await fetchAmazonMeta(resolvedUrl);
     if (meta?.asin && !asin) asin = meta.asin;
 
-    // ── AFFILIATE URL: normalizeAmazonUrl → appendAffiliateTag → saved URL ──
     const affiliateUrl = normalizeAmazonUrl(resolvedUrl, asin);
-
-    // ── IMAGE: try in order: og:image from page → email CDN image → null ────
     const imageUrl = meta?.image || emailImages[0] || null;
-
-    // ── TITLE: structured label → Amazon meta → fallback text extraction ─────
     const finalTitle = blockTitle || meta?.title || extractFallbackTitle(block) || 'Amazon Deal';
     const finalPrice = price || meta?.price || null;
 
-    console.log(`[EMAIL-PARSER] SAVE (Strategy 1):`);
-    console.log(`  Title:        "${finalTitle}"`);
-    console.log(`  Raw URL:      ${resolvedUrl}`);
-    console.log(`  Affiliate URL:${affiliateUrl}`);
-    console.log(`  Image:        ${imageUrl || 'null'}`);
-    console.log(`  Code:         ${discountCode || 'none'} | Discount: ${discount || 'none'}%`);
+    console.log(`[EMAIL-PARSER] ── Strategy 1 SAVE ──`);
+    console.log(`[EMAIL-PARSER]   Title:         "${finalTitle}"`);
+    console.log(`[EMAIL-PARSER]   Price:         ${finalPrice || 'none'}`);
+    console.log(`[EMAIL-PARSER]   Discount:      ${discount || 'none'}%`);
+    console.log(`[EMAIL-PARSER]   Code:          ${discountCode || 'none'}`);
+    console.log(`[EMAIL-PARSER]   Affiliate URL: ${affiliateUrl}`);
+    console.log(`[EMAIL-PARSER]   Tracking ID:   ${affiliateUrl?.includes(AFFILIATE_TAG) ? AFFILIATE_TAG + ' ✓' : 'MISSING ✗'}`);
+    console.log(`[EMAIL-PARSER]   Image:         ${imageUrl || 'none — deal will be skipped by Facebook scheduler'}`);
 
     const deal = await saveDeal(store, { title: finalTitle, price: finalPrice, originalPrice, discount, discountCode, affiliateUrl, imageUrl, expiresOn });
     savedIds.push(deal.id);
     deals.push(deal);
+
+    // Update dedup indexes so the next block in this same email doesn't duplicate
+    if (asin) asinIndex[asin] = deal.id;
+    const normUrl = normalizeUrl(deal.url);
+    if (normUrl) urlIndex[normUrl] = deal.id;
+    await store.setJSON('asin-index', asinIndex);
+    await store.setJSON('url-index', urlIndex);
+    console.log(`[EMAIL-PARSER]   Saved as ID: ${deal.id} | status: approved | dedup indexes updated`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  // STRATEGY 2 (top-level): If Strategy 1 found no deals at all,
-  // extract every Amazon URL from the full email text.
-  // This handles "Save 40%", Lightning Deals, Prime Day, coupon emails, etc.
+  // STRATEGY 2 (top-level): If Strategy 1 found no deals, scan all Amazon URLs.
+  // Handles "SAVE 40%", Lightning Deals, Prime Day, promo/coupon emails.
   // ════════════════════════════════════════════════════════════════════════════
   if (deals.length === 0) {
-    console.log(`[EMAIL-PARSER] Strategy 1 found 0 deals. Trying Strategy 2 (all-URL scan)...`);
+    console.log(`[EMAIL-PARSER] Strategy 1 found 0 deals — falling back to Strategy 2 (all-URL scan)`);
     const allUrls = extractAmazonUrls(cleanedText);
-    console.log(`[EMAIL-PARSER] Strategy 2 found ${allUrls.length} Amazon URL(s)`);
+    console.log(`[EMAIL-PARSER] Strategy 2: ${allUrls.length} Amazon URL(s) found in full email`);
 
-    // Global coupon/discount from email body
-    const globalDiscount   = cleanedText.match(/(\d+)\s*%\s*(?:off|discount|save)/i)?.[1] || null;
-    const globalCode       = cleanedText.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im)?.[1]
-                           || cleanedText.match(/\bwith\s+code\s*[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
-    const globalExpMatch   = cleanedText.match(/(?:End\s*Date|Expir(?:es?|ation)\s*(?:Date)?)\s*[:\s]+([^\n]+)/i);
+    const globalDiscount = cleanedText.match(/(\d+)\s*%\s*(?:off|discount|save)/i)?.[1] || null;
+    const globalCode     = cleanedText.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im)?.[1]
+                         || cleanedText.match(/\bwith\s+code\s*[:\s]+([A-Z0-9]{4,20})/i)?.[1] || null;
+    const globalExpMatch = cleanedText.match(/(?:End\s*Date|Expir(?:es?|ation)\s*(?:Date)?)\s*[:\s]+([^\n]+)/i);
     let globalExpiresOn = null;
     if (globalExpMatch?.[1]) {
       try { const d = new Date(globalExpMatch[1].trim()); if (!isNaN(d.getTime())) globalExpiresOn = d.toISOString(); } catch {}
     }
+
+    console.log(`[EMAIL-PARSER] Strategy 2 globals — discount: ${globalDiscount || 'none'}%, code: ${globalCode || 'none'}`);
 
     for (const rawUrl of allUrls) {
       let asin = rawUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
@@ -428,25 +457,42 @@ export default async (req, context) => {
         const r = await followRedirectForAsin(rawUrl);
         asin = r.asin || null;
       }
+      console.log(`[EMAIL-PARSER] Strategy 2 processing URL: ${rawUrl} | ASIN: ${asin || 'none'}`);
+
+      // ── DEDUP CHECK (Strategy 2) ─────────────────────────────────────────
+      const affiliateUrlForDedup = normalizeAmazonUrl(rawUrl, asin);
+      const normUrlForDedup = normalizeUrl(affiliateUrlForDedup);
+      if (asin && asinIndex[asin]) {
+        console.log(`[EMAIL-PARSER] DUPLICATE — ASIN ${asin} already in DB as ${asinIndex[asin]}. Skipping.`);
+        continue;
+      }
+      if (normUrlForDedup && urlIndex[normUrlForDedup]) {
+        console.log(`[EMAIL-PARSER] DUPLICATE — URL already in DB as ${urlIndex[normUrlForDedup]}. Skipping.`);
+        continue;
+      }
 
       const meta = await fetchAmazonMeta(rawUrl);
       if (meta?.asin && !asin) asin = meta.asin;
 
-      // ── AFFILIATE URL ──────────────────────────────────────────────────────
       const affiliateUrl = normalizeAmazonUrl(rawUrl, asin);
-
-      // ── IMAGE ──────────────────────────────────────────────────────────────
       const imageUrl = meta?.image || emailImages[0] || null;
 
-      // ── TITLE ──────────────────────────────────────────────────────────────
-      const finalTitle = meta?.title || extractFallbackTitle(cleanedText) || 'Amazon Deal';
+      // For "SAVE XX%" promotional emails, try to build title from discount + product name
+      let finalTitle = meta?.title || null;
+      if (!finalTitle && globalDiscount) {
+        const promoTitle = extractFallbackTitle(cleanedText);
+        finalTitle = promoTitle || `Save ${globalDiscount}% — Amazon Deal`;
+      }
+      finalTitle = finalTitle || extractFallbackTitle(cleanedText) || 'Amazon Deal';
 
-      console.log(`[EMAIL-PARSER] SAVE (Strategy 2):`);
-      console.log(`  Title:        "${finalTitle}"`);
-      console.log(`  Raw URL:      ${rawUrl}`);
-      console.log(`  Affiliate URL:${affiliateUrl}`);
-      console.log(`  Image:        ${imageUrl || 'null'}`);
-      console.log(`  Code:         ${globalCode || 'none'} | Discount: ${globalDiscount || 'none'}%`);
+      console.log(`[EMAIL-PARSER] ── Strategy 2 SAVE ──`);
+      console.log(`[EMAIL-PARSER]   Title:         "${finalTitle}"`);
+      console.log(`[EMAIL-PARSER]   Price:         ${meta?.price || 'none'}`);
+      console.log(`[EMAIL-PARSER]   Discount:      ${globalDiscount || 'none'}%`);
+      console.log(`[EMAIL-PARSER]   Code:          ${globalCode || 'none'}`);
+      console.log(`[EMAIL-PARSER]   Affiliate URL: ${affiliateUrl}`);
+      console.log(`[EMAIL-PARSER]   Tracking ID:   ${affiliateUrl?.includes(AFFILIATE_TAG) ? AFFILIATE_TAG + ' ✓' : 'MISSING ✗'}`);
+      console.log(`[EMAIL-PARSER]   Image:         ${imageUrl || 'none — deal will be skipped by Facebook scheduler'}`);
 
       const deal = await saveDeal(store, {
         title: finalTitle, price: meta?.price || null, originalPrice: null,
@@ -455,11 +501,21 @@ export default async (req, context) => {
       });
       savedIds.push(deal.id);
       deals.push(deal);
+
+      // Update dedup indexes after each save
+      if (asin) asinIndex[asin] = deal.id;
+      const normUrl = normalizeUrl(deal.url);
+      if (normUrl) urlIndex[normUrl] = deal.id;
+      await store.setJSON('asin-index', asinIndex);
+      await store.setJSON('url-index', urlIndex);
+      console.log(`[EMAIL-PARSER]   Saved as ID: ${deal.id} | status: approved | dedup indexes updated`);
     }
   }
 
   if (deals.length === 0) {
-    console.log(`[EMAIL-PARSER] No deals found. emailBody length: ${emailBody.length}. cleanedText preview: "${cleanedText.substring(0, 200)}"`);
+    console.log(`[EMAIL-PARSER] ✗ No deals saved. emailBody length: ${emailBody.length}. cleanedText preview: "${cleanedText.substring(0, 200)}"`);
+  } else {
+    console.log(`[EMAIL-PARSER] ✓ Saved ${deals.length} deal(s): ${savedIds.join(', ')}`);
   }
 
   return new Response(JSON.stringify({
