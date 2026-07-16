@@ -166,7 +166,7 @@ async function fetchAmazonMeta(amazonUrl) {
 function extractAmazonUrls(text) {
   const patterns = [
     /https?:\/\/(?:www\.)?amazon\.com\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s"'<>]*/gi,
-    /https?:\/\/(?www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode|deal|gp\/goldbox|gp\/subscribe-and-save|savings|coupons|gp\/deal)[^\s"'<>]*/gi,
+    /https?:\/\/(?:www\.)?amazon\.com\/(?:promocode|promotion|gp\/promocode|deal|gp\/goldbox|gp\/subscribe-and-save|savings|coupons|gp\/deal)[^\s"'<>]*/gi,
     /https?:\/\/(?:www\.)?amazon\.com\/[a-zA-Z0-9\-_\/+%?=&#@!.]{5,}[^\s"'<>]*/gi,
     /https?:\/\/(?:amzn\.to|a\.co)\/[A-Za-z0-9\/]+/gi,
   ];
@@ -248,7 +248,7 @@ function extractProductData(block) {
   const origMatch = block.match(/(?:Original\s*Price|Reg\.?\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:\s]+\$?([\d.,]+)/i);
   const originalPrice = origMatch ? '$' + origMatch[1].replace(/,/g, '') : null;
 
-  const discountMatch = block.match(/(\d+*%\s*(?:off|discount|save)/i);
+  const discountMatch = block.match(/(\d+)%\s*(?:off|discount|save)/i);
   const discount = discountMatch?.[1] || null;
 
   const codeMatch = block.match(/(?:^|\n)\s*(?:code|coupon|promo)\s*[:\s]+([A-Z0-9]{4,20})/im)
