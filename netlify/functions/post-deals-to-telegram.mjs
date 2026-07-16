@@ -1,158 +1,161 @@
 import { getStore } from "@netlify/blobs";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-function truncate(str, max) {
-  if (!str) return '';
-  return str.length <= max ? str : str.slice(0, max - 3) + '...';
-}
-
-function formatExpiry(isoString) {
-  if (!isoString) return null;
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleString('en-US', {
-      month: 'long', day: 'numeric', year: 'numeric',
-      hour: 'numeric', minute: '2-digit', hour12: true,
-      timeZone: 'America/New_York',
-    });
-  } catch {
-    return null;
-  }
-}
-
-// ── Validation ───────────────────────────────────────────────────────────────
-
-function validateDeal(deal) {
-  const errors = [];
-  if (!deal.title) errors.push('missing title');
-  if (!deal.price) errors.push('missing price');
-  if (!deal.url)   errors.push('missing url');
-  return errors;
-}
-
-// ── Telegram API call — reads ONLY from DB fields ────────────────────────────
-
-async function postToTelegram(deal) {
-  const token  = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-
-  if (!token || !chatId) throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID env vars');
-
-  const lines = [];
-  lines.push(`🛍️ <b>${deal.title}</b>`);
-  lines.push(`💰 Deal Price: <b>${deal.price}</b>`);
-  if (deal.originalPrice) lines.push(`🏷️ Original Price: ${deal.originalPrice}`);
-  if (deal.discount)      lines.push(`🔥 Save ${deal.discount}%`);
-  if (deal.discountCode)  lines.push(`🎟️ Promo Code: <code>${deal.discountCode}</code>`);
-  lines.push(`🔗 <a href="${deal.url}">Grab this deal!</a>`);
-  const expiry = formatExpiry(deal.expiresOn);
-  if (expiry) lines.push(`⏰ Expires: ${expiry}`);
-  lines.push('\n#ad');
-
-  const imageUrl = deal.imageUrl || null;
-  const baseUrl  = `https://api.telegram.org/bot${token}`;
+// Post a single message to Telegram â photo with caption if image available,
+// plain text otherwise. Returns { ok, error }.
+async function sendToTelegram(imageUrl, message) {
+  const base = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+  // Telegram photo captions are limited to 1024 characters
+  const caption = message.length > 1024 ? message.substring(0, 1021) + '...' : message;
 
   if (imageUrl) {
-    const caption = truncate(lines.join('\n'), 1024);
-    const res  = await fetch(`${baseUrl}/sendPhoto`, {
+    console.log(`[TELEGRAM] Attempting sendPhoto | image: ${imageUrl.substring(0, 80)}`);
+    try {
+      const res = await fetch(`${base}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: imageUrl, caption }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        console.log(`[TELEGRAM] â sendPhoto success | message_id:${data.result?.message_id}`);
+        return { ok: true };
+      }
+      console.warn(`[TELEGRAM] sendPhoto failed (${data.error_code}): ${data.description} â falling back to text`);
+    } catch (e) {
+      console.warn(`[TELEGRAM] sendPhoto threw: ${e.message} â falling back to text`);
+    }
+  }
+
+  // Fallback: send as plain text
+  console.log(`[TELEGRAM] Sending text message (length: ${message.length})`);
+  try {
+    const res = await fetch(`${base}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, photo: imageUrl, caption, parse_mode: 'HTML' }),
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message }),
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(`TG API error: ${JSON.stringify(data)}`);
-    return { messageId: data.result?.message_id };
-  } else {
-    const text = truncate(lines.join('\n'), 4096);
-    const res  = await fetch(`${baseUrl}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: false }),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(`TG API error: ${JSON.stringify(data)}`);
-    return { messageId: data.result?.message_id };
+    if (data.ok) {
+      console.log(`[TELEGRAM] â sendMessage success | message_id:${data.result?.message_id}`);
+      return { ok: true };
+    }
+    const err = `(${data.error_code}) ${data.description}`;
+    console.error(`[TELEGRAM] â sendMessage failed: ${err}`);
+    return { ok: false, error: err };
+  } catch (e) {
+    console.error(`[TELEGRAM] â sendMessage threw: ${e.message}`);
+    return { ok: false, error: e.message };
   }
 }
 
-// ── Main scheduled handler ───────────────────────────────────────────────────
+export default async () => {
+  console.log('[TELEGRAM] â¶ Scheduler triggered (post-deals-to-telegram)');
 
-export default async (_req, _context) => {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.error('[TELEGRAM] â Missing env vars: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+    return new Response(
+      JSON.stringify({ success: false, error: 'Missing Telegram credentials' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
   const submissionsStore = getStore('submissions');
+  const postedStore = getStore('telegram-posted');
 
-  let index = [];
-  try { index = (await submissionsStore.get('index', { type: 'json' })) || []; } catch { index = []; }
-
-  if (index.length === 0) {
-    return new Response(JSON.stringify({ success: true, message: 'No deals in index' }), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Find first approved deal not yet posted to Telegram
-  let targetDeal = null;
-  let targetId   = null;
-
-  for (const id of index) {
-    let deal = null;
-    try { deal = await submissionsStore.get(id, { type: 'json' }); } catch { continue; }
-    if (!deal) continue;
-    if (deal.status !== 'approved') continue;
-    if (deal.telegramPosted === true) continue;
-    if (!deal.url) continue;
-    targetDeal = deal;
-    targetId   = id;
-    break;
-  }
-
-  if (!targetDeal) {
-    return new Response(JSON.stringify({ success: true, message: 'No unposted deals found' }), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Validate — skip and mark done if required fields are missing
-  const errors = validateDeal(targetDeal);
-  if (errors.length > 0) {
-    console.error(`[post-deals-to-telegram] Skipping deal ${targetId}: ${errors.join(', ')}`);
-    await submissionsStore.setJSON(targetId, {
-      ...targetDeal,
-      telegramPosted: true,
-      telegramSkipped: true,
-      telegramSkipReason: errors.join(', '),
-      telegramPostedAt: new Date().toISOString(),
-    });
-    return new Response(JSON.stringify({ success: false, skipped: true, reason: errors.join(', ') }), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Post to Telegram
-  let tgResult;
+  // Load posted-IDs to avoid re-posting
+  let postedIds = [];
   try {
-    tgResult = await postToTelegram(targetDeal);
-  } catch (err) {
-    console.error('[post-deals-to-telegram] TG API error:', err.message);
-    return new Response(JSON.stringify({ success: false, error: err.message }), {
-      status: 500, headers: { 'Content-Type': 'application/json' },
-    });
+    const stored = await postedStore.get('posted-ids', { type: 'json' });
+    if (Array.isArray(stored)) postedIds = stored;
+  } catch {
+    console.log('[TELEGRAM] No posted-ids found â starting fresh');
+  }
+  console.log(`[TELEGRAM] Already-posted IDs: ${postedIds.length}`);
+
+  // List all blobs in the submissions store
+  let blobs = [];
+  try {
+    ({ blobs } = await submissionsStore.list());
+  } catch (e) {
+    console.error('[TELEGRAM] â Failed to list submissions:', e.message);
+    return new Response(
+      JSON.stringify({ success: false, error: 'Failed to list submissions' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+  console.log(`[TELEGRAM] Total blobs in submissions: ${blobs.length}`);
+
+  const now = Date.now();
+  const eligible = [];
+  let skippedPending = 0, skippedPosted = 0, skippedExpired = 0, skippedEmpty = 0;
+
+  for (const blob of blobs) {
+    try {
+      const deal = await submissionsStore.get(blob.key, { type: 'json' });
+      if (!deal || !deal.id) { skippedEmpty++; continue; }
+      if (deal.status !== 'approved') { skippedPending++; continue; }
+      if (postedIds.includes(deal.id)) { skippedPosted++; continue; }
+      if (deal.expiresOn && new Date(deal.expiresOn).getTime() < now) { skippedExpired++; continue; }
+      if (!deal.title || !deal.url) { skippedEmpty++; continue; }
+      eligible.push(deal);
+    } catch (e) {
+      console.log(`[TELEGRAM] Error reading blob ${blob.key}: ${e.message}`);
+    }
   }
 
-  // Mark posted
-  await submissionsStore.setJSON(targetId, {
-    ...targetDeal,
-    telegramPosted: true,
-    telegramPostedAt: new Date().toISOString(),
-    telegramMessageId: tgResult.messageId || null,
-  });
+  console.log(
+    `[TELEGRAM] Eligible: ${eligible.length} | ` +
+    `skipped pending=${skippedPending} posted=${skippedPosted} expired=${skippedExpired} empty=${skippedEmpty}`
+  );
 
-  console.log(`[post-deals-to-telegram] Posted deal ${targetId}: ${targetDeal.title}`);
+  if (eligible.length === 0) {
+    console.log('[TELEGRAM] No eligible deals â nothing to post');
+    return new Response(
+      JSON.stringify({ success: true, message: 'No eligible deals', skipped: { skippedPending, skippedPosted, skippedExpired, skippedEmpty } }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Post the newest eligible deal
+  eligible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const deal = eligible[0];
+  console.log(`[TELEGRAM] Posting: "${deal.title.substring(0, 80)}" | id:${deal.id} | image:${deal.imageUrl ? 'YES' : 'no'}`);
+
+  // Build message
+  const lines = [deal.title];
+  if (deal.discount) lines.push(`ð¥ ${deal.discount}% OFF`);
+  if (deal.price) lines.push(`ð° Price: ${deal.price}`);
+  if (deal.discountCode) lines.push(`ð·ï¸ Promo Code: ${deal.discountCode}`);
+  lines.push('');
+  lines.push(`ð Get it here: ${deal.url}`);
+  lines.push('');
+  lines.push('@dealsaholic');
+  const message = lines.join('\n');
+
+  const imageUrl = deal.imageUrl || deal.image || null;
+  const result = await sendToTelegram(imageUrl, message);
+
+  if (result.ok) {
+    postedIds.push(deal.id);
+    if (postedIds.length > 500) postedIds = postedIds.slice(-500);
+    await postedStore.setJSON('posted-ids', postedIds);
+    console.log(`[TELEGRAM] â Marked as posted | total posted: ${postedIds.length}`);
+  } else {
+    console.error(`[TELEGRAM] â Post failed â deal NOT marked as posted | error: ${result.error}`);
+  }
 
   return new Response(
-    JSON.stringify({ success: true, dealId: targetId, title: targetDeal.title, telegramMessageId: tgResult.messageId || null }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
+    JSON.stringify({
+      success: result.ok,
+      dealId: deal.id,
+      title: deal.title.substring(0, 100),
+      error: result.error || null,
+    }),
+    { headers: { 'Content-Type': 'application/json' } }
   );
 };
 
-export const config = {};
+export const config = { schedule: '*/10 * * * *' };
