@@ -78,11 +78,21 @@
   const url = params.get('url');
 
   // URLSearchParams.get() already decodes â do NOT call decodeURIComponent again
+  let partnerTag = 'daholic-20';
+  try {
+    const _xhr = new XMLHttpRequest();
+    _xhr.open('GET', '/api/affiliate-config', false);
+    _xhr.send();
+    if (_xhr.status === 200) {
+      const _cfg = JSON.parse(_xhr.responseText);
+      if (_cfg && _cfg.partnerTag) partnerTag = _cfg.partnerTag;
+    }
+  } catch (e) {}
   let affiliateUrl;
   if (asin) {
-    affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
+    affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${partnerTag}&linkCode=ll1&language=en_US`;
   } else if (url) {
-    affiliateUrl = url;
+    affiliateUrl = decodeURIComponent(url);
   }
 
   // Safely decode URL-encoded + HTML-entity-encoded strings
