@@ -7,7 +7,6 @@ function isGarbageSubmission(record) {
   const title = (record.productTitle || record.title || '').trim();
   if (!title || title.length < 8) return true;
   if (GARBAGE_TITLE_RE.test(title)) return true;
-  // Must have a usable URL
   const url = record.productUrl || record.url || '';
   if (!url) return true;
   return false;
@@ -18,42 +17,53 @@ async function getApprovedSellerDeals() {
     const store = getStore("submissions");
     const index = await store.get("index", { type: "json" });
     if (!Array.isArray(index)) return [];
-    const now = Date.now();
-    const approved = [];
-    for (const id of index) {
-      let record;
-      try {
-        record = await store.get(id, { type: "json" });
-      } catch { continue; }
-      if (!record || record.status !== "approved") continue;
-      if (isGarbageSubmission(record)) continue;   // skip bounces, empty titles, error messages
-      const expiresAt = new Date(record.expiresOn).getTime();
-      if (!isNaN(expiresAt) && expiresAt < now) continue;
-      // Extract a real ASIN â never use the internal record.id
-      const storedUrl = record.productUrl || record.url || '';
-      const urlAsin = storedUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
-      const validAsin = (record.asin && /^[A-Z0-9]{10}$/i.test(record.asin))
-        ? record.asin
-        : urlAsin;
 
-      approved.push({
-        id: record.id,
-        asin: validAsin || null,   // null for promo/multi-product deals â never the internal ID
-        title: record.productTitle || record.title,
-        image: record.image || record.photoUrl || record.imageUrl || null,
-        price: record.price,
-        originalPrice: record.originalPrice || null,
-        discountPercent: record.discountPercent || (record.discount ? parseInt(record.discount) : null),
-        rating: null,
-        reviewCount: null,
-        url: storedUrl,
-        discountCode: record.discountCode || null,
-        sponsored: record.sponsored || false,
-        source: record.source || 'seller',
-        storeType: record.storeType || record.store || 'amazon',
-        createdAt: record.createdAt || null,
-      });
+    // Cap at the 100 most recent IDs (index is newest-first)
+    const recentIds = index.slice(0, 100);
+    const now = Date.now();
+
+    // Fetch all records in parallel instead of sequentially
+    const CONCURRENCY = 20;
+    const approved = [];
+
+    for (let i = 0; i < recentIds.length; i += CONCURRENCY) {
+      const batch = recentIds.slice(i, i + CONCURRENCY);
+      const records = await Promise.all(
+        batch.map(id => store.get(id, { type: "json" }).catch(() => null))
+      );
+
+      for (const record of records) {
+        if (!record || record.status !== "approved") continue;
+        if (isGarbageSubmission(record)) continue;
+        const expiresAt = new Date(record.expiresOn).getTime();
+        if (!isNaN(expiresAt) && expiresAt < now) continue;
+
+        const storedUrl = record.productUrl || record.url || '';
+        const urlAsin = storedUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
+        const validAsin = (record.asin && /^[A-Z0-9]{10}$/i.test(record.asin))
+          ? record.asin
+          : urlAsin;
+
+        approved.push({
+          id: record.id,
+          asin: validAsin || null,
+          title: record.productTitle || record.title,
+          image: record.image || record.photoUrl || record.imageUrl || null,
+          price: record.price,
+          originalPrice: record.originalPrice || null,
+          discountPercent: record.discountPercent || (record.discount ? parseInt(record.discount) : null),
+          rating: null,
+          reviewCount: null,
+          url: storedUrl,
+          discountCode: record.discountCode || null,
+          sponsored: record.sponsored || false,
+          source: record.source || 'seller',
+          storeType: record.storeType || record.store || 'amazon',
+          createdAt: record.createdAt || null,
+        });
+      }
     }
+
     return approved;
   } catch {
     return [];
@@ -68,7 +78,7 @@ export default async () => {
     const base = data || {
       generatedAt: null,
       deals: [],
-      message: "No deals fetched yet â first scheduled run hasn't completed.",
+      message: "No deals fetched yet — first scheduled run hasn't completed.",
     };
 
     // Filter out flagged/suspicious Amazon deals from public view
@@ -77,14 +87,14 @@ export default async () => {
     // Combine all deals and sort newest first
     const allDeals = [...sellerDeals, ...amazonDeals];
     allDeals.sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
-  // Deduplicate by ASIN to prevent duplicate deals
-  const seen = new Map();
-  for (const deal of allDeals) {
-    const key = deal.asin || deal.url;
-    if (key && !seen.has(key)) seen.set(key, deal);
-  }
-  const deduped = Array.from(seen.values());
 
+    // Deduplicate by ASIN to prevent duplicate deals
+    const seen = new Map();
+    for (const deal of allDeals) {
+      const key = deal.asin || deal.url;
+      if (key && !seen.has(key)) seen.set(key, deal);
+    }
+    const deduped = Array.from(seen.values());
 
     const combined = {
       ...base,
