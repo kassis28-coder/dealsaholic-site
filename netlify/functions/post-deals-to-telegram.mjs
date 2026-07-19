@@ -3,11 +3,8 @@ import { getStore } from "@netlify/blobs";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// Post a single message to Telegram â photo with caption if image available,
-// plain text otherwise. Returns { ok, error }.
 async function sendToTelegram(imageUrl, message) {
   const base = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-  // Telegram photo captions are limited to 1024 characters
   const caption = message.length > 1024 ? message.substring(0, 1021) + '...' : message;
 
   if (imageUrl) {
@@ -20,16 +17,15 @@ async function sendToTelegram(imageUrl, message) {
       });
       const data = await res.json();
       if (data.ok) {
-        console.log(`[TELEGRAM] â sendPhoto success | message_id:${data.result?.message_id}`);
+        console.log(`[TELEGRAM] sendPhoto success | message_id:${data.result?.message_id}`);
         return { ok: true };
       }
-      console.warn(`[TELEGRAM] sendPhoto failed (${data.error_code}): ${data.description} â falling back to text`);
+      console.warn(`[TELEGRAM] sendPhoto failed (${data.error_code}): ${data.description} - falling back to text`);
     } catch (e) {
-      console.warn(`[TELEGRAM] sendPhoto threw: ${e.message} â falling back to text`);
+      console.warn(`[TELEGRAM] sendPhoto threw: ${e.message} - falling back to text`);
     }
   }
 
-  // Fallback: send as plain text
   console.log(`[TELEGRAM] Sending text message (length: ${message.length})`);
   try {
     const res = await fetch(`${base}/sendMessage`, {
@@ -39,23 +35,23 @@ async function sendToTelegram(imageUrl, message) {
     });
     const data = await res.json();
     if (data.ok) {
-      console.log(`[TELEGRAM] â sendMessage success | message_id:${data.result?.message_id}`);
+      console.log(`[TELEGRAM] sendMessage success | message_id:${data.result?.message_id}`);
       return { ok: true };
     }
     const err = `(${data.error_code}) ${data.description}`;
-    console.error(`[TELEGRAM] â sendMessage failed: ${err}`);
+    console.error(`[TELEGRAM] sendMessage failed: ${err}`);
     return { ok: false, error: err };
   } catch (e) {
-    console.error(`[TELEGRAM] â sendMessage threw: ${e.message}`);
+    console.error(`[TELEGRAM] sendMessage threw: ${e.message}`);
     return { ok: false, error: e.message };
   }
 }
 
 export default async () => {
-  console.log('[TELEGRAM] â¶ Scheduler triggered (post-deals-to-telegram)');
+  console.log('[TELEGRAM] Scheduler triggered (post-deals-to-telegram)');
 
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.error('[TELEGRAM] â Missing env vars: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+    console.error('[TELEGRAM] Missing env vars: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
     return new Response(
       JSON.stringify({ success: false, error: 'Missing Telegram credentials' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
@@ -65,72 +61,74 @@ export default async () => {
   const submissionsStore = getStore('submissions');
   const postedStore = getStore('telegram-posted');
 
-  // Load posted-IDs to avoid re-posting
   let postedIds = [];
   try {
     const stored = await postedStore.get('posted-ids', { type: 'json' });
     if (Array.isArray(stored)) postedIds = stored;
   } catch {
-    console.log('[TELEGRAM] No posted-ids found â starting fresh');
+    console.log('[TELEGRAM] No posted-ids found - starting fresh');
   }
   console.log(`[TELEGRAM] Already-posted IDs: ${postedIds.length}`);
 
-  // List all blobs in the submissions store
-  let blobs = [];
+  // Use index blob (newest first) instead of listing all 1000+ blobs sequentially
+  let index = [];
   try {
-    ({ blobs } = await submissionsStore.list());
+    const stored = await submissionsStore.get('index', { type: 'json' });
+    if (Array.isArray(stored)) index = stored;
   } catch (e) {
-    console.error('[TELEGRAM] â Failed to list submissions:', e.message);
+    console.error('[TELEGRAM] Failed to read index:', e.message);
     return new Response(
-      JSON.stringify({ success: false, error: 'Failed to list submissions' }),
+      JSON.stringify({ success: false, error: 'Failed to read submissions index' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
-  console.log(`[TELEGRAM] Total blobs in submissions: ${blobs.length}`);
+  console.log(`[TELEGRAM] Index has ${index.length} deal IDs`);
 
+  // Fetch in parallel batches, stop as soon as we find one eligible deal
   const now = Date.now();
-  const eligible = [];
+  const CONCURRENCY = 20;
+  let eligible = null;
   let skippedPending = 0, skippedPosted = 0, skippedExpired = 0, skippedEmpty = 0;
 
-  for (const blob of blobs) {
-    try {
-      const deal = await submissionsStore.get(blob.key, { type: 'json' });
-      if (!deal || !deal.id) { skippedEmpty++; continue; }
+  outer:
+  for (let i = 0; i < index.length; i += CONCURRENCY) {
+    const batch = index.slice(i, i + CONCURRENCY);
+    const records = await Promise.all(
+      batch.map(id => submissionsStore.get(id, { type: 'json' }).catch(() => null))
+    );
+
+    for (const deal of records) {
+      if (!deal || !deal.id || !deal.title || !deal.url) { skippedEmpty++; continue; }
       if (deal.status !== 'approved') { skippedPending++; continue; }
       if (postedIds.includes(deal.id)) { skippedPosted++; continue; }
       if (deal.expiresOn && new Date(deal.expiresOn).getTime() < now) { skippedExpired++; continue; }
-      if (!deal.title || !deal.url) { skippedEmpty++; continue; }
-      eligible.push(deal);
-    } catch (e) {
-      console.log(`[TELEGRAM] Error reading blob ${blob.key}: ${e.message}`);
+      eligible = deal;
+      break outer;
     }
   }
 
   console.log(
-    `[TELEGRAM] Eligible: ${eligible.length} | ` +
+    `[TELEGRAM] Eligible: ${eligible ? 1 : 0} | ` +
     `skipped pending=${skippedPending} posted=${skippedPosted} expired=${skippedExpired} empty=${skippedEmpty}`
   );
 
-  if (eligible.length === 0) {
-    console.log('[TELEGRAM] No eligible deals â nothing to post');
+  if (!eligible) {
+    console.log('[TELEGRAM] No eligible deals - nothing to post');
     return new Response(
       JSON.stringify({ success: true, message: 'No eligible deals', skipped: { skippedPending, skippedPosted, skippedExpired, skippedEmpty } }),
       { headers: { 'Content-Type': 'application/json' } }
     );
   }
 
-  // Post the newest eligible deal
-  eligible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const deal = eligible[0];
-  console.log(`[TELEGRAM] Posting: "${deal.title.substring(0, 80)}" | id:${deal.id} | image:${deal.imageUrl ? 'YES' : 'no'}`);
+  const deal = eligible;
+  console.log(`[TELEGRAM] Posting: "${deal.title.substring(0, 80)}" | id:${deal.id}`);
 
-  // Build message
   const lines = [deal.title];
-  if (deal.discount) lines.push(`ð¥ ${deal.discount}% OFF`);
-  if (deal.price) lines.push(`ð° Price: ${deal.price}`);
-  if (deal.discountCode) lines.push(`ð·ï¸ Promo Code: ${deal.discountCode}`);
+  if (deal.discount) lines.push(`🔥 ${deal.discount}% OFF`);
+  if (deal.price) lines.push(`💰 Price: ${deal.price}`);
+  if (deal.discountCode) lines.push(`🏷️ Promo Code: ${deal.discountCode}`);
   lines.push('');
-  lines.push(`ð Get it here: ${deal.url}`);
+  lines.push(`👉 Get it here: ${deal.url}`);
   lines.push('');
   lines.push('@dealsaholic');
   const message = lines.join('\n');
@@ -141,10 +139,10 @@ export default async () => {
   if (result.ok) {
     postedIds.push(deal.id);
     if (postedIds.length > 500) postedIds = postedIds.slice(-500);
-    await postedStore.setJSON('posted-ids', postedIds);
-    console.log(`[TELEGRAM] â Marked as posted | total posted: ${postedIds.length}`);
+    await postedStore.set('posted-ids', JSON.stringify(postedIds));
+    console.log(`[TELEGRAM] Marked as posted | total posted: ${postedIds.length}`);
   } else {
-    console.error(`[TELEGRAM] â Post failed â deal NOT marked as posted | error: ${result.error}`);
+    console.error(`[TELEGRAM] Post failed - deal NOT marked as posted | error: ${result.error}`);
   }
 
   return new Response(
