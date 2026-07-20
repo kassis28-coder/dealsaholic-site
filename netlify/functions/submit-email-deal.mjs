@@ -2,11 +2,17 @@ import { getStore } from "@netlify/blobs";
 
 const AFFILIATE_TAG = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
 
-// Extract Amazon CDN product images from raw HTML BEFORE stripping.
+// ── FIXES in this version ────────────────────────────────────────────────────
+// 1. originalPrice: extracted from Amazon page (was hardcoded null)
+// 2. discount %:    calculated from prices; falls back to email text
+// 3. discountCode:  searches entire email (not just 600-char window)
+// 4. status:        'pending' — requires manual approval before going live
+// 5. store.set + JSON.stringify (store.setJSON doesn't exist in @netlify/blobs)
+// ────────────────────────────────────────────────────────────────────────────
+
 function extractCdnImages(html) {
   const seen = new Set();
   const images = [];
-
   for (const m of html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)) {
     const src = m[1];
     if (
@@ -25,7 +31,6 @@ function extractCdnImages(html) {
       images.push(src);
     }
   }
-
   for (const m of html.matchAll(
     /https?:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images-amazon\.com|ssl-images-amazon\.com)\/images\/I\/[^\s"'<>&]+/gi
   )) {
@@ -35,7 +40,6 @@ function extractCdnImages(html) {
       images.push(src);
     }
   }
-
   return images.filter(
     u =>
       !u.includes('._SL75_') &&
@@ -57,16 +61,12 @@ function extractAmazonUrls(text) {
     /https?:\/\/a\.co\/[A-Za-z0-9\/]+/gi,
     /https?:\/\/(?:www\.)?amazon\.com\/[a-zA-Z0-9\-_%+\/?.=&#@!]{15,}[^\s"'<>]*/gi,
   ];
-
   const seen = new Set();
   const urls = [];
   for (const pattern of patterns) {
     for (const m of text.matchAll(new RegExp(pattern.source, 'gi'))) {
       const url = m[0].replace(/[.,;)>\]"']+$/, '');
-      if (!seen.has(url)) {
-        seen.add(url);
-        urls.push(url);
-      }
+      if (!seen.has(url)) { seen.add(url); urls.push(url); }
     }
   }
   return urls;
@@ -77,14 +77,9 @@ function stripHtml(html) {
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ').trim();
 }
 
 function buildAffiliateUrl(asin, rawUrl) {
@@ -103,14 +98,16 @@ function buildAffiliateUrl(asin, rawUrl) {
 async function resolveAsin(url) {
   try {
     const res = await fetch(url, {
-      method: 'HEAD',
-      redirect: 'follow',
+      method: 'HEAD', redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
     });
     return res.url?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+function parseDollar(str) {
+  const n = parseFloat(String(str || '').replace(/[^0-9.]/g, ''));
+  return isNaN(n) ? null : n;
 }
 
 async function fetchAmazonMeta(url) {
@@ -125,13 +122,12 @@ async function fetchAmazonMeta(url) {
     });
     if (!res.ok) return null;
 
-    const asin  = res.url?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
-    const html  = await res.text();
+    const asin = res.url?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
+    const html = await res.text();
 
     const title =
       html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
-      html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ||
-      null;
+      html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || null;
 
     const image =
       html.match(/"hiRes":"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/)?.[1] ||
@@ -140,28 +136,50 @@ async function fetchAmazonMeta(url) {
       html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["'](https:\/\/[^"']+)["']/i)?.[1] ||
       (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);
 
-    const priceMatch =
+    // Current (sale) price
+    const salePriceMatch =
       html.match(/"priceAmount":([\d.]+)/) ||
+      html.match(/"salePrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
       html.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>\s*([\d,]+)/);
-    const price = priceMatch ? '$' + priceMatch[1].replace(/,/g, '') : null;
+    const currentPriceNum = salePriceMatch ? parseDollar(salePriceMatch[1]) : null;
+    const price = currentPriceNum ? `$${currentPriceNum.toFixed(2)}` : null;
+
+    // Original / list / was price (FIX: was always null before)
+    const originalPriceMatch =
+      html.match(/"listPrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
+      html.match(/"wasPrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
+      html.match(/"basisPrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
+      html.match(/class=["'][^"']*a-text-price[^"']*["'][^>]*>[^<]*<span[^>]*>\$([\d,]+\.?\d{0,2})<\/span>/) ||
+      html.match(/class=["'][^"']*priceBlockStrikePriceString[^"']*["'][^>]*>\$([\d,]+\.?\d{0,2})/) ||
+      html.match(/List Price:\s*<\/span>[^<]*<span[^>]*>\$([\d,]+\.?\d{0,2})/i) ||
+      html.match(/Was:\s*<\/span>[^<]*<span[^>]*>\$([\d,]+\.?\d{0,2})/i);
+    const originalPriceNum = originalPriceMatch ? parseDollar(originalPriceMatch[1]) : null;
+    const originalPrice = originalPriceNum ? `$${originalPriceNum.toFixed(2)}` : null;
+
+    // Discount %: calculate from prices first (FIX: was only from email text before)
+    let discountPercent = null;
+    if (currentPriceNum && originalPriceNum && originalPriceNum > currentPriceNum) {
+      discountPercent = Math.round((1 - currentPriceNum / originalPriceNum) * 100);
+    }
+    if (!discountPercent) {
+      const dpMatch =
+        html.match(/["']savingsPercentage["']\s*:\s*["']?(\d+)%?["']?/) ||
+        html.match(/\((\d+)%\s*off\)/i);
+      if (dpMatch) discountPercent = parseInt(dpMatch[1], 10);
+    }
 
     return {
-      title:
-        title
-          ?.replace(/\s*[|:]\s*amazon\b.*/i, '')
-          .replace(/\s{1,2}-\s{1,2}amazon\b.*/i, '')
-          .trim()
-          .substring(0, 150) || null,
-      image,
-      price,
-      asin,
+      title: title
+        ?.replace(/\s*[|:]\s*amazon\b.*/i, '')
+        .replace(/\s{1,2}-\s{1,2}amazon\b.*/i, '')
+        .trim().substring(0, 150) || null,
+      image, price, originalPrice, discountPercent, asin,
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function extractPromoCode(text) {
+  if (!text) return null;
   const patterns = [
     /\buse\s+code[:\s]+([A-Z0-9]{4,20})\b/i,
     /\bpromo\s*code[:\s]+([A-Z0-9]{4,20})\b/i,
@@ -180,6 +198,7 @@ function extractPromoCode(text) {
 }
 
 function extractDiscount(text) {
+  if (!text) return null;
   return (
     text.match(/save\s+(\d+)\s*%/i)?.[1] ||
     text.match(/extra\s+(\d+)\s*%\s*off/i)?.[1] ||
@@ -191,15 +210,13 @@ function extractDiscount(text) {
 }
 
 function extractTitle(text) {
+  if (!text) return null;
   const saveMatch =
     text.match(/save\s+\d+%?\s+on\s+(.{10,150}?)(?:\n|\.|!|$)/i) ||
     text.match(/extra\s+\d+%?\s+off\s+(?:on\s+)?(.{10,150}?)(?:\n|\.|!|$)/i) ||
     text.match(/\d+%\s+off\s+(?:on\s+)?(.{10,150}?)(?:\n|\.|!|$)/i);
   if (saveMatch) return saveMatch[1].trim().replace(/\s+/g, ' ').substring(0, 150);
-
-  const lines = text
-    .split(/\n/)
-    .map(l => l.trim())
+  const lines = text.split(/\n/).map(l => l.trim())
     .filter(l => l.length > 15 && !l.startsWith('http') && !/^\d+%/.test(l) && !/^unsubscribe/i.test(l));
   return lines[0]?.substring(0, 150) || null;
 }
@@ -208,9 +225,8 @@ function getProductContext(rawHtml, url, asin) {
   let pos = url ? rawHtml.indexOf(url.substring(0, 50)) : -1;
   if (pos === -1 && asin) pos = rawHtml.indexOf(asin);
   if (pos === -1) return null;
-
   const start = Math.max(0, pos - 600);
-  const end   = Math.min(rawHtml.length, pos + 600);
+  const end = Math.min(rawHtml.length, pos + 600);
   return stripHtml(rawHtml.substring(start, end));
 }
 
@@ -255,7 +271,6 @@ export default async (req, context) => {
   console.log(`[EMAIL] CDN images: ${cdnImages.length}`);
 
   const plainText = stripHtml(rawHtml) || emailText;
-
   const allUrls = [...new Set([
     ...extractAmazonUrls(rawHtml),
     ...extractAmazonUrls(plainText),
@@ -263,43 +278,48 @@ export default async (req, context) => {
   ])];
   console.log(`[EMAIL] Amazon URLs found: ${allUrls.length}`);
 
-  const store    = getStore('submissions');
+  const store = getStore('submissions');
   const savedIds = [];
-  const deals    = [];
-
+  const deals = [];
   const urlsToProcess = allUrls.length > 0 ? allUrls.slice(0, 5) : [null];
 
   for (let i = 0; i < urlsToProcess.length; i++) {
     const rawUrl = urlsToProcess[i];
 
     let asin = rawUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
-    if (rawUrl && !asin) {
-      asin = await resolveAsin(rawUrl);
-    }
+    if (rawUrl && !asin) asin = await resolveAsin(rawUrl);
 
     let meta = null;
     if (rawUrl) {
       meta = await fetchAmazonMeta(rawUrl);
       if (meta?.asin && !asin) asin = meta.asin;
-      console.log(`[EMAIL] [${i}] meta title="${meta?.title?.substring(0,50)||'none'}" price=${meta?.price||'none'} asin=${asin||'none'}`);
+      console.log(`[EMAIL] [${i}] meta title="${meta?.title?.substring(0, 50) || 'none'}" price=${meta?.price || 'none'} originalPrice=${meta?.originalPrice || 'none'} discount=${meta?.discountPercent ?? 'none'}% asin=${asin || 'none'}`);
     }
 
     const productCtx = getProductContext(rawHtml, rawUrl, asin);
-
     const affiliateUrl = buildAffiliateUrl(asin, rawUrl);
 
     const imageUrl =
-      meta?.image ||
-      cdnImages[i] ||
-      cdnImages[0] ||
+      meta?.image || cdnImages[i] || cdnImages[0] ||
       (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);
 
-    const title        = meta?.title        || (productCtx ? extractTitle(productCtx)                               : null) || null;
-    const price        = meta?.price        || (productCtx ? (productCtx.match(/\$[\d,]+\.?\d{0,2}/)?.[0] || null) : null);
-    const discount     =                       (productCtx ? extractDiscount(productCtx)                             : null);
-    const discountCode =                       (productCtx ? extractPromoCode(productCtx)                           : null);
+    const title = meta?.title || (productCtx ? extractTitle(productCtx) : null) || null;
+    const price = meta?.price || (productCtx ? productCtx.match(/\$[\d,]+\.?\d{0,2}/)?.[0] : null) || null;
 
-    console.log(`[EMAIL] [${i}] title="${(title||'null').substring(0,50)}" price=${price||'null'} code=${discountCode||'null'} discount=${discount||'null'}%`);
+    // FIX 1: originalPrice now comes from Amazon page
+    const originalPrice = meta?.originalPrice || null;
+
+    // FIX 2: discount calculated from prices; email text as fallback
+    const discountFromText = extractDiscount(productCtx) || extractDiscount(plainText);
+    const discount = meta?.discountPercent != null ? String(meta.discountPercent) : discountFromText || null;
+
+    // FIX 3: search entire email for promo code, not just 600-char window
+    const discountCode =
+      extractPromoCode(plainText) ||
+      extractPromoCode(emailText) ||
+      extractPromoCode(productCtx);
+
+    console.log(`[EMAIL] [${i}] title="${(title || 'null').substring(0, 50)}" price=${price || 'null'} originalPrice=${originalPrice || 'null'} code=${discountCode || 'null'} discount=${discount || 'null'}%`);
 
     if (!affiliateUrl && !imageUrl && !discount && !discountCode && !title) {
       console.log(`[EMAIL] [${i}] SKIP — no usable fields`);
@@ -309,43 +329,45 @@ export default async (req, context) => {
     const id = 'email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const submission = {
       id,
-      title:         title || null,
-      price:         price || null,
-      originalPrice: null,
-      discount:      discount || null,
-      url:           affiliateUrl || '',
-      imageUrl:      imageUrl || null,
-      discountCode:  discountCode || null,
-      source:        'email',
-      status:        'approved',
-      sponsored:     false,
-      createdAt:     new Date().toISOString(),
-      expiresOn:     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      title: title || null,
+      price: price || null,
+      originalPrice: originalPrice || null,   // FIX 1
+      discount: discount || null,              // FIX 2
+      url: affiliateUrl || '',
+      imageUrl: imageUrl || null,
+      discountCode: discountCode || null,      // FIX 3
+      source: 'email',
+      status: 'pending',                       // FIX 4: was 'approved'
+      sponsored: false,
+      createdAt: new Date().toISOString(),
+      expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
-    await store.setJSON(id, submission);
+    // FIX 5: store.set + JSON.stringify (store.setJSON doesn't exist)
+    await store.set(id, JSON.stringify(submission));
 
     let index = [];
     try { index = await store.get('index', { type: 'json' }) || []; } catch { index = []; }
     index.unshift(id);
-    await store.setJSON('index', index);
+    await store.set('index', JSON.stringify(index));
     await new Promise(r => setTimeout(r, 10));
 
     savedIds.push(id);
-    deals.push({ id, title, price, url: affiliateUrl || '', imageUrl });
-    console.log(`[EMAIL] [${i}] Saved | id:${id} | status:approved`);
+    deals.push({ id, title, price, originalPrice, discount, url: affiliateUrl || '', imageUrl });
+    console.log(`[EMAIL] [${i}] Saved | id:${id} | status:pending`);
   }
 
   console.log(`[EMAIL] Done | saved ${deals.length} deal(s)`);
 
   return new Response(JSON.stringify({
-    success:  true,
-    count:    deals.length,
-    ids:      savedIds,
+    success: true,
+    count: deals.length,
+    ids: savedIds,
     deals,
-    title:    deals[0]?.title || null,
-    price:    deals[0]?.price || null,
-    url:      deals[0]?.url || null,
+    title: deals[0]?.title || null,
+    price: deals[0]?.price || null,
+    originalPrice: deals[0]?.originalPrice || null,
+    url: deals[0]?.url || null,
     imageUrl: deals[0]?.imageUrl || null,
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
