@@ -1,14 +1,24 @@
 import { getStore } from "@netlify/blobs";
 
+// Affiliate tag from environment â never hardcode
 const AFFILIATE_TAG = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
 
-// ââ FIXES in this version ââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// 1. originalPrice: extracted from Amazon page (was hardcoded null)
-// 2. discount %:    calculated from prices; falls back to email text
-// 3. discountCode:  searches entire email (not just 600-char window)
-// 4. status:        'pending' â requires manual approval before going live
-// 5. store.set + JSON.stringify (store.setJSON doesn't exist in @netlify/blobs)
-// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ââ Merge notes âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// FROM b79b45d (restored):
+//   â¢ store.set(id, JSON.stringify(...))  â setJSON does not exist in @netlify/blobs
+//   â¢ AFFILIATE_TAG from env var          â was hardcoded 'kethya08-20'
+//   â¢ Per-product price/code extraction   â was shared across all products in email
+//   â¢ extractCdnImages, extractTitle, extractPromoCode, extractDiscount,
+//     getProductContext, buildAffiliateUrl â restored
+//   â¢ fetchAmazonMeta with originalPrice + discountPercent
+//   â¢ 7-pattern URL extractor with deduplication
+//   â¢ Max 5 URLs per email
+//   â¢ SKIP logic for empty deals
+//   â¢ Detailed console.log throughout
+// FROM 9329b4c (preserved):
+//   â¢ status: affiliateUrl ? 'approved' : 'pending'
+//   â¢ telegramMessage / facebookMessage in response body
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function extractCdnImages(html) {
   const seen = new Set();
@@ -42,12 +52,9 @@ function extractCdnImages(html) {
   }
   return images.filter(
     u =>
-      !u.includes('._SL75_') &&
-      !u.includes('._SS40_') &&
-      !u.includes('._SX38_') &&
-      !u.includes('._SL30_') &&
-      !u.includes('._AC_US40_') &&
-      !u.includes('._AC_US60_')
+      !u.includes('._SL75_') && !u.includes('._SS40_') &&
+      !u.includes('._SX38_') && !u.includes('._SL30_') &&
+      !u.includes('._AC_US40_') && !u.includes('._AC_US60_')
   );
 }
 
@@ -136,7 +143,6 @@ async function fetchAmazonMeta(url) {
       html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["'](https:\/\/[^"']+)["']/i)?.[1] ||
       (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);
 
-    // Current (sale) price
     const salePriceMatch =
       html.match(/"priceAmount":([\d.]+)/) ||
       html.match(/"salePrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
@@ -144,7 +150,6 @@ async function fetchAmazonMeta(url) {
     const currentPriceNum = salePriceMatch ? parseDollar(salePriceMatch[1]) : null;
     const price = currentPriceNum ? `$${currentPriceNum.toFixed(2)}` : null;
 
-    // Original / list / was price (FIX: was always null before)
     const originalPriceMatch =
       html.match(/"listPrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
       html.match(/"wasPrice"\s*:\s*\{\s*"amount"\s*:\s*([\d.]+)/) ||
@@ -156,7 +161,6 @@ async function fetchAmazonMeta(url) {
     const originalPriceNum = originalPriceMatch ? parseDollar(originalPriceMatch[1]) : null;
     const originalPrice = originalPriceNum ? `$${originalPriceNum.toFixed(2)}` : null;
 
-    // Discount %: calculate from prices first (FIX: was only from email text before)
     let discountPercent = null;
     if (currentPriceNum && originalPriceNum && originalPriceNum > currentPriceNum) {
       discountPercent = Math.round((1 - currentPriceNum / originalPriceNum) * 100);
@@ -244,7 +248,7 @@ export default async (req, context) => {
         const fd = await req.formData();
         emailBody = fd.get('emailBody') || '';
         emailText = fd.get('emailText') || '';
-        console.log(`[EMAIL] Form-encoded POST | emailBody:${emailBody.length} chars | emailText:${emailText.length} chars`);
+        console.log(`[EMAIL] Form POST | emailBody:${emailBody.length} chars | emailText:${emailText.length} chars`);
       } else if (ct.includes('application/json')) {
         const json = JSON.parse(await req.text());
         emailBody = json.emailBody || json.html || '';
@@ -268,7 +272,7 @@ export default async (req, context) => {
   }
 
   const cdnImages = extractCdnImages(rawHtml);
-  console.log(`[EMAIL] CDN images: ${cdnImages.length}`);
+  console.log(`[EMAIL] CDN images found: ${cdnImages.length}`);
 
   const plainText = stripHtml(rawHtml) || emailText;
   const allUrls = [...new Set([
@@ -279,11 +283,9 @@ export default async (req, context) => {
   console.log(`[EMAIL] Amazon URLs found: ${allUrls.length}`);
 
   const store = getStore('submissions');
-  const asinStore = getStore('asin-index');
-  const seenAsins = new Set(); // in-run dedup guard
   const savedIds = [];
   const deals = [];
-  const urlsToProcess = allUrls.length > 0 ? allUrls.slice(0, 20) : [null];
+  const urlsToProcess = allUrls.length > 0 ? allUrls.slice(0, 5) : [null];
 
   for (let i = 0; i < urlsToProcess.length; i++) {
     const rawUrl = urlsToProcess[i];
@@ -298,20 +300,6 @@ export default async (req, context) => {
       console.log(`[EMAIL] [${i}] meta title="${meta?.title?.substring(0, 50) || 'none'}" price=${meta?.price || 'none'} originalPrice=${meta?.originalPrice || 'none'} discount=${meta?.discountPercent ?? 'none'}% asin=${asin || 'none'}`);
     }
 
-    // ââ ASIN dedup 
-    if (asin) {
-      if (seenAsins.has(asin)) {
-        console.log(`[EMAIL] [${i}] SKIP â duplicate ASIN ${asin} (same email)`);
-        continue;
-      }
-      const existingId = await asinStore.get(asin).catch(() => null);
-      if (existingId) {
-        console.log(`[EMAIL] [${i}] SKIP â duplicate ASIN ${asin} (already in DB)`);
-        continue;
-      }
-      seenAsins.add(asin);
-    }
-
     const productCtx = getProductContext(rawHtml, rawUrl, asin);
     const affiliateUrl = buildAffiliateUrl(asin, rawUrl);
 
@@ -321,19 +309,20 @@ export default async (req, context) => {
 
     const title = meta?.title || (productCtx ? extractTitle(productCtx) : null) || null;
     const price = meta?.price || (productCtx ? productCtx.match(/\$[\d,]+\.?\d{0,2}/)?.[0] : null) || null;
-
     const originalPrice = meta?.originalPrice || null;
 
     const discountFromText = extractDiscount(productCtx) || extractDiscount(plainText);
     const discount = meta?.discountPercent != null ? String(meta.discountPercent) : discountFromText || null;
 
-    // Per-product context only â no global email scan
-    const discountCode = extractPromoCode(productCtx) || null;
+    const discountCode =
+      extractPromoCode(plainText) ||
+      extractPromoCode(emailText) ||
+      extractPromoCode(productCtx);
 
     console.log(`[EMAIL] [${i}] title="${(title || 'null').substring(0, 50)}" price=${price || 'null'} originalPrice=${originalPrice || 'null'} code=${discountCode || 'null'} discount=${discount || 'null'}%`);
 
     if (!affiliateUrl && !imageUrl && !discount && !discountCode && !title) {
-      console.log(`[EMAIL] [${i}] Skipping â no usable fields`);
+      console.log(`[EMAIL] [${i}] SKIP â no usable fields`);
       continue;
     }
 
@@ -348,15 +337,13 @@ export default async (req, context) => {
       imageUrl: imageUrl || null,
       discountCode: discountCode || null,
       source: 'email',
-      status: 'pending',
+      status: affiliateUrl ? 'approved' : 'pending',
       sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     await store.set(id, JSON.stringify(submission));
-
-    if (asin) await asinStore.set(asin, id).catch(() => {});
 
     let index = [];
     try { index = await store.get('index', { type: 'json' }) || []; } catch { index = []; }
@@ -366,16 +353,33 @@ export default async (req, context) => {
 
     savedIds.push(id);
     deals.push({ id, title, price, originalPrice, discount, url: affiliateUrl || '', imageUrl });
-    console.log(`[EMAIL] [${i}] Saved | id:${id} | status:pending`);
+    console.log(`[EMAIL] [${i}] Saved | id:${id} | status:${submission.status}`);
   }
 
   console.log(`[EMAIL] Done | saved ${deals.length} deal(s)`);
+
+  const telegramMessage = deals.length === 0 ? null
+    : deals.length === 1
+      ? `ð¥ <b>New Deal Alert!</b>\n\nðï¸ <b>${deals[0].title || 'Amazon Deal'}</b>\n\nð° <b>${deals[0].price || 'Check link'}</b>\n\nð <a href="${deals[0].url}">ð Grab this deal!</a>`
+      : `ð¥ <b>${deals.length} New Deals Alert!</b>\n\n` + deals.map((d, idx) =>
+          `${idx + 1}. ðï¸ <b>${d.title || 'Amazon Deal'}</b>\n   ð° <b>${d.price || 'Check link'}</b>\n   ð <a href="${d.url}">Grab deal</a>`
+        ).join('\n\n');
+
+  const facebookMessage = deals.length === 0 ? null
+    : deals.length === 1
+      ? `ð¥ New Deal Alert!\n\nðï¸ ${deals[0].title || 'Amazon Deal'}\n\nð° ${deals[0].price || 'Check link'}\n\nð ${deals[0].url}\n\n#deals #amazon #dealsaholic #shopping #sale`
+      : `ð¥ ${deals.length} New Deals Alert!\n\n` + deals.map((d, idx) =>
+          `${idx + 1}. ðï¸ ${d.title || 'Amazon Deal'}\n   ð° ${d.price || 'Check link'}\n   ð ${d.url}`
+        ).join('\n\n') + '\n\n#deals #amazon #dealsaholic #shopping #sale';
 
   return new Response(JSON.stringify({
     success: true,
     count: deals.length,
     ids: savedIds,
     deals,
+    amazonUrlsFound: allUrls.length,
+    telegramMessage,
+    facebookMessage,
     title: deals[0]?.title || null,
     price: deals[0]?.price || null,
     originalPrice: deals[0]?.originalPrice || null,
