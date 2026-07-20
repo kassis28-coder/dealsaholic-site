@@ -3,7 +3,7 @@ import { getStore } from "@netlify/blobs";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const CONCURRENCY = 20;
-const RATE_LIMIT_DELAY_MS = 500;
+const RATE_LIMIT_DELAY_MS = 2000;
 const MAX_POSTED_IDS = 1000;
 
 // ── Caption builder ──────────────────────────────────────────────────────────
