@@ -19,7 +19,7 @@ async function getApprovedSellerDeals() {
     if (!Array.isArray(index)) return [];
 
     // Cap at the 100 most recent IDs (index is newest-first)
-    const recentIds = index.slice(0, 100);
+    const recentIds = index; // no cap — show all approved non-expired deals
     const now = Date.now();
 
     // Fetch all records in parallel instead of sequentially
