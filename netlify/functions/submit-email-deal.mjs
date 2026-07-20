@@ -2,13 +2,13 @@ import { getStore } from "@netlify/blobs";
 
 const AFFILIATE_TAG = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
 
-// ── FIXES in this version ────────────────────────────────────────────────────
+// ââ FIXES in this version ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // 1. originalPrice: extracted from Amazon page (was hardcoded null)
 // 2. discount %:    calculated from prices; falls back to email text
 // 3. discountCode:  searches entire email (not just 600-char window)
-// 4. status:        'pending' — requires manual approval before going live
+// 4. status:        'pending' â requires manual approval before going live
 // 5. store.set + JSON.stringify (store.setJSON doesn't exist in @netlify/blobs)
-// ────────────────────────────────────────────────────────────────────────────
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function extractCdnImages(html) {
   const seen = new Set();
@@ -279,9 +279,11 @@ export default async (req, context) => {
   console.log(`[EMAIL] Amazon URLs found: ${allUrls.length}`);
 
   const store = getStore('submissions');
+  const asinStore = getStore('asin-index');
+  const seenAsins = new Set(); // in-run dedup guard
   const savedIds = [];
   const deals = [];
-  const urlsToProcess = allUrls.length > 0 ? allUrls.slice(0, 5) : [null];
+  const urlsToProcess = allUrls.length > 0 ? allUrls.slice(0, 20) : [null];
 
   for (let i = 0; i < urlsToProcess.length; i++) {
     const rawUrl = urlsToProcess[i];
@@ -296,6 +298,20 @@ export default async (req, context) => {
       console.log(`[EMAIL] [${i}] meta title="${meta?.title?.substring(0, 50) || 'none'}" price=${meta?.price || 'none'} originalPrice=${meta?.originalPrice || 'none'} discount=${meta?.discountPercent ?? 'none'}% asin=${asin || 'none'}`);
     }
 
+    // ââ ASIN dedup 
+    if (asin) {
+      if (seenAsins.has(asin)) {
+        console.log(`[EMAIL] [${i}] SKIP â duplicate ASIN ${asin} (same email)`);
+        continue;
+      }
+      const existingId = await asinStore.get(asin).catch(() => null);
+      if (existingId) {
+        console.log(`[EMAIL] [${i}] SKIP â duplicate ASIN ${asin} (already in DB)`);
+        continue;
+      }
+      seenAsins.add(asin);
+    }
+
     const productCtx = getProductContext(rawHtml, rawUrl, asin);
     const affiliateUrl = buildAffiliateUrl(asin, rawUrl);
 
@@ -306,23 +322,18 @@ export default async (req, context) => {
     const title = meta?.title || (productCtx ? extractTitle(productCtx) : null) || null;
     const price = meta?.price || (productCtx ? productCtx.match(/\$[\d,]+\.?\d{0,2}/)?.[0] : null) || null;
 
-    // FIX 1: originalPrice now comes from Amazon page
     const originalPrice = meta?.originalPrice || null;
 
-    // FIX 2: discount calculated from prices; email text as fallback
     const discountFromText = extractDiscount(productCtx) || extractDiscount(plainText);
     const discount = meta?.discountPercent != null ? String(meta.discountPercent) : discountFromText || null;
 
-    // FIX 3: search entire email for promo code, not just 600-char window
-    const discountCode =
-      extractPromoCode(plainText) ||
-      extractPromoCode(emailText) ||
-      extractPromoCode(productCtx);
+    // Per-product context only â no global email scan
+    const discountCode = extractPromoCode(productCtx) || null;
 
     console.log(`[EMAIL] [${i}] title="${(title || 'null').substring(0, 50)}" price=${price || 'null'} originalPrice=${originalPrice || 'null'} code=${discountCode || 'null'} discount=${discount || 'null'}%`);
 
     if (!affiliateUrl && !imageUrl && !discount && !discountCode && !title) {
-      console.log(`[EMAIL] [${i}] SKIP — no usable fields`);
+      console.log(`[EMAIL] [${i}] Skipping â no usable fields`);
       continue;
     }
 
@@ -331,20 +342,21 @@ export default async (req, context) => {
       id,
       title: title || null,
       price: price || null,
-      originalPrice: originalPrice || null,   // FIX 1
-      discount: discount || null,              // FIX 2
+      originalPrice: originalPrice || null,
+      discount: discount || null,
       url: affiliateUrl || '',
       imageUrl: imageUrl || null,
-      discountCode: discountCode || null,      // FIX 3
+      discountCode: discountCode || null,
       source: 'email',
-      status: 'pending',                       // FIX 4: was 'approved'
+      status: 'pending',
       sponsored: false,
       createdAt: new Date().toISOString(),
       expiresOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
-    // FIX 5: store.set + JSON.stringify (store.setJSON doesn't exist)
     await store.set(id, JSON.stringify(submission));
+
+    if (asin) await asinStore.set(asin, id).catch(() => {});
 
     let index = [];
     try { index = await store.get('index', { type: 'json' }) || []; } catch { index = []; }
