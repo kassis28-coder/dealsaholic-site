@@ -1,26 +1,26 @@
 // email-extraction-engine.mjs
-// Three-phase pipeline: Extract → Format → Save to pending
+// Three-phase pipeline: Extract â Format â Save to pending
 //
-// PHASE 1 — EXTRACT: Claude reads each product's isolated text section.
-// PHASE 2 — FORMAT: Fields are placed into the canonical 7-field sequence.
-// PHASE 3 — SAVE: Each deal is written to Netlify Blobs with status 'pending'
+// PHASE 1 â EXTRACT: Email is split into numbered product blocks (1, 2, US01â¦).
+//           Claude reads each block in full and extracts the 7 canonical fields.
+// PHASE 2 â FORMAT: Fields placed into the canonical 7-field sequence.
+// PHASE 3 â SAVE: Each deal written to Netlify Blobs with status 'pending'
 //           for human review in the admin panel before going live.
 //
-// Products are processed in sequence (deal 1 = product 1, deal 2 = product 2...).
-// Each product is fully isolated — its text section is bounded by the Amazon URLs
-// of adjacent products. Data from product N can NEVER appear in product M.
+// Block boundaries come from numbered markers (lone digit lines or US01/US02).
+// Data from block N can NEVER appear in block M.
 //
 // NO guessing. NO inferring.
 // Affiliate tag added to every URL from AMAZON_PARTNER_TAG env var.
-// All deals go to PENDING — nothing is auto-approved.
+// All deals go to PENDING â nothing is auto-approved.
 
 import { getStore } from '@netlify/blobs';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_PRODUCTS = 10;
+const MAX_PRODUCTS = 20;
 
-// ─── PHASE 1a: Strip HTML to readable text ───────────────────────────────────
+// âââ Strip HTML to readable text âââââââââââââââââââââââââââââââââââââââââââââ
 
 function htmlToText(html) {
   return (html || '')
@@ -43,9 +43,35 @@ function htmlToText(html) {
     .trim();
 }
 
-// ─── PHASE 1b: Find all Amazon URLs (preserves order = product sequence) ────────
-// Includes /promocode/ coupon links — each URL anchors one deal section.
-// Affiliate tag is added later via addAffiliateTag().
+// âââ Split email into numbered product blocks âââââââââââââââââââââââââââââââââ
+// Detects block markers: a lone number or US-prefixed number on its own line.
+// Examples: "1\n", "2\n", "US01\n", "US02\n", "1-\n", "deal 1\n"
+// Returns array of { position, blockNum, section } or null if no markers found.
+
+function splitIntoProductBlocks(text) {
+  // Matches a line that is ONLY a block identifier (with optional leading space):
+  //   "1", "2", "US01", "1-", "deal 1", "product 1", etc.
+  const markerRe = /(?:^|\n)[ \t]*(?:(?:deal|product)[ \t]*)?(\bUS\d+\b|\b\d+\b)[ \t]*-?[ \t]*\n/gi;
+
+  const positions = [];
+  let match;
+  while ((match = markerRe.exec(text)) !== null) {
+    // contentStart: where the block content begins (after the marker line)
+    const markerStart = match.index === 0 ? 0 : match.index + 1;
+    const contentStart = match.index + match[0].length;
+    positions.push({ blockNum: match[1], markerStart, contentStart });
+  }
+
+  if (positions.length === 0) return null;
+
+  return positions.slice(0, MAX_PRODUCTS).map((p, i) => {
+    const end = i < positions.length - 1 ? positions[i + 1].markerStart : text.length;
+    const section = text.slice(p.contentStart, end).trim();
+    return { position: i + 1, blockNum: p.blockNum, section };
+  });
+}
+
+// âââ Find all Amazon URLs in a text string ââââââââââââââââââââââââââââââââââââ
 
 function findAmazonUrls(text) {
   const pattern = /https?:\/\/(?:www\.)?(?:amazon\.com|amzn\.to|amzn\.com|a\.co)\/[^\s"'<>)]+/gi;
@@ -58,8 +84,7 @@ function findAmazonUrls(text) {
   return urls;
 }
 
-// ─── Add affiliate tag to any Amazon URL ─────────────────────────────────────
-// Tag always comes from env — never hardcoded.
+// âââ Add affiliate tag â always from env, never hardcoded ââââââââââââââââââââ
 
 function addAffiliateTag(url) {
   const tag = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
@@ -72,33 +97,27 @@ function addAffiliateTag(url) {
   }
 }
 
-// ─── PHASE 1c: Extract ASIN from URL ─────────────────────────────────────────
+// âââ Extract ASIN from URL ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function extractAsin(url) {
   return url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
 }
 
-// ─── PHASE 1d: Extract image URL from the product's HTML section ─────────────
-// Slices the raw email HTML between this product's URL and the next URL.
-// Returns the FIRST Amazon CDN image found in that slice — no guessing,
-// no proximity heuristics, no ASIN matching. If the email has multiple
-// images (e.g. a promo banner + product image), the first one wins.
+// âââ Extract product image from the HTML near a given URL ââââââââââââââââââââ
+// Scans raw HTML in a window around productUrl â nextProductUrl.
 
 function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
   const start = rawHtml.indexOf(productUrl);
   if (start < 0) return null;
 
-  // Include context before the URL — product images often appear above the link.
   const sectionStart = Math.max(0, start - 5000);
   const afterUrl = start + productUrl.length;
-  const end = nextProductUrl
-    ? rawHtml.indexOf(nextProductUrl, afterUrl)
-    : rawHtml.length;
-  const sectionEnd = (end > afterUrl) ? end : rawHtml.length;
+  const end = nextProductUrl ? rawHtml.indexOf(nextProductUrl, afterUrl) : rawHtml.length;
+  const sectionEnd = end > afterUrl ? end : rawHtml.length;
 
   const htmlSlice = rawHtml.slice(sectionStart, sectionEnd);
-
   const pattern = /https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com)\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+
   for (const img of (htmlSlice.match(pattern) || [])) {
     const clean = img.split('?')[0];
     if (!/_SL75_|_SS40_|thumbnail/i.test(clean)) return clean;
@@ -106,62 +125,42 @@ function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
   return null;
 }
 
-// ─── PHASE 1e: Split text into isolated per-product sections ─────────────────
-// Product N's section spans from end of URL[N-1] to start of URL[N+1].
-// Hard boundaries ensure data from product A cannot appear in product B's section.
+// âââ Claude extracts 7 fields from one product block âââââââââââââââââââââââââ
+// Claude sees the FULL block for this product only â hard-bounded by block markers.
 
-function splitIntoProductSections(text, urls) {
-  if (urls.length === 0) return [];
-  const positions = [];
-  for (const url of urls) {
-    const idx = text.indexOf(url);
-    if (idx >= 0) positions.push({ url, idx, end: idx + url.length });
-  }
-  positions.sort((a, b) => a.idx - b.idx);
-  return positions.map((p, i) => {
-    const start = i === 0 ? 0 : positions[i - 1].end;
-    const end   = i === positions.length - 1 ? text.length : positions[i + 1].idx;
-    return { url: p.url, position: i + 1, section: text.slice(start, end).trim() };
-  });
-}
+async function extractFromBlock(section, position, apiKey) {
+  const prompt = `You are a deal extraction assistant. The text below is ONE product block (#${position}).
+Extract EXACTLY these 7 fields. No guessing, no inferring â only what is explicitly written.
 
-// ─── PHASE 1f: Claude extracts raw fields from one product's section ──────────
-// Claude only sees text for THIS product — no other product's data is in scope.
-// discountPercent must appear verbatim; it is never calculated.
+FIELDS:
+1. productName   â The product title/name only. NEVER include a % or promo code here.
+2. discountPercent â The discount percentage (e.g. "50% off", "30%"). null if not stated.
+3. promoCode     â The discount/promo code (letters + numbers only, e.g. "V6WA8CIO"). null if none.
+4. dealPrice     â The deal/discount price (e.g. "$19.98"). If a range, return only the first value.
+5. amazonUrl     â The Amazon link (full URL starting with https://www.amazon.com/...).
+6. expirationDate â The end/expiration date. Ignore start dates.
+7. imageUrl      â null (images are fetched separately; always return null for this field).
 
-async function extractFromSection(section, url, position, apiKey) {
-  const prompt = `You are a deal extraction assistant. The text below belongs to product #${position} only.
-Extract ONLY these 5 fields. Ignore everything else.
+RULES:
+- If a field is absent, return null.
+- promoCode: extract only the code itself (no %, no "off", no extra words).
+- Do NOT copy data between products.
+- Do NOT calculate anything.
 
-STRICT RULES:
-- Extract ONLY what is explicitly written. Do NOT guess or infer.
-- If a field is not present, return null.
-- Never copy data from another product.
-- Never calculate anything.
-
-IGNORE these completely (do not use for any field):
-- Lines starting with "Creator Campaign Id:", "rate:", "Budget:" — these are internal tracking, not product data
-- Start Date — ignore it
-
-FIELD RULES:
-- productName: The product TITLE only — the name of the item (e.g. "Schwer 6 Pairs ANSI A2 Cut Resistant Work Gloves", "Eukaroy 2 pc set", "Cozy Bliss Cooling Blanket"). NEVER include a discount %, promo code, or any other data in this field. Skip any line that starts with "Creator Campaign Id:" or contains "rate:" and "Budget:".
-- dealPrice: The "Discount price" field. If it is a range like "$10.99-$17.95", return ONLY the first amount: "$10.99".
-- promoCode: The value after "Discount code:" — letters and numbers only (e.g. "2N76WL9K"). NEVER a percentage. If the line contains "+ X% off Coupon" after the code, return only the code letters/numbers before the "+".
-- discountPercent: The value after "Discount:" — as written (e.g. "50% off", "35% off").
-- expirationDate: The "End Date" value only. Ignore Start Date.
-
-Return a JSON object with EXACTLY these fields:
+Return ONLY a JSON object with exactly these keys:
 {
-  "productName": string or null,
-  "dealPrice": string or null,
-  "promoCode": string or null,
-  "discountPercent": string or null,
-  "expirationDate": string or null
+  "productName": string|null,
+  "discountPercent": string|null,
+  "promoCode": string|null,
+  "dealPrice": string|null,
+  "amazonUrl": string|null,
+  "expirationDate": string|null,
+  "imageUrl": null
 }
 
-Return ONLY the JSON object. No explanation. No markdown. No commentary.
+No markdown, no explanation. JSON only.
 
-TEXT FOR PRODUCT #${position}:
+PRODUCT BLOCK #${position}:
 ---
 ${section.slice(0, 3000)}
 ---`;
@@ -199,27 +198,26 @@ ${section.slice(0, 3000)}
   }
 }
 
-// ─── PHASE 2: Format into the canonical 7-field sequence ─────────────────────
-// Canonical field order:
-//   1. productName  2. dealPrice  3. promoCode  4. discountPercent
-//   5. amazonUrl    6. imageUrl   7. expirationDate
+// âââ Format into the canonical 7-field deal record âââââââââââââââââââââââââââ
 
-function formatDeal(extracted, amazonUrl, imageUrl, position, meta) {
+function formatDeal(extracted, affiliateUrl, imageUrl, position, meta) {
   const f = extracted || {};
+  // Use Claude's extracted URL if present, else fall back to the one we found
+  const finalUrl = f.amazonUrl ? addAffiliateTag(f.amazonUrl) : affiliateUrl;
   return {
     position,
     productName:     f.productName     || null,
     dealPrice:       f.dealPrice       || null,
     promoCode:       f.promoCode       || null,
     discountPercent: f.discountPercent || null,
-    amazonUrl,
+    amazonUrl:       finalUrl          || null,
     imageUrl,
     expirationDate:  f.expirationDate  || null,
     _meta: meta,
   };
 }
 
-// ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
+// âââ MAIN HANDLER âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export default async (req) => {
   try {
@@ -235,12 +233,12 @@ export default async (req) => {
 
     if (ct.includes('application/json')) {
       const b  = await req.json();
-      rawHtml   = b.htmlBody  || b.html  || '';
-      plainText = b.textBody  || b.text  || '';
+      rawHtml   = b.htmlBody || b.html || '';
+      plainText = b.textBody || b.text || '';
     } else if (ct.includes('multipart/form-data') || ct.includes('application/x-www-form-urlencoded')) {
       const f  = await req.formData();
-      rawHtml   = f.get('htmlBody')  || f.get('html')  || '';
-      plainText = f.get('textBody')  || f.get('text')  || '';
+      rawHtml   = f.get('htmlBody') || f.get('html') || '';
+      plainText = f.get('textBody') || f.get('text') || '';
     } else {
       rawHtml = await req.text();
     }
@@ -251,28 +249,51 @@ export default async (req) => {
       });
     }
 
-    // PHASE 1 — EXTRACT
-    const emailText     = htmlToText(rawHtml) || plainText;
-    const allUrls       = findAmazonUrls(rawHtml + '\n' + plainText);
-    const urlsToProcess = allUrls.slice(0, MAX_PRODUCTS);
-    const sections      = splitIntoProductSections(emailText, urlsToProcess);
+    // PHASE 1 â EXTRACT
+    const emailText = htmlToText(rawHtml) || plainText;
+
+    // Split by numbered block markers (1\n, 2\n, US01\n, etc.)
+    // Fall back to URL-based splitting if no markers found.
+    let blocks = splitIntoProductBlocks(emailText);
+
+    // Fallback: if no numbered blocks detected, create one block per Amazon URL
+    if (!blocks || blocks.length === 0) {
+      const allUrls = findAmazonUrls(emailText);
+      if (allUrls.length === 0) {
+        return new Response(JSON.stringify({ error: 'No product blocks or Amazon URLs found in email.' }), {
+          status: 400, headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      // One big block containing everything â Claude will extract what it can
+      blocks = [{ position: 1, blockNum: '1', section: emailText }];
+    }
+
+    // Collect all Amazon URLs from the full email (for image extraction only)
+    const allUrlsForImages = findAmazonUrls(rawHtml + '\n' + emailText);
 
     const deals = [];
     let totalInputTokens  = 0;
     let totalOutputTokens = 0;
 
-    for (let i = 0; i < sections.length; i++) {
-      const { url, section, position } = sections[i];
-      const nextUrl      = sections[i + 1]?.url || null;
-      const asin         = extractAsin(url);
-      const affiliateUrl = addAffiliateTag(url);
-      const imageUrl     = extractImageForSection(rawHtml, url, nextUrl);
-      const result       = await extractFromSection(section, url, position, apiKey);
+    for (const block of blocks) {
+      const { position, section } = block;
+
+      // Find the Amazon URL within this block (for affiliate tag + ASIN + image)
+      const blockUrls  = findAmazonUrls(section);
+      const primaryUrl = blockUrls[0] || null;
+      const nextUrl    = allUrlsForImages[allUrlsForImages.indexOf(primaryUrl) + 1] || null;
+
+      const asin         = primaryUrl ? extractAsin(primaryUrl) : null;
+      const affiliateUrl = primaryUrl ? addAffiliateTag(primaryUrl) : null;
+      const imageUrl     = primaryUrl ? extractImageForSection(rawHtml, primaryUrl, nextUrl) : null;
+
+      // Call Claude on the full block text
+      const result = await extractFromBlock(section, position, apiKey);
 
       totalInputTokens  += result.tokens?.input_tokens  || 0;
       totalOutputTokens += result.tokens?.output_tokens || 0;
 
-      // PHASE 2 — FORMAT
+      // PHASE 2 â FORMAT
       const deal = formatDeal(
         result.ok ? result.fields : null,
         affiliateUrl,
@@ -282,6 +303,7 @@ export default async (req) => {
           extractionOk:    result.ok,
           extractionError: result.ok ? null : result.error,
           asin,
+          blockNum:        block.blockNum,
           sectionLength:   section.length,
           sectionPreview:  section.slice(0, 300),
         }
@@ -289,10 +311,9 @@ export default async (req) => {
       deals.push(deal);
     }
 
-    // PHASE 3 — SAVE: Write each formatted deal to Netlify Blobs as 'pending'.
-    // Deals with no productName are skipped (nothing to review).
-    const store = getStore('deals');
-    const saved = [];
+    // PHASE 3 â SAVE to Netlify Blobs as 'pending'
+    const store   = getStore('deals');
+    const saved   = [];
     const skipped = [];
 
     for (const deal of deals) {
@@ -302,12 +323,11 @@ export default async (req) => {
       }
 
       // Dedup key: prefer ASIN, fall back to URL hash
-      const asin = deal._meta.asin;
+      const asin     = deal._meta.asin;
       const dedupKey = asin
         ? `asin:${asin}`
-        : `url:${Buffer.from(deal.amazonUrl).toString('base64').slice(0, 20)}`;
+        : `url:${Buffer.from(deal.amazonUrl || deal.productName).toString('base64').slice(0, 20)}`;
 
-      // Check for existing deal with same key
       const existing = await store.get(dedupKey, { type: 'json' }).catch(() => null);
       if (existing) {
         skipped.push({ position: deal.position, reason: 'duplicate', key: dedupKey });
@@ -335,7 +355,7 @@ export default async (req) => {
 
     return new Response(JSON.stringify({
       summary: {
-        urlsFound:   allUrls.length,
+        blocksFound: blocks.length,
         extracted:   deals.length,
         saved:       saved.length,
         skipped:     skipped.length,
