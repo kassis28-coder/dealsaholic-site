@@ -91,27 +91,33 @@ async function resolveAsin(url) {
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function getProductContext(rawHtml, plainText, url, asin) {
-  const W = 600;
-  const stripped = stripHtml(rawHtml);
   const terms = [url, ...(asin ? [asin] : [])];
 
-  // 1. Search raw HTML first — URLs live in href="..." attributes which get stripped
+  // Map all Amazon URL positions in raw HTML to use as product boundaries
+  const urlBoundaries = [];
+  const urlPat = /https?:\/\/(?:www\.)?(?:amazon\.com|amzn\.to|amzn\.com|a\.co)[^\s"'<>)]+/gi;
+  let m;
+  while ((m = urlPat.exec(rawHtml)) !== null) urlBoundaries.push({ pos: m.index, end: m.index + m[0].length });
+
   for (const term of terms) {
     const idx = rawHtml.indexOf(term);
     if (idx >= 0) {
-      // Extract a larger raw window, then strip it to get readable text
-      const rawWindow = rawHtml.slice(Math.max(0, idx - W * 4), idx + term.length + W * 4);
-      return stripHtml(rawWindow);
+      // Bound the context between the prev and next Amazon URL
+      const prev = urlBoundaries.filter(u => u.end <= idx).slice(-1)[0];
+      const next = urlBoundaries.find(u => u.pos > idx);
+      const rawStart = prev ? prev.end : Math.max(0, idx - 3000);
+      const rawEnd   = next ? next.pos : Math.min(rawHtml.length, idx + term.length + 3000);
+      return stripHtml(rawHtml.slice(rawStart, rawEnd));
     }
   }
 
-  // 2. Fall back to stripped HTML and plain text
+  // Fallback: stripped HTML or plain text
+  const stripped = stripHtml(rawHtml);
+  const W = 600;
   for (const src of [stripped, plainText || '']) {
     for (const term of terms) {
       const idx = src.indexOf(term);
-      if (idx >= 0) {
-        return src.slice(Math.max(0, idx - W), idx + term.length + W);
-      }
+      if (idx >= 0) return src.slice(Math.max(0, idx - W), idx + term.length + W);
     }
   }
   return '';
