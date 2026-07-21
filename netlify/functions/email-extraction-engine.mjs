@@ -10,7 +10,8 @@
 // Each product is fully isolated — its text section is bounded by the Amazon URLs
 // of adjacent products. Data from product N can NEVER appear in product M.
 //
-// NO guessing. NO inferring. NO affiliate links.
+// NO guessing. NO inferring.
+// Affiliate tag added to every URL from AMAZON_PARTNER_TAG env var.
 // All deals go to PENDING — nothing is auto-approved.
 
 import { getStore } from '@netlify/blobs';
@@ -42,7 +43,9 @@ function htmlToText(html) {
     .trim();
 }
 
-// ─── PHASE 1b: Find all Amazon product URLs (preserves order = product sequence) ─
+// ─── PHASE 1b: Find all Amazon URLs (preserves order = product sequence) ────────
+// Includes /promocode/ coupon links — each URL anchors one deal section.
+// Affiliate tag is added later via addAffiliateTag().
 
 function findAmazonUrls(text) {
   const pattern = /https?:\/\/(?:www\.)?(?:amazon\.com|amzn\.to|amzn\.com|a\.co)\/[^\s"'<>)]+/gi;
@@ -55,52 +58,51 @@ function findAmazonUrls(text) {
   return urls;
 }
 
+// ─── Add affiliate tag to any Amazon URL ─────────────────────────────────────
+// Tag always comes from env — never hardcoded.
+
+function addAffiliateTag(url) {
+  const tag = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
+  try {
+    const u = new URL(url);
+    u.searchParams.set('tag', tag);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 // ─── PHASE 1c: Extract ASIN from URL ─────────────────────────────────────────
 
 function extractAsin(url) {
   return url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
 }
 
-// ─── PHASE 1d: Extract image URL from HTML using ASIN, then proximity ────────
-// Image comes from the raw HTML — ASIN match is the most reliable signal.
-// Proximity fallback used only when ASIN match fails.
-// Returns null if no confident match found.
+// ─── PHASE 1d: Extract image URL from the product's HTML section ─────────────
+// Slices the raw email HTML between this product's URL and the next URL.
+// Returns the FIRST Amazon CDN image found in that slice — no guessing,
+// no proximity heuristics, no ASIN matching. If the email has multiple
+// images (e.g. a promo banner + product image), the first one wins.
 
-function extractImageForProduct(rawHtml, asin, productUrl) {
-  const cdnPatterns = [
-    /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/images-na\.ssl-images-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/images\.amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/ecx\.images-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-  ];
-  const allImages = [];
-  for (const pat of cdnPatterns) {
-    for (const img of (rawHtml.match(pat) || [])) {
-      const clean = img.split('?')[0];
-      if (!/_SL75_|_SS40_|thumbnail/i.test(clean)) allImages.push(clean);
-    }
+function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
+  const start = rawHtml.indexOf(productUrl);
+  if (start < 0) return null;
+
+  // Include context before the URL — product images often appear above the link.
+  const sectionStart = Math.max(0, start - 5000);
+  const afterUrl = start + productUrl.length;
+  const end = nextProductUrl
+    ? rawHtml.indexOf(nextProductUrl, afterUrl)
+    : rawHtml.length;
+  const sectionEnd = (end > afterUrl) ? end : rawHtml.length;
+
+  const htmlSlice = rawHtml.slice(sectionStart, sectionEnd);
+
+  const pattern = /https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com)\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+  for (const img of (htmlSlice.match(pattern) || [])) {
+    const clean = img.split('?')[0];
+    if (!/_SL75_|_SS40_|thumbnail/i.test(clean)) return clean;
   }
-  const unique = [...new Set(allImages)];
-  if (unique.length === 0) return null;
-
-  if (asin) {
-    const match = unique.find(img => img.includes(asin));
-    if (match) return match;
-  }
-
-  const urlPos = rawHtml.indexOf(productUrl);
-  if (urlPos >= 0) {
-    let best = null, bestDist = Infinity;
-    for (const img of unique) {
-      const pos = rawHtml.indexOf(img);
-      if (pos >= 0) {
-        const dist = Math.abs(pos - urlPos);
-        if (dist < bestDist && dist < 2000) { bestDist = dist; best = img; }
-      }
-    }
-    if (best) return best;
-  }
-
   return null;
 }
 
@@ -124,19 +126,29 @@ function splitIntoProductSections(text, urls) {
 }
 
 // ─── PHASE 1f: Claude extracts raw fields from one product's section ──────────
-// Claude only sees text for THIS product —"no other product's data is in scope.
+// Claude only sees text for THIS product — no other product's data is in scope.
 // discountPercent must appear verbatim; it is never calculated.
 
 async function extractFromSection(section, url, position, apiKey) {
   const prompt = `You are a deal extraction assistant. The text below belongs to product #${position} only.
+Extract ONLY these 5 fields. Ignore everything else.
 
 STRICT RULES:
-- Extract ONLY what is explicitly written in this text. Do NOT guess or infer.
-- If a field is not clearly present in the text, return null.
+- Extract ONLY what is explicitly written. Do NOT guess or infer.
+- If a field is not present, return null.
 - Never copy data from another product.
-- Never calculate anything (no math, no price comparison).
-- discountPercent must appear verbatim in the text (e.g. "50% off", "40% off"). Do not derive it.
-- promoCode is a coupon/promo/discount code made of letters and numbers only. It is NOT a percentage.
+- Never calculate anything.
+
+IGNORE these completely (do not use for any field):
+- Lines starting with "Creator Campaign Id:", "rate:", "Budget:" — these are internal tracking, not product data
+- Start Date — ignore it
+
+FIELD RULES:
+- productName: The product TITLE only — the name of the item (e.g. "Schwer 6 Pairs ANSI A2 Cut Resistant Work Gloves", "Eukaroy 2 pc set", "Cozy Bliss Cooling Blanket"). NEVER include a discount %, promo code, or any other data in this field. Skip any line that starts with "Creator Campaign Id:" or contains "rate:" and "Budget:".
+- dealPrice: The "Discount price" field. If it is a range like "$10.99-$17.95", return ONLY the first amount: "$10.99".
+- promoCode: The value after "Discount code:" — letters and numbers only (e.g. "2N76WL9K"). NEVER a percentage. If the line contains "+ X% off Coupon" after the code, return only the code letters/numbers before the "+".
+- discountPercent: The value after "Discount:" — as written (e.g. "50% off", "35% off").
+- expirationDate: The "End Date" value only. Ignore Start Date.
 
 Return a JSON object with EXACTLY these fields:
 {
@@ -249,10 +261,13 @@ export default async (req) => {
     let totalInputTokens  = 0;
     let totalOutputTokens = 0;
 
-    for (const { url, section, position } of sections) {
-      const asin     = extractAsin(url);
-      const imageUrl = extractImageForProduct(rawHtml, asin, url);
-      const result   = await extractFromSection(section, url, position, apiKey);
+    for (let i = 0; i < sections.length; i++) {
+      const { url, section, position } = sections[i];
+      const nextUrl      = sections[i + 1]?.url || null;
+      const asin         = extractAsin(url);
+      const affiliateUrl = addAffiliateTag(url);
+      const imageUrl     = extractImageForSection(rawHtml, url, nextUrl);
+      const result       = await extractFromSection(section, url, position, apiKey);
 
       totalInputTokens  += result.tokens?.input_tokens  || 0;
       totalOutputTokens += result.tokens?.output_tokens || 0;
@@ -260,7 +275,7 @@ export default async (req) => {
       // PHASE 2 — FORMAT
       const deal = formatDeal(
         result.ok ? result.fields : null,
-        url,
+        affiliateUrl,
         imageUrl,
         position,
         {
