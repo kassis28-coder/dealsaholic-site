@@ -1,5 +1,42 @@
 import { getStore } from "@netlify/blobs";
 
+// ─── Fetch product image from Amazon product page ─────────────────────────────
+// Called when the admin edits a deal and no imageUrl is provided.
+// Fetches og:image or first CDN image from the Amazon product page.
+// Returns a direct URL link — no download or re-hosting needed.
+
+async function fetchAmazonProductImage(asin) {
+  if (!asin) return null;
+  try {
+    const res = await fetch(`https://www.amazon.com/dp/${asin}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    // Try og:image meta tag — most reliable
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+                 || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch?.[1]?.startsWith('http')) return ogMatch[1];
+
+    // Fallback: first large m.media-amazon.com CDN image
+    const cdnPattern = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+    for (const img of (html.match(cdnPattern) || [])) {
+      const clean = img.split('?')[0];
+      if (!/_SL75_|_SS40_|_AC_US\d+_|thumbnail/i.test(clean)) return clean;
+    }
+    return null;
+  } catch (e) {
+    console.log(`fetchAmazonProductImage(${asin}) failed: ${e.message}`);
+    return null;
+  }
+}
+
 export default async (req, context) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -43,12 +80,21 @@ export default async (req, context) => {
 
     // Build affiliate URL if an Amazon link was provided
     let finalUrl = url || record.url;
+    let asin = record.asin || null;
     if (url) {
-      const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
-      const asin = asinMatch ? asinMatch[1] : null;
+      const asinMatch = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+      asin = asinMatch ? asinMatch[1] : asin;
       if (asin) {
         finalUrl = `https://www.amazon.com/dp/${asin}?tag=${process.env.AMAZON_PARTNER_TAG || 'daholic-20'}`;
       }
+    }
+
+    // Resolve image: use provided imageUrl, or fall back to existing, or auto-fetch from Amazon
+    let resolvedImageUrl = imageUrl || record.imageUrl || record.image || null;
+    if (!resolvedImageUrl && asin) {
+      console.log(`[edit-submission] No imageUrl — auto-fetching from Amazon for ASIN ${asin}`);
+      resolvedImageUrl = await fetchAmazonProductImage(asin);
+      console.log(`[edit-submission] Auto-fetched imageUrl: ${resolvedImageUrl}`);
     }
 
     const updated = {
@@ -59,7 +105,8 @@ export default async (req, context) => {
       discount: discount || record.discount,
       discountCode: discountCode || record.discountCode,
       expiresOn: expiresOnISO,
-      imageUrl: imageUrl || record.imageUrl,
+      imageUrl: resolvedImageUrl,
+      asin,
       url: finalUrl,
       updatedAt: new Date().toISOString(),
     };
