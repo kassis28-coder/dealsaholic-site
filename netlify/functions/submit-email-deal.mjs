@@ -137,17 +137,20 @@ function extractTitle(context, url) {
     .split(/[\n\r]+/)
     .map(l => l.replace(/[*_#>]+/g, ' ').trim())
     .filter(l =>
-      l.length >= 10 && l.length <= 200 &&
-      /[a-zA-Z]{3}/.test(l) &&
+      l.length >= 15 && l.length <= 200 &&
+      /[a-zA-Z]{4}/.test(l) &&
       !/^\$/.test(l) &&
       !/^https?:/.test(l) &&
-      !/^\d+(\.\d+)?$/.test(l)
+      !/^\d+(\.\d+)?$/.test(l) &&
+      !/^\d[\d.\-]*\s*\(Reg/i.test(l) &&
+      !/^[\d.\-\s]+$/.test(l.replace(/Reg\.\d[\d.\-]*/gi,'').replace(/[()]/g,'').trim())
     );
   return lines[lines.length - 1] || null;
 }
 
 function extractPrice(context) {
   const patterns = [
+    /\b(\d{1,4}\.\d{2})(?:\s*[-]\s*\d+\.\d{2})?\s*\(Reg\./i,
     /(?:deal|sale|now|only|get\s+it\s+for)[:\s]+\$\s*([\d,]+\.?\d*)/i,
     /price[:\s]+\$\s*([\d,]+\.?\d*)/i,
     /(?:^|\s)\$\s*([\d,]+\.\d{2})(?!\s*(?:off|discount|save|was|original|reg|before))/m,
@@ -164,6 +167,7 @@ function extractPrice(context) {
 
 function extractOriginalPrice(context) {
   const patterns = [
+    /\(Reg\.\s*(\d+\.?\d*)(?:\s*[-]\s*\d+\.?\d*)?\)/i,
     /(?:was|original|reg(?:ular)?|list|retail|msrp|normally|before)[:\s]*\$\s*([\d,]+\.?\d*)/i,
     /\$\s*([\d,]+\.\d{2})\s*(?:->|before)/i,
   ];
