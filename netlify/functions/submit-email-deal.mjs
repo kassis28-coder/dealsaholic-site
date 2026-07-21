@@ -374,7 +374,7 @@ async function saveDraft(draft, store, indexArr, ids, deals) {
     discountCode:   draft.discountCode || null,
     image:          imageUrl || null,
     expiresOn,
-    status:         affiliateUrl ? 'approved' : 'pending',
+    status:         'pending',
     source:         'email',
     createdAt:      new Date().toISOString(),
     submittedAt:    new Date().toISOString(),
