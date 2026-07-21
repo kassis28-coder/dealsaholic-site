@@ -93,10 +93,20 @@ async function resolveAsin(url) {
 function getProductContext(rawHtml, plainText, url, asin) {
   const W = 600;
   const stripped = stripHtml(rawHtml);
-  const sources = [stripped, plainText || ''];
   const terms = [url, ...(asin ? [asin] : [])];
 
-  for (const src of sources) {
+  // 1. Search raw HTML first — URLs live in href="..." attributes which get stripped
+  for (const term of terms) {
+    const idx = rawHtml.indexOf(term);
+    if (idx >= 0) {
+      // Extract a larger raw window, then strip it to get readable text
+      const rawWindow = rawHtml.slice(Math.max(0, idx - W * 4), idx + term.length + W * 4);
+      return stripHtml(rawWindow);
+    }
+  }
+
+  // 2. Fall back to stripped HTML and plain text
+  for (const src of [stripped, plainText || '']) {
     for (const term of terms) {
       const idx = src.indexOf(term);
       if (idx >= 0) {
