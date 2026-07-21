@@ -239,7 +239,7 @@ async function fetchAmazonMeta(url) {
     const image =
       html.match(/"hiRes"\s*:\s*"(https:[^"]+)"/)?.[1] ||
       html.match(/"large"\s*:\s*"(https:[^"]+)"/)?.[1] ||
-      html.match(/id="landingImage"[^>]*data-old-hires="((^"]+)"/i)?.[1] ||
+      html.match(/id="landingImage"[^>]*data-old-hires="([^"]+)"/i)?.[1] ||
       null;
     const pw = html.match(/class="a-price-whole"[^>]*>(\d+)<\/span>/)?.[1];
     const pf = html.match(/class="a-price-fraction"[^>]*>(\d+)<\/span>/)?.[1];
