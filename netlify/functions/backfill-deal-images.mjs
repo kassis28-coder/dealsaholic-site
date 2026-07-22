@@ -80,12 +80,44 @@ async function fetchAmazonProductImage(asin) {
   }
 }
 
-async function downloadAndStoreImage(asin, imageUrl) {
-  if (!asin || !imageUrl) return null;
+// Fetch image directly from a product URL (fallback when no ASIN available)
+async function fetchImageFromUrl(url) {
+  if (!url) return null;
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+                 || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch?.[1]?.startsWith("http")) return ogMatch[1];
+
+    const cdnPattern = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+    for (const img of (html.match(cdnPattern) || [])) {
+      const clean = img.split("?")[0];
+      if (!/_SL75_|_SS40_|_AC_US\d+_|thumbnail/i.test(clean)) return clean;
+    }
+    return null;
+  } catch (e) {
+    console.log(`[backfill] fetchImageFromUrl(${url}) failed: ${e.message}`);
+    return null;
+  }
+}
+
+async function downloadAndStoreImage(key, imageUrl) {
+  if (!key || !imageUrl) return null;
   try {
     const imageStore = getStore("deal-images");
-    const existing = await imageStore.getMetadata(asin).catch(() => null);
-    if (existing) return `${HOSTED_PREFIX}${asin}`;
+    const existing = await imageStore.getMetadata(key).catch(() => null);
+    if (existing) return `${HOSTED_PREFIX}${key}`;
 
     const imgRes = await fetch(imageUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
@@ -97,10 +129,10 @@ async function downloadAndStoreImage(asin, imageUrl) {
     if (buffer.byteLength < 1000) return null;
 
     const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-    await imageStore.set(asin, buffer, { metadata: { contentType } });
-    return `${HOSTED_PREFIX}${asin}`;
+    await imageStore.set(key, buffer, { metadata: { contentType } });
+    return `${HOSTED_PREFIX}${key}`;
   } catch (e) {
-    console.warn(`[backfill] downloadAndStoreImage(${asin}) failed: ${e.message}`);
+    console.warn(`[backfill] downloadAndStoreImage(${key}) failed: ${e.message}`);
     return null;
   }
 }
@@ -140,23 +172,46 @@ export default async (req) => {
       if (!record) { results.skipped++; continue; }
       if (record.imageUrl?.startsWith(HOSTED_PREFIX)) { results.skipped++; continue; }
 
-      let asin = record.asin || extractAsinFromUrl(record.url);
-      if (!asin && record.url) asin = await resolveAsinViaRedirect(record.url);
+      // Try all possible URL field names
+      const productUrl = record.url || record.amazonUrl || record.link || null;
 
-      if (!asin) {
-        results.log.push({ id, title: record.title, url: record.url, status: "skip", reason: "no ASIN" });
+      // Try all possible ways to get ASIN
+      let asin = record.asin
+        || extractAsinFromUrl(record.url)
+        || extractAsinFromUrl(record.amazonUrl)
+        || extractAsinFromUrl(record.link);
+
+      if (!asin && productUrl) {
+        asin = await resolveAsinViaRedirect(productUrl);
+      }
+
+      // If still no ASIN and no URL, skip
+      if (!asin && !productUrl) {
+        results.log.push({ id, title: record.title, status: "skip", reason: "no ASIN and no URL" });
         results.skipped++;
         continue;
       }
 
-      const imageUrl = record.imageUrl || await fetchAmazonProductImage(asin);
+      // Get image — via ASIN first, then directly from URL
+      let imageUrl = record.imageUrl;
       if (!imageUrl) {
-        results.log.push({ id, title: record.title, asin, status: "fail", reason: "no image found on Amazon" });
+        if (asin) {
+          imageUrl = await fetchAmazonProductImage(asin);
+        }
+        if (!imageUrl && productUrl) {
+          imageUrl = await fetchImageFromUrl(productUrl);
+        }
+      }
+
+      if (!imageUrl) {
+        results.log.push({ id, title: record.title, asin, status: "fail", reason: "no image found" });
         results.failed++;
         continue;
       }
 
-      const hostedUrl = await downloadAndStoreImage(asin, imageUrl);
+      // Use ASIN as store key if available, otherwise use record id
+      const storeKey = asin || id;
+      const hostedUrl = await downloadAndStoreImage(storeKey, imageUrl);
       if (!hostedUrl) {
         results.log.push({ id, title: record.title, asin, status: "fail", reason: "download failed" });
         results.failed++;
@@ -165,7 +220,7 @@ export default async (req) => {
 
       if (!dry) {
         record.imageUrl = hostedUrl;
-        record.asin = asin;
+        if (asin) record.asin = asin;
         await store.setJSON(id, record);
       }
 
