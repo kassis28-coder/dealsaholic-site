@@ -1,10 +1,6 @@
 import { getStore } from "@netlify/blobs";
 
 // ─── Fetch product image from Amazon product page ─────────────────────────────
-// Called when the admin edits a deal and no imageUrl is provided.
-// Fetches og:image or first CDN image from the Amazon product page.
-// Returns a direct URL link — no download or re-hosting needed.
-
 async function fetchAmazonProductImage(asin) {
   if (!asin) return null;
   try {
@@ -19,12 +15,10 @@ async function fetchAmazonProductImage(asin) {
     if (!res.ok) return null;
     const html = await res.text();
 
-    // Try og:image meta tag — most reliable
     const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
                  || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
     if (ogMatch?.[1]?.startsWith('http')) return ogMatch[1];
 
-    // Fallback: first large m.media-amazon.com CDN image
     const cdnPattern = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
     for (const img of (html.match(cdnPattern) || [])) {
       const clean = img.split('?')[0];
@@ -78,8 +72,8 @@ export default async (req, context) => {
       } catch (e) { /* keep existing expiresOn on bad input */ }
     }
 
-    // Build affiliate URL if an Amazon link was provided
-    let finalUrl = url || record.url;
+    // Build affiliate URL — fall back through all URL field variants
+    let finalUrl = url || record.url || record.productUrl;
     let asin = record.asin || null;
     if (url) {
       const asinMatch = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
@@ -89,25 +83,37 @@ export default async (req, context) => {
       }
     }
 
-    // Resolve image: use provided imageUrl, or fall back to existing, or auto-fetch from Amazon
-    let resolvedImageUrl = imageUrl || record.imageUrl || record.image || null;
+    // Resolve image — fall back through all image field variants
+    let resolvedImageUrl = imageUrl || record.imageUrl || record.image || record.photoUrl || null;
     if (!resolvedImageUrl && asin) {
       console.log(`[edit-submission] No imageUrl — auto-fetching from Amazon for ASIN ${asin}`);
       resolvedImageUrl = await fetchAmazonProductImage(asin);
       console.log(`[edit-submission] Auto-fetched imageUrl: ${resolvedImageUrl}`);
     }
 
+    // Resolve title — fall back through all title field variants
+    const resolvedTitle = title || record.title || record.productTitle || '';
+
+    // Write all field name variants so any reader finds the right value
     const updated = {
       ...record,
-      title: title || record.title || record.productTitle,
+      // Title — both field names used across the codebase
+      title: resolvedTitle,
+      productTitle: resolvedTitle,
+      // Prices
       price: price || record.price,
       originalPrice: originalPrice || record.originalPrice,
       discount: discount || record.discount,
       discountCode: discountCode || record.discountCode,
       expiresOn: expiresOnISO,
+      // Image — all three field names used across the codebase
+      image: resolvedImageUrl,
       imageUrl: resolvedImageUrl,
+      photoUrl: resolvedImageUrl,
       asin,
+      // URL — both field names used across the codebase
       url: finalUrl,
+      productUrl: finalUrl,
       updatedAt: new Date().toISOString(),
     };
 
