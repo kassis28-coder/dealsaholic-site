@@ -110,9 +110,14 @@ export default async (req) => {
         continue;
       }
 
-      const asin = record.asin;
+      // Try record.asin first; fall back to extracting from the stored URL
+      let asin = record.asin;
+      if (!asin && record.url) {
+        const m = record.url.match(/\/(dp|gp\/product)\/([A-Z0-9]{10})/i);
+        if (m) asin = m[2];
+      }
       if (!asin) {
-        results.log.push({ id, title: record.title, status: "skip", reason: "no ASIN" });
+        results.log.push({ id, title: record.title, url: record.url, status: "skip", reason: "no ASIN" });
         results.skipped++;
         continue;
       }
