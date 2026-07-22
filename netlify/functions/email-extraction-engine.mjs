@@ -7,10 +7,11 @@
 // PHASE 3 → SAVE: Each deal written to Netlify Blobs with status 'pending'
 //           for human review in the admin panel before going live.
 //
-// Image extraction — 3-strategy cascade:
+// Image extraction — 4-strategy cascade:
 //   1. Amazon CDN image URLs found in the email HTML
 //   2. Any <img src> tag in the email HTML section (catches seller-hosted images)
-//   3. ASIN fallback: fetch og:image from the Amazon product page
+//   3. Fetch directly from product URL (handles promo/redirect URLs like amazon.com/promocode/...)
+//   4. ASIN fallback: fetch og:image from the Amazon product page
 
 import { getStore } from '@netlify/blobs';
 
@@ -93,6 +94,8 @@ function extractAsin(url) {
 }
 
 // ─── Strategy 1 + 2: Extract image from email HTML ───────────────────────────
+// Strategy 1: Amazon CDN image URLs (preferred — highest quality)
+// Strategy 2: Any <img src> tag in the section (catches seller-hosted images)
 
 function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
   const start = rawHtml.indexOf(productUrl);
@@ -111,7 +114,7 @@ function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
     if (!/_SL75_|_SS40_|thumbnail/i.test(clean)) return clean;
   }
 
-  // Strategy 2: any <img src="..."> tag
+  // Strategy 2: any <img src="..."> tag (seller-hosted or other CDN images)
   const imgTagPattern = /<img[^>]+src=["']([^"']+)["']/gi;
   let imgMatch;
   while ((imgMatch = imgTagPattern.exec(htmlSlice)) !== null) {
@@ -128,11 +131,13 @@ function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
   return null;
 }
 
-// ─── Strategy 3: ASIN fallback — fetch og:image from Amazon product page ─────
+// ─── Strategy 3: fetch og:image from any Amazon URL (handles promo/redirect URLs) ───
 
-async function fetchAsinImage(asin) {
+async function fetchImageFromUrl(url) {
+  if (!url) return null;
   try {
-    const res = await fetch(`https://www.amazon.com/dp/${asin}`, {
+    const res = await fetch(url, {
+      redirect: 'follow',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -147,9 +152,42 @@ async function fetchAsinImage(asin) {
                  || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
     if (ogMatch?.[1]?.startsWith('http')) return ogMatch[1].split('?')[0];
 
+    const cdnPattern = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+    for (const img of (html.match(cdnPattern) || [])) {
+      const clean = img.split('?')[0];
+      if (!/_SL75_|_SS40_|thumbnail/i.test(clean)) return clean;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Strategy 4: ASIN fallback — fetch og:image from Amazon product page ─────
+
+async function fetchAsinImage(asin) {
+  try {
+    const res = await fetch(`https://www.amazon.com/dp/${asin}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    // og:image meta tag (most reliable)
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+                 || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch?.[1]?.startsWith('http')) return ogMatch[1].split('?')[0];
+
+    // hiRes image from page data
     const hiResMatch = html.match(/"hiRes"\s*:\s*"(https:\/\/m\.media-amazon\.com\/images\/I\/[^"]+)"/);
     if (hiResMatch) return hiResMatch[1].split('?')[0];
 
+    // landingImage src
     const landingMatch = html.match(/id=["']landingImage["'][^>]+src=["']([^"']+)["']/i);
     if (landingMatch?.[1]?.startsWith('http')) return landingMatch[1].split('?')[0];
 
@@ -281,6 +319,7 @@ export default async (req) => {
       });
     }
 
+    // PHASE 1 → EXTRACT
     const emailText = htmlToText(rawHtml) || plainText;
     let blocks = splitIntoProductBlocks(emailText);
 
@@ -310,7 +349,14 @@ export default async (req) => {
       const asin         = primaryUrl ? extractAsin(primaryUrl) : null;
       const affiliateUrl = primaryUrl ? addAffiliateTag(primaryUrl) : null;
 
+      // Image cascade:
+      // 1+2: scan email HTML (Amazon CDN + any img tag)
+      // 3: fetch directly from URL (handles promo/redirect URLs like amazon.com/promocode/...)
+      // 4: fetch from amazon.com/dp/ASIN (standard product page)
       let imageUrl = primaryUrl ? extractImageForSection(rawHtml, primaryUrl, nextUrl) : null;
+      if (!imageUrl && primaryUrl) {
+        imageUrl = await fetchImageFromUrl(primaryUrl);
+      }
       if (!imageUrl && asin) {
         imageUrl = await fetchAsinImage(asin);
       }
@@ -319,6 +365,7 @@ export default async (req) => {
       totalInputTokens  += result.tokens?.input_tokens  || 0;
       totalOutputTokens += result.tokens?.output_tokens || 0;
 
+      // PHASE 2 → FORMAT
       const deal = formatDeal(
         result.ok ? result.fields : null,
         affiliateUrl,
@@ -337,6 +384,7 @@ export default async (req) => {
       deals.push(deal);
     }
 
+    // PHASE 3 → SAVE to Netlify Blobs as 'pending'
     const store   = getStore('deals');
     const saved   = [];
     const skipped = [];
