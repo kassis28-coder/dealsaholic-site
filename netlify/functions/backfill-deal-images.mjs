@@ -1,8 +1,8 @@
 // backfill-deal-images.mjs
 // One-time endpoint: loops all submissions, downloads missing images, updates records.
 // GET /api/backfill-deal-images?password=YOUR_ADMIN_PASSWORD
-// GET /api/backfill-deal-images?password=...&dry=1   ← dry run (no writes)
-// GET /api/backfill-deal-images?password=...&limit=20 ← process at most N deals
+// GET /api/backfill-deal-images?password=...&dry=1   <- dry run (no writes)
+// GET /api/backfill-deal-images?password=...&limit=20 <- process at most N deals
 
 import { getStore } from "@netlify/blobs";
 
@@ -14,25 +14,36 @@ function extractAsinFromUrl(url) {
   return m ? m[2] : null;
 }
 
+// Fetch the page and scan HTML for ASIN — works for promocode URLs and short links
 async function resolveAsinViaRedirect(url) {
   if (!url) return null;
   try {
-    let current = url;
-    for (let i = 0; i < 5; i++) {
-      const res = await fetch(current, {
-        method: "HEAD",
-        redirect: "manual",
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
-        signal: AbortSignal.timeout(8000),
-      });
-      const location = res.headers.get("location");
-      if (!location) return extractAsinFromUrl(current);
-      const next = location.startsWith("http") ? location : new URL(location, current).href;
-      const asin = extractAsinFromUrl(next);
-      if (asin) return asin;
-      current = next;
-    }
-    return extractAsinFromUrl(current);
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const asinFromUrl = extractAsinFromUrl(res.url);
+    if (asinFromUrl) return asinFromUrl;
+
+    const html = await res.text();
+
+    const dataAsin = html.match(/data-asin=["']([A-Z0-9]{10})["']/i);
+    if (dataAsin?.[1]) return dataAsin[1];
+
+    const scriptAsin = html.match(/"asin"\s*:\s*["']([A-Z0-9]{10})["']/i)
+                    || html.match(/["']ASIN["']\s*:\s*["']([A-Z0-9]{10})["']/i);
+    if (scriptAsin?.[1]) return scriptAsin[1];
+
+    const urlAsin = html.match(/\/(dp|gp\/product)\/([A-Z0-9]{10})/i);
+    if (urlAsin?.[2]) return urlAsin[2];
+
+    return null;
   } catch (e) {
     console.log(`[backfill] resolveAsinViaRedirect(${url}) failed: ${e.message}`);
     return null;
@@ -127,10 +138,8 @@ export default async (req) => {
       }
 
       if (!record) { results.skipped++; continue; }
-
       if (record.imageUrl?.startsWith(HOSTED_PREFIX)) { results.skipped++; continue; }
 
-      // Resolve ASIN: stored field → URL pattern → follow redirects
       let asin = record.asin || extractAsinFromUrl(record.url);
       if (!asin && record.url) asin = await resolveAsinViaRedirect(record.url);
 
@@ -140,8 +149,7 @@ export default async (req) => {
         continue;
       }
 
-      let imageUrl = record.imageUrl || await fetchAmazonProductImage(asin);
-
+      const imageUrl = record.imageUrl || await fetchAmazonProductImage(asin);
       if (!imageUrl) {
         results.log.push({ id, title: record.title, asin, status: "fail", reason: "no image found on Amazon" });
         results.failed++;
