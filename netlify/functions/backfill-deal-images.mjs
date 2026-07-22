@@ -8,6 +8,37 @@ import { getStore } from "@netlify/blobs";
 
 const HOSTED_PREFIX = "https://deals-aholic.com/api/deal-image?id=";
 
+function extractAsinFromUrl(url) {
+  if (!url) return null;
+  const m = url.match(/\/(dp|gp\/product)\/([A-Z0-9]{10})/i);
+  return m ? m[2] : null;
+}
+
+async function resolveAsinViaRedirect(url) {
+  if (!url) return null;
+  try {
+    let current = url;
+    for (let i = 0; i < 5; i++) {
+      const res = await fetch(current, {
+        method: "HEAD",
+        redirect: "manual",
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
+        signal: AbortSignal.timeout(8000),
+      });
+      const location = res.headers.get("location");
+      if (!location) return extractAsinFromUrl(current);
+      const next = location.startsWith("http") ? location : new URL(location, current).href;
+      const asin = extractAsinFromUrl(next);
+      if (asin) return asin;
+      current = next;
+    }
+    return extractAsinFromUrl(current);
+  } catch (e) {
+    console.log(`[backfill] resolveAsinViaRedirect(${url}) failed: ${e.message}`);
+    return null;
+  }
+}
+
 async function fetchAmazonProductImage(asin) {
   if (!asin) return null;
   try {
@@ -22,12 +53,10 @@ async function fetchAmazonProductImage(asin) {
     if (!res.ok) return null;
     const html = await res.text();
 
-    // og:image is most reliable
     const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
                  || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
     if (ogMatch?.[1]?.startsWith("http")) return ogMatch[1];
 
-    // Fallback: first large CDN image
     const cdnPattern = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
     for (const img of (html.match(cdnPattern) || [])) {
       const clean = img.split("?")[0];
@@ -44,8 +73,6 @@ async function downloadAndStoreImage(asin, imageUrl) {
   if (!asin || !imageUrl) return null;
   try {
     const imageStore = getStore("deal-images");
-
-    // Skip if already stored
     const existing = await imageStore.getMetadata(asin).catch(() => null);
     if (existing) return `${HOSTED_PREFIX}${asin}`;
 
@@ -99,34 +126,21 @@ export default async (req) => {
         continue;
       }
 
-      if (!record) {
-        results.skipped++;
-        continue;
-      }
+      if (!record) { results.skipped++; continue; }
 
-      // Skip if already hosted on our domain
-      if (record.imageUrl?.startsWith(HOSTED_PREFIX)) {
-        results.skipped++;
-        continue;
-      }
+      if (record.imageUrl?.startsWith(HOSTED_PREFIX)) { results.skipped++; continue; }
 
-      // Try record.asin first; fall back to extracting from the stored URL
-      let asin = record.asin;
-      if (!asin && record.url) {
-        const m = record.url.match(/\/(dp|gp\/product)\/([A-Z0-9]{10})/i);
-        if (m) asin = m[2];
-      }
+      // Resolve ASIN: stored field → URL pattern → follow redirects
+      let asin = record.asin || extractAsinFromUrl(record.url);
+      if (!asin && record.url) asin = await resolveAsinViaRedirect(record.url);
+
       if (!asin) {
         results.log.push({ id, title: record.title, url: record.url, status: "skip", reason: "no ASIN" });
         results.skipped++;
         continue;
       }
 
-      // Step 1: find an image URL (use existing one if present, else fetch from Amazon)
-      let imageUrl = record.imageUrl || null;
-      if (!imageUrl) {
-        imageUrl = await fetchAmazonProductImage(asin);
-      }
+      let imageUrl = record.imageUrl || await fetchAmazonProductImage(asin);
 
       if (!imageUrl) {
         results.log.push({ id, title: record.title, asin, status: "fail", reason: "no image found on Amazon" });
@@ -134,7 +148,6 @@ export default async (req) => {
         continue;
       }
 
-      // Step 2: download and store bytes
       const hostedUrl = await downloadAndStoreImage(asin, imageUrl);
       if (!hostedUrl) {
         results.log.push({ id, title: record.title, asin, status: "fail", reason: "download failed" });
@@ -142,9 +155,9 @@ export default async (req) => {
         continue;
       }
 
-      // Step 3: update the submission record
       if (!dry) {
         record.imageUrl = hostedUrl;
+        record.asin = asin;
         await store.setJSON(id, record);
       }
 
