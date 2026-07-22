@@ -330,9 +330,9 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
 function validateDraft(draft, i) {
   const issues = [];
   if (!draft.amazonUrl) issues.push('no Amazon URL');
-  if (!draft.asin && !/\/dp\/|\/gp\/product\//i.test(draft.amazonUrl || '')) {
-    issues.push('could not resolve ASIN and URL is not a direct product link');
-  }
+  if (!draft.asin && !/\/dp\/|\/gp\/product\/|\/promocode\//i.test(draft.amazonUrl || '')) {
+  issues.push('could not resolve ASIN and URL is not a direct product link');
+}
   if (issues.length === 0) {
     if (!draft.productName)   console.log(`[Phase 2] Product ${i + 1}: no title in context â will try Amazon page`);
     if (!draft.dealPrice)     console.log(`[Phase 2] Product ${i + 1}: no price in context â will try Amazon page`);
