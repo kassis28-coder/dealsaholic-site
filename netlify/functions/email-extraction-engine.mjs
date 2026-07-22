@@ -1,14 +1,21 @@
 // email-extraction-engine.mjs
-// Three-phase pipeline: Extract â Format â Save to pending
+// Three-phase pipeline: Extract → Format → Save to pending
 //
-// PHASE 1 â EXTRACT: Email is split into numbered product blocks (1, 2, US01â¦).
-// PHASE 2 â FORMAT: Fields placed into the canonical 7-field sequence.
-// PHASE 3 â SAVE: Each deal written to Netlify Blobs (submissions store) with
+// PHASE 1 → EXTRACT: Email is split into numbered product blocks (1, 2, US01…).
+// PHASE 2 → FORMAT: Fields placed into the canonical 7-field sequence.
+// PHASE 3 → SAVE: Each deal written to Netlify Blobs 'submissions' store with
 //           status 'pending' for human review in the admin panel.
 //
-// FIX: Now saves to 'submissions' store + updates index array,
-//      so deals appear in admin panel Pending tab and Email Deals tab.
+// IMAGE STRATEGY (in order):
+//   1. extractImageForSection() — finds Amazon CDN URLs in raw email HTML.
+//   2. fetchAmazonProductImage(asin) — fetches the Amazon product page and
+//      extracts og:image or any m.media-amazon.com CDN URL.
+//   3. downloadAndStoreImage(asin, imageUrl) — downloads the actual image
+//      bytes and stores in Netlify Blobs "deal-images" store, then sets
+//      imageUrl to https://deals-aholic.com/api/deal-image?id={asin}
+//      so the image is hosted on our domain (no blocked CDN URLs).
 //
+// Saves to 'submissions' store + updates 'index' so admin panel can see deals.
 // Affiliate tag from AMAZON_PARTNER_TAG env var. All deals go to PENDING.
 
 import { getStore } from '@netlify/blobs';
@@ -55,6 +62,38 @@ function splitIntoProductBlocks(text) {
   });
 }
 
+// Downloads the image at imageUrl and stores binary in Netlify Blobs "deal-images".
+// Returns our hosted URL (https://deals-aholic.com/api/deal-image?id={asin})
+// or null on failure. Safe to call repeatedly — skips if already stored.
+async function downloadAndStoreImage(asin, imageUrl) {
+  if (!asin || !imageUrl) return null;
+  try {
+    const imageStore = getStore('deal-images');
+
+    // Skip if already stored
+    const existing = await imageStore.getMetadata(asin).catch(() => null);
+    if (existing) return `https://deals-aholic.com/api/deal-image?id=${asin}`;
+
+    // Download image bytes
+    const imgRes = await fetch(imageUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!imgRes.ok) return null;
+
+    const buffer = await imgRes.arrayBuffer();
+    if (buffer.byteLength < 1000) return null; // skip tiny/broken images
+
+    const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+    await imageStore.set(asin, buffer, { metadata: { contentType } });
+
+    return `https://deals-aholic.com/api/deal-image?id=${asin}`;
+  } catch (e) {
+    console.warn(`[img-dl] Failed for ASIN ${asin}: ${e.message}`);
+    return null;
+  }
+}
+
 function findAmazonUrls(text) {
   const pattern = /https?:\/\/(?:www\.)?(?:amazon\.com|amzn\.to|amzn\.com|a\.co)\/[^\s"'<>)]+/gi;
   const seen = new Set();
@@ -82,7 +121,13 @@ function extractAsin(url) {
 }
 
 function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
-  const start = rawHtml.indexOf(productUrl);
+  // htmlToText decodes &amp; → & so URL in plain text may not match rawHtml.
+  // Try both the decoded URL and the HTML-encoded version.
+  let start = rawHtml.indexOf(productUrl);
+  if (start < 0) {
+    const encoded = productUrl.replace(/&/g, '&amp;');
+    start = rawHtml.indexOf(encoded);
+  }
   if (start < 0) return null;
   const sectionStart = Math.max(0, start - 5000);
   const afterUrl = start + productUrl.length;
@@ -97,18 +142,55 @@ function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
   return null;
 }
 
+// ─── Strategy 2: Fetch Amazon product page and extract image URL ──────────────
+// Used when the email HTML doesn't contain an image for this product.
+// Fetches the Amazon product page and pulls og:image or the first CDN image.
+// Returns a direct URL (link) — no download or re-hosting needed.
+
+async function fetchAmazonProductImage(asin) {
+  if (!asin) return null;
+  try {
+    const res = await fetch(`https://www.amazon.com/dp/${asin}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    // Try og:image meta tag — most reliable
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+                 || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if (ogMatch?.[1]?.startsWith('http')) return ogMatch[1];
+
+    // Fallback: first large m.media-amazon.com CDN image
+    const cdnPattern = /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+    for (const img of (html.match(cdnPattern) || [])) {
+      const clean = img.split('?')[0];
+      if (!/_SL75_|_SS40_|_AC_US\d+_|thumbnail/i.test(clean)) return clean;
+    }
+    return null;
+  } catch (e) {
+    console.log(`[img] fetchAmazonProductImage(${asin}) failed: ${e.message}`);
+    return null;
+  }
+}
+
 async function extractFromBlock(section, position, apiKey) {
   const prompt = `You are a deal extraction assistant. The text below is ONE product block (#${position}).
-Extract EXACTLY these 7 fields. No guessing, no inferring â only what is explicitly written.
+Extract EXACTLY these 7 fields. No guessing, no inferring — only what is explicitly written.
 
 FIELDS:
-1. productName   â The product title/name only. NEVER include a % or promo code here.
-2. discountPercent â The discount percentage (e.g. "50% off", "30%"). null if not stated.
-3. promoCode     â The discount/promo code (letters + numbers only). null if none.
-4. dealPrice     â The deal/discount price (e.g. "$19.98"). If a range, return only the first value.
-5. amazonUrl     â The Amazon link (full URL starting with https://www.amazon.com/...).
-6. expirationDate â The end/expiration date. Ignore start dates.
-7. imageUrl      â null (always return null for this field).
+1. productName   — The product title/name only. NEVER include a % or promo code here.
+2. discountPercent — The discount percentage (e.g. "50% off", "30%"). null if not stated.
+3. promoCode     — The discount/promo code (letters + numbers only). null if none.
+4. dealPrice      — The deal/discount price (e.g. "$19.98"). If a range, return only the first value.
+5. amazonUrl       — The Amazon link (full URL starting with https://www.amazon.com/...).
+6. expirationDate — The end/expiration date. Ignore start dates.
+7. imageUrl        — null (always return null for this field).
 
 RULES:
 - If a field is absent, return null.
@@ -124,16 +206,8 @@ ${section.slice(0, 3000)}
 
   const res = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
-    headers: {
-      'x-api-key':         apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type':      'application/json',
-    },
-    body: JSON.stringify({
-      model:      MODEL,
-      max_tokens: 512,
-      messages:   [{ role: 'user', content: prompt }],
-    }),
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: MODEL, max_tokens: 512, messages: [{ role: 'user', content: prompt }] }),
     signal: AbortSignal.timeout(15000),
   });
 
@@ -201,7 +275,7 @@ export default async (req) => {
       });
     }
 
-    // PHASE 1 â EXTRACT
+    // PHASE 1 — EXTRACT
     const emailText = htmlToText(rawHtml) || plainText;
     let blocks = splitIntoProductBlocks(emailText);
 
@@ -226,13 +300,30 @@ export default async (req) => {
       const nextUrl    = allUrlsForImages[allUrlsForImages.indexOf(primaryUrl) + 1] || null;
       const asin         = primaryUrl ? extractAsin(primaryUrl) : null;
       const affiliateUrl = primaryUrl ? addAffiliateTag(primaryUrl) : null;
-      const imageUrl     = primaryUrl ? extractImageForSection(rawHtml, primaryUrl, nextUrl) : null;
+
+      // Strategy 1: find image URL embedded in the email HTML
+      let imageUrl = primaryUrl ? extractImageForSection(rawHtml, primaryUrl, nextUrl) : null;
+
+            // Strategy 2: fetch the Amazon product page if no image found in email
+      if (!imageUrl && asin) {
+        imageUrl = await fetchAmazonProductImage(asin);
+        console.log(`[img] ASIN ${asin} → ${imageUrl ? 'fetched from product page' : 'not found'}`);
+      }
+
+      // Strategy 3: download the image bytes and host on our domain
+      if (imageUrl && asin) {
+        const hostedUrl = await downloadAndStoreImage(asin, imageUrl);
+        if (hostedUrl) {
+          console.log(`[img] ASIN ${asin} → downloaded and hosted at ${hostedUrl}`);
+          imageUrl = hostedUrl;
+        }
+      }
 
       const result = await extractFromBlock(section, position, apiKey);
       totalInputTokens  += result.tokens?.input_tokens  || 0;
       totalOutputTokens += result.tokens?.output_tokens || 0;
 
-      // PHASE 2 â FORMAT
+      // PHASE 2 — FORMAT
       const deal = formatDeal(
         result.ok ? result.fields : null,
         affiliateUrl, imageUrl, position,
@@ -248,7 +339,7 @@ export default async (req) => {
       deals.push(deal);
     }
 
-    // PHASE 3 â SAVE to submissions store (same store the admin panel reads)
+    // PHASE 3 ₀ SAVE to submissions store (same store the admin panel reads)
     // Uses submissions + index pattern so deals appear in Pending and Email Deals tabs.
     const store   = getStore('submissions');
     const saved   = [];
@@ -273,7 +364,7 @@ export default async (req) => {
 
       const id = `email-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-      // Parse expiresOn â default 7 days from now
+      // Parse expiresOn — default 7 days from now
       let expiresOn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       if (deal.expirationDate) {
         try {
