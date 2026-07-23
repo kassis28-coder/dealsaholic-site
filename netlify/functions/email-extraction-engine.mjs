@@ -1,394 +1,333 @@
-
 // email-extraction-engine.mjs
-// Three-phase pipeline: Extract → Format → Save to pending
+// Pure regex extraction — NO Claude API, NO external calls, NO cost.
+// Handles 600+ deals per email instantly inside Netlify.
 //
-// PHASE 1 → EXTRACT: Email is split into numbered product blocks (1, 2, US01…).
-//           All blocks are extracted IN PARALLEL via Promise.all for speed.
-// PHASE 2 → FORMAT: Fields placed into the canonical 7-field sequence.
-// PHASE 3 → SAVE: Each deal written to Netlify Blobs with status 'pending'
-//           for human review in the admin panel before going live.
-//
-// Image extraction — 2-strategy cascade (inline HTML only, no outbound fetches):
-// 1. Amazon CDN image URLs found in the email HTML
-// 2. Any <img src> tag in the email HTML section (catches seller-hosted images)
- 
+// Pipeline: Parse email HTML → extract deals via regex → dedup → save as 'pending'
+
 import { getStore } from '@netlify/blobs';
- 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_PRODUCTS = 20;
- 
-// ─── Strip HTML to readable text ─────────────────────────────────────────────
- 
-function htmlToText(html) {
+
+// ─── HTML → plain text ────────────────────────────────────────────────────────
+
+function stripHtml(html) {
   return (html || '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
     .replace(/<\/tr>/gi, '\n')
     .replace(/<\/li>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
- 
-// ─── Split email into numbered product blocks ─────────────────────────────────
- 
-function splitIntoProductBlocks(text) {
-  const markerRe = /(?:^|\n)[ \t]*(?:(?:deal|product)[ \t]*)?(\bUS\d+\b|\b\d+\b)[ \t]*-?[ \t]*\n/gi;
-  const positions = [];
-  let match;
-  while ((match = markerRe.exec(text)) !== null) {
-    const markerStart = match.index === 0 ? 0 : match.index + 1;
-    const contentStart = match.index + match[0].length;
-    positions.push({ blockNum: match[1], markerStart, contentStart });
-  }
-  if (positions.length === 0) return null;
-  return positions.slice(0, MAX_PRODUCTS).map((p, i) => {
-    const end = i < positions.length - 1 ? positions[i + 1].markerStart : text.length;
-    const section = text.slice(p.contentStart, end).trim();
-    return { position: i + 1, blockNum: p.blockNum, section };
-  });
-}
- 
-// ─── Find all Amazon URLs in a text string ────────────────────────────────────
- 
+
+// ─── Find all Amazon URLs ─────────────────────────────────────────────────────
+
 function findAmazonUrls(text) {
-  const pattern = /https?:\/\/(?:www\.)?(?:amazon\.com|amzn\.to|amzn\.com|a\.co)\/[^\s"'<>)]+/gi;
-  const seen = new Set();
-  const urls = [];
-  for (const url of (text.match(pattern) || [])) {
-    const clean = url.replace(/[)>\s'"]+$/, '');
-    if (!seen.has(clean)) { seen.add(clean); urls.push(clean); }
+  const patterns = [
+    /https?:\/\/(?:www\.)?amazon\.com\/[^\s"'<>)]+/gi,
+    /https?:\/\/amzn\.to\/[^\s"'<>)]+/gi,
+    /https?:\/\/amzn\.com\/[^\s"'<>)]+/gi,
+    /https?:\/\/a\.co\/[^\s"'<>)]+/gi,
+    /https?:\/\/deals\.amazon\.com\/[^\s"'<>)]+/gi,
+  ];
+  const seen = new Set(), urls = [];
+  for (const p of patterns) {
+    for (const u of (text.match(p) || [])) {
+      const clean = u.replace(/[)>\s'"]+$/, '');
+      if (!seen.has(clean)) { seen.add(clean); urls.push(clean); }
+    }
   }
   return urls;
 }
- 
+
 // ─── Add affiliate tag ────────────────────────────────────────────────────────
- 
+
 function addAffiliateTag(url) {
   const tag = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
   try {
     const u = new URL(url);
     u.searchParams.set('tag', tag);
     return u.toString();
-  } catch {
-    return url;
-  }
+  } catch { return url; }
 }
- 
-// ─── Extract ASIN from URL ────────────────────────────────────────────────────
- 
+
+// ─── Extract ASIN ─────────────────────────────────────────────────────────────
+
 function extractAsin(url) {
   return url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
 }
- 
-// ─── Strategy 1 + 2: Extract image from email HTML ───────────────────────────
- 
-function extractImageForSection(rawHtml, productUrl, nextProductUrl) {
-  const start = rawHtml.indexOf(productUrl);
-  if (start < 0) return null;
- 
-  const sectionStart = Math.max(0, start - 5000);
-  const afterUrl = start + productUrl.length;
-  const end = nextProductUrl ? rawHtml.indexOf(nextProductUrl, afterUrl) : rawHtml.length;
-  const sectionEnd = end > afterUrl ? end : rawHtml.length;
-  const htmlSlice = rawHtml.slice(sectionStart, sectionEnd);
- 
-  // Strategy 1: Amazon CDN images
-  const amazonPattern = /https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com)\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
-  for (const img of (htmlSlice.match(amazonPattern) || [])) {
-    const clean = img.split('?')[0];
-    if (!/_SL75_|_SS40_|thumbnail/i.test(clean)) return clean;
+
+// ─── Get text context around a URL ───────────────────────────────────────────
+
+function getContext(rawHtml, url, asin, allUrls) {
+  const urlPositions = allUrls.map(u => rawHtml.indexOf(u)).filter(p => p >= 0).sort((a,b) => a-b);
+  const idx = rawHtml.indexOf(url);
+  if (idx >= 0) {
+    const prevEnd  = urlPositions.filter(p => p < idx).slice(-1)[0] ?? Math.max(0, idx - 4000);
+    const nextStart = urlPositions.find(p => p > idx + url.length) ?? Math.min(rawHtml.length, idx + url.length + 4000);
+    return stripHtml(rawHtml.slice(prevEnd, nextStart));
   }
- 
-  // Strategy 2: any <img src="..."> tag
-  const imgTagPattern = /<img[^>]+src=["']([^"']+)["']/gi;
-  let imgMatch;
-  while ((imgMatch = imgTagPattern.exec(htmlSlice)) !== null) {
-    const src = imgMatch[1];
-    if (
-      src.startsWith('http') &&
-      /\.(jpg|jpeg|png|webp)/i.test(src) &&
-      !/_SL75_|_SS40_|thumbnail|spacer|pixel|tracking|1x1/i.test(src)
-    ) {
-      return src.split('?')[0];
+  // fallback: search plain stripped text
+  const stripped = stripHtml(rawHtml);
+  const terms = [url, ...(asin ? [asin] : [])];
+  for (const term of terms) {
+    const ti = stripped.indexOf(term);
+    if (ti >= 0) return stripped.slice(Math.max(0, ti - 800), ti + term.length + 800);
+  }
+  return '';
+}
+
+// ─── Extract title ────────────────────────────────────────────────────────────
+
+function extractTitle(ctx, url) {
+  const urlPos = ctx.indexOf(url);
+  const region = urlPos > 0 ? ctx.slice(0, urlPos) : ctx;
+  const candidates = region
+    .split(/[\n\r]+/)
+    .map(l => l.replace(/[*_#>|]+/g, ' ').trim())
+    .filter(l =>
+      l.length >= 15 && l.length <= 250 &&
+      /[a-zA-Z]{4}/.test(l) &&
+      !/^\$/.test(l) &&
+      !/^https?:/.test(l) &&
+      !/^\d+(\.\d+)?$/.test(l) &&
+      !/^[\d.\-\s%]+$/.test(l) &&
+      !/^(deal|promo|code|off|save|discount|coupon|sale|click|shop|buy|get|use|apply|enter|limited|time|today|daily|weekly)$/i.test(l)
+    );
+  return candidates[candidates.length - 1] || null;
+}
+
+// ─── Extract deal price ───────────────────────────────────────────────────────
+
+function extractPrice(ctx) {
+  const pats = [
+    /\b(\d{1,4}\.\d{2})\s*\(Reg\./i,
+    /(?:deal|sale|now|only|get\s+it\s+for|discounted\s+to)[:\s]+\$\s*([\d,]+\.?\d*)/i,
+    /(?:price|for\s+only)[:\s]+\$\s*([\d,]+\.?\d*)/i,
+    /(?:^|\s)\$\s*([\d,]+\.\d{2})(?!\s*(?:off|discount|save|was|original|reg|before))/m,
+  ];
+  for (const re of pats) {
+    const m = ctx.match(re);
+    if (m?.[1]) {
+      const n = parseFloat(m[1].replace(/[^0-9.]/g, ''));
+      if (!isNaN(n) && n > 0.5 && n < 10000) return '$' + n.toFixed(2);
     }
   }
- 
   return null;
 }
- 
-// ─── Claude extracts 7 fields from one product block ─────────────────────────
- 
-async function extractFromBlock(section, position, apiKey) {
-  const prompt = `You are a deal extraction assistant. The text below is ONE product block (#${position}).
-Extract EXACTLY these 7 fields. No guessing, no inferring — only what is explicitly written.
- 
-FIELDS:
-1. productName   — The product title/name only. NEVER include a % or promo code here.
-2. discountPercent — The discount percentage (e.g. "50% off", "30%"). null if not stated.
-3. promoCode     — The discount/promo code (letters + numbers only, e.g. "V6WA8CIO"). null if none.
-4. dealPrice     — The deal/discount price (e.g. "$19.98"). If a range, return only the first value.
-5. amazonUrl     — The Amazon link (full URL starting with https://www.amazon.com/...).
-6. expirationDate — The end/expiration date. Ignore start dates.
-7. imageUrl      — null (images are fetched separately; always return null for this field).
- 
-RULES:
-- If a field is absent, return null.
-- promoCode: extract only the code itself (no %, no "off", no extra words).
-- Do NOT copy data between products.
-- Do NOT calculate anything.
- 
-Return ONLY a JSON object with exactly these keys:
-{
-  "productName": string|null,
-  "discountPercent": string|null,
-  "promoCode": string|null,
-  "dealPrice": string|null,
-  "amazonUrl": string|null,
-  "expirationDate": string|null,
-  "imageUrl": null
-}
- 
-No markdown, no explanation. JSON only.
- 
-PRODUCT BLOCK #${position}:
----
-${section.slice(0, 3000)}
----`;
- 
-  const res = await fetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: {
-      'x-api-key':         apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type':      'application/json',
-    },
-    body: JSON.stringify({
-      model:      MODEL,
-      max_tokens: 512,
-      messages:   [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
- 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Claude API ${res.status}: ${body.slice(0, 200)}`);
+
+// ─── Extract promo code ───────────────────────────────────────────────────────
+
+function extractPromoCode(ctx) {
+  const STOP = new Set(['GET','USE','THE','FOR','AND','WITH','OFF','CODE','PROMO','DISCOUNT',
+    'COUPON','DEAL','SALE','SAVE','CLIP','CHECK','VIEW','MORE','SHOP','FREE','FAST','BEST',
+    'CLICK','HERE','LINK','ITEM','OFFER','PRICE','AMAZON','CHECKOUT','APPLY','ENTER']);
+  const pats = [
+    /(?:code|coupon|promo|discount|voucher)[:\s=]+\[?([A-Z0-9]{4,20})\]?/i,
+    /apply\s+(?:code\s+)?["']?([A-Z0-9]{5,20})["']?\s+at/i,
+    /use\s+(?:code\s+)?["']?([A-Z0-9]{5,20})["']?(?:\s|$)/i,
+    /enter\s+(?:code\s+)?["']?([A-Z0-9]{5,20})["']/i,
+    /["']([A-Z0-9]{6,15})["']\s+(?:at\s+checkout|to\s+save|for\s+\d)/i,
+  ];
+  for (const re of pats) {
+    const m = ctx.match(re);
+    if (m?.[1] && !STOP.has(m[1].toUpperCase())) return m[1].toUpperCase();
   }
- 
-  const data   = await res.json();
-  const raw    = data.content?.[0]?.text?.trim() || '';
-  const tokens = data.usage || {};
- 
-  try {
-    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-    const parsed   = JSON.parse(jsonText);
-    return { ok: true, fields: parsed, raw, tokens };
-  } catch (e) {
-    return { ok: false, fields: null, raw, error: `JSON parse failed: ${e.message}`, tokens };
+  return null;
+}
+
+// ─── Extract discount percent ─────────────────────────────────────────────────
+
+function extractDiscount(ctx) {
+  const m = ctx.match(/(\d{1,2})\s*%\s*off/i);
+  return m ? m[1] + '% off' : null;
+}
+
+// ─── Extract expiration date ──────────────────────────────────────────────────
+
+function extractExpiration(ctx) {
+  const pats = [
+    /(?:expires?|valid\s+(?:through|until|thru)|ends?|offer\s+ends?)\s*:?\s*([A-Za-z]+\.?\s+\d{1,2}(?:,?\s*\d{4})?)/i,
+    /(?:expires?|valid\s+(?:through|until|thru)|ends?)\s*:?\s*(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i,
+  ];
+  for (const re of pats) {
+    const m = ctx.match(re);
+    if (m?.[1]) return m[1].trim();
   }
+  return null;
 }
- 
-// ─── Format into the canonical 7-field deal record ───────────────────────────
- 
-function formatDeal(extracted, affiliateUrl, imageUrl, position, meta) {
-  const f = extracted || {};
-  const finalUrl = f.amazonUrl ? addAffiliateTag(f.amazonUrl) : affiliateUrl;
-  return {
-    position,
-    productName:     f.productName     || null,
-    dealPrice:       f.dealPrice       || null,
-    promoCode:       f.promoCode       || null,
-    discountPercent: f.discountPercent || null,
-    amazonUrl:       finalUrl          || null,
-    imageUrl,
-    expirationDate:  f.expirationDate  || null,
-    _meta: meta,
-  };
+
+// ─── Extract image ────────────────────────────────────────────────────────────
+
+function extractImage(rawHtml, asin, url) {
+  // Strategy 1: Amazon CDN images near the product URL
+  const amazonPat = /https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com)\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi;
+  const allImgs = [...new Set((rawHtml.match(amazonPat) || []).map(i => i.split('?')[0]).filter(i => !/_SL75_|_SS40_|thumbnail/i.test(i)))];
+
+  // Prefer image containing the ASIN
+  if (asin) {
+    const match = allImgs.find(i => i.includes(asin));
+    if (match) return match;
+  }
+
+  // Pick the image closest to the product URL in the HTML
+  const urlPos = rawHtml.indexOf(url);
+  if (urlPos >= 0) {
+    let best = null, bestDist = Infinity;
+    for (const img of allImgs) {
+      const pos = rawHtml.indexOf(img);
+      if (pos >= 0) {
+        const d = Math.abs(pos - urlPos);
+        if (d < bestDist && d < 5000) { bestDist = d; best = img; }
+      }
+    }
+    if (best) return best;
+  }
+
+  // Strategy 2: any <img src> tag near the URL
+  const urlIdx = rawHtml.indexOf(url);
+  if (urlIdx >= 0) {
+    const slice = rawHtml.slice(Math.max(0, urlIdx - 3000), urlIdx + url.length + 3000);
+    const imgPat = /<img[^>]+src=["']([^"']+)["']/gi;
+    let m;
+    while ((m = imgPat.exec(slice)) !== null) {
+      const src = m[1];
+      if (src.startsWith('http') && /\.(jpg|jpeg|png|webp)/i.test(src) &&
+          !/_SL75_|_SS40_|thumbnail|spacer|pixel|tracking|1x1/i.test(src)) {
+        return src.split('?')[0];
+      }
+    }
+  }
+
+  return null;
 }
- 
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
- 
+
 export default async (req) => {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set in Netlify environment' }), {
-        status: 500, headers: { 'Content-Type': 'application/json' },
-      });
-    }
- 
     let rawHtml = '', plainText = '';
     const ct = req.headers.get('content-type') || '';
- 
+
     if (ct.includes('application/json')) {
-      const b  = await req.json();
+      const b = await req.json();
       rawHtml   = b.htmlBody || b.html || '';
       plainText = b.textBody || b.text || '';
     } else if (ct.includes('multipart/form-data') || ct.includes('application/x-www-form-urlencoded')) {
-      const f  = await req.formData();
+      const f = await req.formData();
       rawHtml   = f.get('htmlBody') || f.get('html') || '';
       plainText = f.get('textBody') || f.get('text') || '';
     } else {
       rawHtml = await req.text();
     }
- 
+
     if (!rawHtml && !plainText) {
-      return new Response(JSON.stringify({ error: 'No email content received. Send htmlBody or textBody.' }), {
+      return new Response(JSON.stringify({ error: 'No email content received.' }), {
         status: 400, headers: { 'Content-Type': 'application/json' },
       });
     }
- 
-    // PHASE 1 → EXTRACT
-    const emailText = htmlToText(rawHtml) || plainText;
- 
-    let blocks = splitIntoProductBlocks(emailText);
- 
-    if (!blocks || blocks.length === 0) {
-      const allUrls = findAmazonUrls(emailText);
-      if (allUrls.length === 0) {
-        return new Response(JSON.stringify({ error: 'No product blocks or Amazon URLs found in email.' }), {
-          status: 400, headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      blocks = [{ position: 1, blockNum: '1', section: emailText }];
+
+    const combined = rawHtml + '\n' + plainText;
+    const allUrls  = findAmazonUrls(combined);
+
+    if (allUrls.length === 0) {
+      return new Response(JSON.stringify({ error: 'No Amazon URLs found in email.' }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      });
     }
- 
-    const allUrlsForImages = findAmazonUrls(rawHtml + '\n' + emailText);
- 
-    // ── PARALLEL extraction: all Claude calls fire at once ────────────────────
-    const extractionResults = await Promise.all(
-      blocks.map(async (block) => {
-        const { position, section } = block;
- 
-        const blockUrls  = findAmazonUrls(section);
-        const primaryUrl = blockUrls[0] || null;
-        const nextUrl    = allUrlsForImages[allUrlsForImages.indexOf(primaryUrl) + 1] || null;
- 
-        const asin         = primaryUrl ? extractAsin(primaryUrl) : null;
-        const affiliateUrl = primaryUrl ? addAffiliateTag(primaryUrl) : null;
-        const imageUrl     = primaryUrl ? extractImageForSection(rawHtml, primaryUrl, nextUrl) : null;
- 
-        const result = await extractFromBlock(section, position, apiKey);
- 
-        return { block, position, section, asin, affiliateUrl, imageUrl, result };
+
+    // Extract deal data for every URL in parallel (pure regex — no API calls)
+    const deals = await Promise.all(
+      allUrls.map(async (url, i) => {
+        const asin         = extractAsin(url);
+        const affiliateUrl = addAffiliateTag(url);
+        const ctx          = getContext(rawHtml, url, asin, allUrls);
+
+        return {
+          position:        i + 1,
+          amazonUrl:       affiliateUrl,
+          asin:            asin || null,
+          title:           extractTitle(ctx, url),
+          price:           extractPrice(ctx),
+          promoCode:       extractPromoCode(ctx),
+          discountPercent: extractDiscount(ctx),
+          expirationDate:  extractExpiration(ctx),
+          image:           extractImage(rawHtml, asin, url),
+        };
       })
     );
- 
-    // PHASE 2 → FORMAT (collect in order)
-    const deals = [];
-    let totalInputTokens  = 0;
-    let totalOutputTokens = 0;
- 
-    for (const { block, position, section, asin, affiliateUrl, imageUrl, result } of extractionResults) {
-      totalInputTokens  += result.tokens?.input_tokens  || 0;
-      totalOutputTokens += result.tokens?.output_tokens || 0;
- 
-      const deal = formatDeal(
-        result.ok ? result.fields : null,
-        affiliateUrl,
-        imageUrl,
-        position,
-        {
-          extractionOk:    result.ok,
-          extractionError: result.ok ? null : result.error,
-          asin,
-          blockNum:        block.blockNum,
-          sectionLength:   section.length,
-          sectionPreview:  section.slice(0, 300),
-        }
-      );
-      deals.push(deal);
-    }
- 
-    // PHASE 3 → SAVE to Netlify Blobs as 'pending'
+
+    // Save to Netlify Blobs with dedup
     const store   = getStore('deals');
     const saved   = [];
     const skipped = [];
- 
-    // Filter out deals with no product name
-    const validDeals = [];
-    for (const deal of deals) {
-      if (!deal.productName) {
-        skipped.push({ position: deal.position, reason: 'no productName extracted' });
-      } else {
-        validDeals.push(deal);
-      }
-    }
- 
+
     // Parallel dedup check
     const dedupResults = await Promise.all(
-      validDeals.map(async (deal) => {
-        const asin = deal._meta.asin;
-        const dedupKey = asin
-          ? `asin:${asin}`
-          : `url:${Buffer.from(deal.amazonUrl || deal.productName).toString('base64').slice(0, 20)}`;
+      deals.map(async (deal) => {
+        if (!deal.title) return { deal, skip: true, reason: 'no title extracted' };
+
+        const dedupKey = deal.asin
+          ? `asin:${deal.asin}`
+          : `url:${Buffer.from(deal.amazonUrl).toString('base64').slice(0, 20)}`;
+
         const existing = await store.get(dedupKey, { type: 'json' }).catch(() => null);
-        return { deal, dedupKey, isDuplicate: !!existing };
+        if (existing) return { deal, skip: true, reason: 'duplicate', key: dedupKey };
+
+        return { deal, skip: false, dedupKey };
       })
     );
- 
-    // Sequential save (avoid race conditions)
-    for (const { deal, dedupKey, isDuplicate } of dedupResults) {
-      if (isDuplicate) {
-        skipped.push({ position: deal.position, reason: 'duplicate', key: dedupKey });
+
+    // Sequential save
+    for (const { deal, skip, reason, dedupKey } of dedupResults) {
+      if (skip) {
+        skipped.push({ position: deal.position, reason });
         continue;
       }
- 
-      const asin = deal._meta.asin;
-      const dealRecord = {
-        title:           deal.productName,
-        price:           deal.dealPrice,
+
+      const record = {
+        title:           deal.title,
+        price:           deal.price,
         promoCode:       deal.promoCode,
         discountPercent: deal.discountPercent,
         url:             deal.amazonUrl,
-        image:           deal.imageUrl,
+        image:           deal.image,
         expirationDate:  deal.expirationDate,
-        asin:            asin || null,
+        asin:            deal.asin,
         status:          'pending',
         source:          'email',
         createdAt:       new Date().toISOString(),
         emailPosition:   deal.position,
       };
- 
-      await store.set(dedupKey, JSON.stringify(dealRecord));
-      saved.push({ position: deal.position, key: dedupKey, title: deal.productName });
+
+      await store.set(dedupKey, JSON.stringify(record));
+      saved.push({ position: deal.position, key: dedupKey, title: deal.title });
     }
- 
+
     return new Response(JSON.stringify({
       summary: {
-        blocksFound: blocks.length,
-        extracted:   deals.length,
-        saved:       saved.length,
-        skipped:     skipped.length,
-        model:       MODEL,
-        tokensUsed:  { input: totalInputTokens, output: totalOutputTokens },
+        urlsFound: allUrls.length,
+        extracted: deals.length,
+        saved:     saved.length,
+        skipped:   skipped.length,
       },
       saved,
       skipped,
-      deals,
     }, null, 2), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
- 
+
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 };
- 
+
 export const config = { path: '/api/email-extraction-engine' };
- 
