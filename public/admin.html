@@ -232,7 +232,7 @@ const data = await res.json();
 if (!res.ok) { errorEl.textContent = data.error || 'Login failed.'; return; }
 adminPassword = password;
 allSubmissions = data.submissions || [];
-sessionStorage.setItem('ap', password);
+localStorage.setItem('ap', password);
 document.getElementById('login-screen').style.display = 'none';
 document.getElementById('admin-page').style.display = 'block';
 loadFlaggedDeals();
