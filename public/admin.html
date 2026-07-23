@@ -609,12 +609,6 @@ document.getElementById('password-input').value = saved;
 await login();
 }
 })();
-</script>(async () => {
-   const saved = localStorage.getItem('ap');
-   if (saved) {
-   document.getElementById('password-input').value = saved;
-   await login();
-   }
-   })();
+</script>
 </body>
 </html>
