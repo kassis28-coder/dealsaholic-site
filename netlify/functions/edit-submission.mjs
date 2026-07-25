@@ -69,8 +69,10 @@ export default async (req, context) => {
     };
 
     await store.setJSON(submissionId, updated);
+    const readBack = await store.get(submissionId, { type: "json" });
+console.log("[edit-submission] readBack for key=" + submissionId + ":", JSON.stringify(readBack));
 
-    return new Response(JSON.stringify({ success: true, record: updated }), {
+    return new Response(JSON.stringify({ success: true, record: updated, readBack }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
