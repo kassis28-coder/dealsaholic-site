@@ -117,13 +117,16 @@ function extractPromoCodeFromUrl(url) {
 function cleanTitle(title) {
   if (!title) return null;
 
-  // Remove leading numbered prefix + field label: "1 Product Name:", "3 Product Name:", "Product Name:", etc.
-  title = title.replace(/^\d*\s*(?:product\s*name|product|name|title|item)\s*[:：\-]\s*/i, '');
+  // Remove common email field labels
+title = title.replace(
+  /^\s*\d*\s*(?:Product\s*Name|Product\s*Title|Deal\s*Title|Title|Product|Item|Name|Listing|Offer|Description)\s*[:：-]\s*/i,
+  ''
+);
 
   // Truncate at the first occurrence of any known stop marker
   const stopIdx = title.search(
-    /\bCode:|Deal\s+[Pp]rice:|Original\s+[Pp]rice:|End\s+Day\b|CC\s+[Tt]ime\b|CC\s+ID\b|Code\s+Budget\b|Link:/
-  );
+  /\b(?:Code|Promo\s*Code|Coupon\s*Code|Discount\s*Code|Deal\s*Price|Prime\s*Deal\s*Price|Original\s*Price|List\s*Price|Price|Link|URL|ASIN|End\s*Day|CC\s*Time|CC\s*ID)\s*:/i
+);
   if (stopIdx > 0) title = title.slice(0, stopIdx);
 
   // Remove trailing bare promo codes (all-caps 4–20 char alphanumeric)
@@ -238,10 +241,12 @@ export default async (req, context) => {
 
   // Collect promo codes: promo URL paths first, then email text
   const codesFromUrls = promoUrls.map(u => extractPromoCodeFromUrl(u)).filter(Boolean);
-  const codeFromText  = claudeData?.discountCode
-    || plainText.match(/(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})/i)?.[1]
-    || null;
-  const discountCode = codesFromUrls[0] || codeFromText || null;
+ const codeFromText =
+  claudeData?.discountCode
+  || plainText.match(
+       /(?:Promo\s*Code|Coupon\s*Code|Discount\s*Code|Discount|Promo|Coupon|Code)\s*[:：-]?\s*([A-Z0-9-]{4,20})/i
+     )?.[1]
+  || null;
 
   // Price extraction from email plaintext (deal price vs original price)
   const { dealPrice: textDealPrice, originalPrice: textOriginalPrice } = extractPricesFromText(plainText);
@@ -263,10 +268,12 @@ export default async (req, context) => {
 
     const asin        = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
     const affiliateUrl = asin
-      ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20'
-      : dealUrl
-      ? (dealUrl.includes('tag=') ? dealUrl : dealUrl + (dealUrl.includes('?') ? '&' : '?') + 'tag=kethya08-20')
-      : '';
+  ? `https://www.amazon.com/dp/${asin}?tag=${process.env.AMAZON_PARTNER_TAG || 'daholic-20'}`
+  : dealUrl
+  ? (dealUrl.includes('tag=')
+      ? dealUrl
+      : dealUrl + (dealUrl.includes('?') ? '&' : '?') + `tag=${process.env.AMAZON_PARTNER_TAG || 'daholic-20'}`)
+  : '';
 
     const imageUrl = meta?.image || (asin ? 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg' : null);
 
