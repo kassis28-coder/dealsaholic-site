@@ -42,7 +42,7 @@ export default async (req, context) => {
       const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
       const asin = asinMatch ? asinMatch[1] : null;
       if (asin) {
-        finalUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20`;
+        finalUrl = `https://www.amazon.com/dp/${asin}?tag=daholic-20`;
       }
     }
 
