@@ -247,6 +247,10 @@ export default async (req, context) => {
        /(?:Promo\s*Code|Coupon\s*Code|Discount\s*Code|Discount|Promo|Coupon|Code)\s*[:：-]?\s*([A-Z0-9-]{4,20})/i
      )?.[1]
   || null;
+  const discountCode =
+  codesFromUrls[0] ||
+  codeFromText ||
+  null;
 
   // Price extraction from email plaintext (deal price vs original price)
   const { dealPrice: textDealPrice, originalPrice: textOriginalPrice } = extractPricesFromText(plainText);
