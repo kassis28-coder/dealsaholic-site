@@ -234,10 +234,14 @@ export default async (req, context) => {
   }
 
   const uniqueUrls = [...new Set(allUrls)];
+  console.log("=== EMAIL IMPORT START ===");
+console.log("Total URLs found:", uniqueUrls.length);
 
   // Separate product URLs from promo-only links (promocode, gc-apply, etc.)
   const promoUrls   = uniqueUrls.filter(u =>  isPromoOnlyUrl(u));
   const productUrls = uniqueUrls.filter(u => !isPromoOnlyUrl(u));
+  console.log("Product URLs:", productUrls.length);
+console.log("Promo URLs:", promoUrls.length);
 
   // Collect promo codes: promo URL paths first, then email text
   const codesFromUrls = promoUrls.map(u => extractPromoCodeFromUrl(u)).filter(Boolean);
@@ -266,9 +270,18 @@ export default async (req, context) => {
   const savedIds    = [];
   const deals       = [];
 
-  for (const dealUrl of urlsToProcess) {
+ let dealNumber = 0;
+
+for (const dealUrl of urlsToProcess) {
+  dealNumber++;
+  console.log(`Processing deal ${dealNumber}/${urlsToProcess.length}`);
+  console.log(dealUrl);
     let meta = dealUrl === primaryUrl ? primaryMeta : null;
-    if (!meta && dealUrl) meta = await fetchAmazonMeta(dealUrl);
+    if (!meta && dealUrl) {
+  console.time(`Amazon ${dealNumber}`);
+  meta = await fetchAmazonMeta(dealUrl);
+  console.timeEnd(`Amazon ${dealNumber}`);
+}
 
     const asin        = dealUrl?.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || meta?.asin || null;
     const affiliateUrl = asin
@@ -309,7 +322,9 @@ export default async (req, context) => {
       expiresOn:     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
-    await store.setJSON(id, submission);
+   console.time(`Blob Save ${dealNumber}`);
+await store.setJSON(id, submission);
+console.timeEnd(`Blob Save ${dealNumber}`);
     savedIds.push(id);
     deals.push({ id, title: dealTitle, price: dealPrice || null, url: affiliateUrl, imageUrl });
 
