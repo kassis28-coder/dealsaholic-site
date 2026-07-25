@@ -16,6 +16,22 @@ function stripHtml(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
+function htmlToTextWithLines(html) {
+  return (html || '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/?(?:p|div|tr|li|h[1-6])\b[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<td\b[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function extractCdnImages(html) {
   const patterns = [
     /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
@@ -61,6 +77,68 @@ function extractAmazonUrls(text) {
   return urls;
 }
 
+function splitProductBlocks(text) {
+  const patterns = [
+    /(?:^|\n)\s*#\s*\d+\s*(?:\n|$)/g,
+    /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame\s*:/g,
+    /(?:^|\n)\s*\d+[.)]\s*(?:\n|$)/g,
+  ];
+  for (const pattern of patterns) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length > 0) {
+      return matches.map((match, i) =>
+        text.slice(match.index, matches[i + 1]?.index ?? text.length).trim()
+      ).filter(block => block.length > 10);
+    }
+  }
+  return [];
+}
+
+function extractStructuredProductData(block) {
+  const lines = block.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const titleMatch = block.match(/Product\s*[Nn]ame\s*[:：\s]+([^\n]+)/i);
+  let title = titleMatch?.[1]?.trim() || null;
+  if (!title) {
+    title = lines.find(line =>
+      !/^#?\d+[.)]?$/.test(line) &&
+      !/^https?:/i.test(line) &&
+      !/^(?:promo|coupon|discount\s*code|code|deal\s*price|final\s*price|sale\s*price|original\s*price|reg(?:ular)?\s*price|end\s*date|start\s*date|expires?)/i.test(line) &&
+      !/^\$?\d+(?:[.,]\d+)?(?:\s*[-–]\s*\$?\d+(?:[.,]\d+)?)?\s*(?:\(Reg\.|$)/i.test(line)
+    ) || null;
+  }
+  if (title) title = title
+    .replace(/^#?\d+[.)]?\s*/, '')
+    .replace(/^\d+%\s*off\s*/i, '')
+    .replace(/\s*[|:]\s*amazon\b.*/i, '')
+    .trim()
+    .slice(0, 200);
+
+  const dealMatch = block.match(/(?:^|\n)\s*(?:(?:Deal|Final|Sale)\s*)?Price\s*[:：\s]+\$?([\d.,]+)/im)
+    || block.match(/\b(\d{1,4}\.\d{2})(?:\s*[-–]\s*\d+\.\d{2})?\s*\(Reg\./i);
+  const dealPrice = dealMatch?.[1] ? `$${dealMatch[1].replace(/,/g, '')}` : null;
+
+  const originalMatch = block.match(/(?:^|\n)\s*(?:Original\s*Price|Reg\.?\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:：\s]+\$?([\d.,]+)/im)
+    || block.match(/\(Reg\.\s*([\d.,]+)/i);
+  const originalPrice = originalMatch?.[1] ? `$${originalMatch[1].replace(/,/g, '')}` : null;
+
+  const codeMatch = block.match(/(?:^|\n)\s*(?:promo(?:\s*code)?|coupon(?:\s*code)?|discount\s*code|code)\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/im)
+    || block.match(/\b(?:promo(?:\s*code)?|coupon(?:\s*code)?|discount\s*code|code)\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/i)
+    || block.match(/\bwith\s+code\s*[:：=\-]?\s*([A-Z0-9]{4,20})\b/i);
+  const discountCode = codeMatch?.[1]?.toUpperCase() || null;
+
+  const urls = extractAmazonUrls(block);
+  const amazonUrl = urls[0] || null;
+  const asin = amazonUrl?.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
+  const expirationMatch = block.match(/(?:End\s*Date|Expir(?:es?|ation)\s*(?:Date)?)\s*[:：\s]+([^\n]+)/i);
+  let expirationDate = null;
+  if (expirationMatch?.[1]) {
+    const date = new Date(expirationMatch[1].trim());
+    if (!Number.isNaN(date.getTime())) expirationDate = date.toISOString();
+  }
+
+  return { title, dealPrice, originalPrice, discountCode, amazonUrl, asin, expirationDate };
+}
+
 function parseDollar(str) {
   const n = parseFloat(String(str || '').replace(/[^0-9.]/g, ''));
   return isNaN(n) ? null : n;
@@ -92,27 +170,30 @@ async function resolveAsin(url) {
 
 function getProductContext(rawHtml, plainText, url, asin) {
   const terms = [url, ...(asin ? [asin] : [])];
-
-  // Map all Amazon URL positions in raw HTML to use as product boundaries
-  const urlBoundaries = [];
   const urlPat = /https?:\/\/(?:www\.)?(?:amazon\.com|amzn\.to|amzn\.com|a\.co)[^\s"'<>)]+/gi;
-  let m;
-  while ((m = urlPat.exec(rawHtml)) !== null) urlBoundaries.push({ pos: m.index, end: m.index + m[0].length });
 
-  for (const term of terms) {
-    const idx = rawHtml.indexOf(term);
-    if (idx >= 0) {
-      // Bound the context between the prev and next Amazon URL
-      const prev = urlBoundaries.filter(u => u.end <= idx).slice(-1)[0];
-      const next = urlBoundaries.find(u => u.pos > idx);
-      const rawStart = prev ? prev.end : Math.max(0, idx - 3000);
-      const rawEnd   = next ? next.pos : Math.min(rawHtml.length, idx + term.length + 3000);
-      return stripHtml(rawHtml.slice(rawStart, rawEnd));
+  for (const source of [plainText || '', rawHtml || '']) {
+    if (!source) continue;
+    const urlBoundaries = [];
+    let match;
+    while ((match = urlPat.exec(source)) !== null) urlBoundaries.push({ pos: match.index, end: match.index + match[0].length });
+    urlPat.lastIndex = 0;
+
+    for (const term of terms) {
+      const idx = source.indexOf(term);
+      if (idx >= 0) {
+        const prev = urlBoundaries.filter(item => item.end <= idx).slice(-1)[0];
+        const next = urlBoundaries.find(item => item.pos > idx);
+        const start = prev ? prev.end : Math.max(0, idx - 3000);
+        const end = next ? next.pos : Math.min(source.length, idx + term.length + 3000);
+        const context = source.slice(start, end);
+        return source === rawHtml ? htmlToTextWithLines(context) : context;
+      }
     }
   }
 
   // Fallback: stripped HTML or plain text
-  const stripped = stripHtml(rawHtml);
+  const stripped = htmlToTextWithLines(rawHtml);
   const W = 600;
   for (const src of [stripped, plainText || '']) {
     for (const term of terms) {
@@ -283,10 +364,37 @@ async function fetchAmazonMeta(url) {
 async function extractAllProducts(rawHtml, plainText, emailText) {
   const cdnImages = extractCdnImages(rawHtml);
   const combined = rawHtml + '\n' + (plainText || '') + '\n' + (emailText || '');
-  const allUrls = extractAmazonUrls(combined);
-  const urlsToProcess = allUrls.slice(0, 5);
+  const structuredText = plainText || emailText || htmlToTextWithLines(rawHtml);
+  const blocks = splitProductBlocks(structuredText);
 
-  console.log(`[Phase 1] URLs found: ${allUrls.length}, processing: ${urlsToProcess.length}, CDN images: ${cdnImages.length}`);
+  if (blocks.length > 0) {
+    const drafts = [];
+    const seenUrls = new Set();
+    for (const block of blocks) {
+      const fields = extractStructuredProductData(block);
+      if (!fields.amazonUrl || seenUrls.has(fields.amazonUrl)) continue;
+      seenUrls.add(fields.amazonUrl);
+      const asin = fields.asin || await resolveAsin(fields.amazonUrl);
+      drafts.push({
+        amazonUrl:      fields.amazonUrl,
+        asin:           asin || null,
+        productName:    fields.title || null,
+        dealPrice:      fields.dealPrice || null,
+        originalPrice:  fields.originalPrice || null,
+        discountCode:   fields.discountCode || null,
+        expirationDate: fields.expirationDate || null,
+        imageUrl:       extractImageForProduct(rawHtml, cdnImages, asin, fields.amazonUrl) || null,
+      });
+    }
+    if (drafts.length > 0) {
+      console.log(`[Phase 1] Structured blocks: ${blocks.length}, products: ${drafts.length}, CDN images: ${cdnImages.length}`);
+      return { drafts, urlsFound: drafts.length };
+    }
+  }
+
+  const allUrls = extractAmazonUrls(combined);
+  const urlsToProcess = allUrls;
+  console.log(`[Phase 1] Fallback URLs found: ${allUrls.length}, processing: ${urlsToProcess.length}, CDN images: ${cdnImages.length}`);
 
   const drafts = [];
   for (let i = 0; i < urlsToProcess.length; i++) {
