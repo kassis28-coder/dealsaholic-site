@@ -484,7 +484,7 @@ try { data = await res.json(); } catch (e) {}
 if (!res.ok) throw new Error(data.error || ('Save failed (HTTP ' + res.status + ')'));
 const record = allSubmissions.find(s => s.id === id);
 if (record && data.record) Object.assign(record, data.record);
-msgEl.textContent = '✅ Saved and verified.';
+msgEl.textContent = '✅ Saved.';
 msgEl.style.color = 'var(--green)';
 setTimeout(() => {
 editingId = null;
