@@ -165,9 +165,48 @@ function buildAsinImageUrl(asin) {
     : null;
 }
 
+function canonicalAmazonUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    const promoMatch = url.pathname.match(/\/promocode\/([^/?#]+)/i);
+    if (promoMatch) return `promo:${promoMatch[1].toUpperCase()}`;
+
+    const asinMatch = url.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+    if (asinMatch) return `asin:${asinMatch[1].toUpperCase()}`;
+
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, '')}`;
+  } catch {
+    return String(rawUrl || '').split('?')[0].replace(/\/$/, '');
+  }
+}
+
+function getDedupKeys({ asin, discountCode, amazonUrl, productUrl }) {
+  const code = String(discountCode || '').trim().toUpperCase();
+  const urlKey = canonicalAmazonUrl(amazonUrl || productUrl || '');
+  const suffix = `|code:${code || '-'}`;
+  const keys = new Set();
+
+  // Keep the promo campaign ID and, once Amazon resolves it, its first ASIN.
+  // Saved promo records use the resolved /dp/ URL, so retaining both keys lets
+  // a later copy of the same email match the record already in the system.
+  if (urlKey) keys.add(`${urlKey}${suffix}`);
+  if (asin) keys.add(`asin:${String(asin).toUpperCase()}${suffix}`);
+  return keys;
+}
+
+function hasAnyDedupKey(keys, existingKeys) {
+  return [...keys].some(key => existingKeys.has(key));
+}
+
 function toAmazon400ImageUrl(imageUrl) {
   if (!/^https:\/\/m\.media-amazon\.com\/images\/I\//i.test(imageUrl || '')) return imageUrl;
   return imageUrl.replace(/(?:\._[^/]+)?\.jpg(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+}
+
+function decodeAmazonImageUrl(imageUrl) {
+  return imageUrl
+    ? imageUrl.replace(/\\u0026/gi, '&').replace(/\\\//g, '/')
+    : null;
 }
 
 function findFirstAsin(source) {
@@ -393,11 +432,13 @@ async function fetchAmazonMeta(url) {
     if (!r.ok) return {};
     const html = await r.text();
     const title = html.match(/<span[^>]*id="productTitle"[^>]*>\s*([^<]+?)\s*<\/span>/i)?.[1]?.trim() || null;
-    const image =
+    const imageCandidate =
       html.match(/"hiRes"\s*:\s*"(https:[^"]+)"/)?.[1] ||
       html.match(/"large"\s*:\s*"(https:[^"]+)"/)?.[1] ||
       html.match(/id="landingImage"[^>]*data-old-hires="([^"]+)"/i)?.[1] ||
+      html.match(/https?:\\?\/\\?\/m\.media-amazon\.com\\?\/images\\?\/I\\?\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/i)?.[0] ||
       null;
+    const image = decodeAmazonImageUrl(imageCandidate);
     const pw = html.match(/class="a-price-whole"[^>]*>(\d+)<\/span>/)?.[1];
     const pf = html.match(/class="a-price-fraction"[^>]*>(\d+)<\/span>/)?.[1];
     const price = pw ? parseDollar(`${pw}.${pf || '00'}`) : null;
@@ -425,12 +466,14 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
 
   if (blocks.length > 0) {
     const drafts = [];
-    const seenUrls = new Set();
+    const seenKeys = new Set();
     for (const block of blocks) {
       const fields = extractStructuredProductData(block);
-      if (!fields.isProductBlock || !fields.amazonUrl || seenUrls.has(fields.amazonUrl)) continue;
-      seenUrls.add(fields.amazonUrl);
+      if (!fields.isProductBlock || !fields.amazonUrl) continue;
       const asin = fields.asin || await resolveAsin(fields.amazonUrl);
+      const dedupKeys = getDedupKeys({ ...fields, asin });
+      if (hasAnyDedupKey(dedupKeys, seenKeys)) continue;
+      for (const key of dedupKeys) seenKeys.add(key);
       drafts.push({
         amazonUrl:      fields.amazonUrl,
         asin:           asin || null,
@@ -453,9 +496,13 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
   console.log(`[Phase 1] Fallback URLs found: ${allUrls.length}, processing: ${urlsToProcess.length}, CDN images: ${cdnImages.length}`);
 
   const drafts = [];
+  const seenKeys = new Set();
   for (let i = 0; i < urlsToProcess.length; i++) {
     const url = urlsToProcess[i];
     const asin = await resolveAsin(url);
+    const dedupKeys = getDedupKeys({ asin, amazonUrl: url });
+    if (hasAnyDedupKey(dedupKeys, seenKeys)) continue;
+    for (const key of dedupKeys) seenKeys.add(key);
 
     const draft = {
       amazonUrl:      url,
@@ -508,7 +555,12 @@ function validateDraft(draft, i) {
 // PHASE 3 â Save each validated draft (with Amazon enrichment)
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-async function saveDraft(draft, store, indexArr, ids, deals) {
+async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
+  const dedupKeys = getDedupKeys(draft);
+  if (hasAnyDedupKey(dedupKeys, existingKeys)) {
+    console.log(`[Phase 3] Duplicate skipped: ${[...dedupKeys].join(', ')}`);
+    return null;
+  }
   const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
   const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
@@ -552,11 +604,32 @@ async function saveDraft(draft, store, indexArr, ids, deals) {
 
   await store.set(id, JSON.stringify(record));
   indexArr.unshift(id);
+  for (const key of dedupKeys) existingKeys.add(key);
   ids.push(id);
   deals.push({ id, title: record.productTitle, price: record.price, url: affiliateUrl, imageUrl: record.image, discountCode: record.discountCode });
 
   console.log(`[Phase 3] Saved ${id}: "${record.productTitle}" ${record.price} code=${record.discountCode}`);
   return record;
+}
+
+async function loadExistingDedupKeys(store, indexArr) {
+  const keys = new Set();
+  const batchSize = 20;
+
+  for (let i = 0; i < indexArr.length; i += batchSize) {
+    const batch = indexArr.slice(i, i + batchSize);
+    const records = await Promise.all(batch.map(async (id) => {
+      try { return await store.get(id, { type: 'json' }); }
+      catch { return null; }
+    }));
+    for (const record of records) {
+      if (record?.productUrl || record?.asin) {
+        for (const key of getDedupKeys(record)) keys.add(key);
+      }
+    }
+  }
+
+  return keys;
 }
 
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -611,11 +684,14 @@ export default async (req) => {
       const existing = await store.get('index', { type: 'json' });
       if (Array.isArray(existing)) indexArr = existing;
     } catch { /* no index yet */ }
+    const existingKeys = await loadExistingDedupKeys(store, indexArr);
+    console.log(`[Phase 3] Existing deal keys: ${existingKeys.size}`);
 
     const ids = [], deals = [], savedRecords = [];
     for (const draft of validDrafts) {
       try {
-        savedRecords.push(await saveDraft(draft, store, indexArr, ids, deals));
+        const record = await saveDraft(draft, store, indexArr, ids, deals, existingKeys);
+        if (record) savedRecords.push(record);
       } catch (err) {
         console.error(`[Phase 3] Failed to save ${draft.amazonUrl}:`, err.message);
       }
