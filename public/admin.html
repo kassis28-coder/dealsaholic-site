@@ -395,11 +395,11 @@ ${isEditing ? `
 <div class="edit-form-row">
 <div class="edit-form-group">
 <label>Current Price</label>
-<input type="text" id="edit-price-${s.id}" value="${escapeHtml(s.price || '')}">
+<input type="text" id="edit-price-${s.id}" value="${escapeHtml(s.price || '')}" onblur="formatPriceInput(this)">
 </div>
 <div class="edit-form-group">
 <label>Original Price</label>
-<input type="text" id="edit-original-${s.id}" value="${escapeHtml(s.originalPrice || '')}">
+<input type="text" id="edit-original-${s.id}" value="${escapeHtml(s.originalPrice || '')}" onblur="formatPriceInput(this)">
 </div>
 </div>
 <div class="edit-form-row">
@@ -448,13 +448,26 @@ ${s.status !== 'needs-review' ? `<button class="btn btn--delete" onclick="delete
 </div>`;
 }).join('');
 }
+function normalizePrice(value) {
+const text = String(value || '').trim();
+return /^\d/.test(text) ? '$' + text : text;
+}
+
+function formatPriceInput(input) {
+input.value = normalizePrice(input.value);
+}
+
 async function saveEdit(id) {
 const msgEl = document.getElementById(`edit-msg-${id}`);
 msgEl.textContent = 'Saving...';
 msgEl.style.color = 'var(--ink-soft)';
 const title = document.getElementById(`edit-title-${id}`).value.trim();
-const price = document.getElementById(`edit-price-${id}`).value.trim();
-const originalPrice = document.getElementById(`edit-original-${id}`).value.trim();
+const priceInput = document.getElementById(`edit-price-${id}`);
+const originalPriceInput = document.getElementById(`edit-original-${id}`);
+formatPriceInput(priceInput);
+formatPriceInput(originalPriceInput);
+const price = priceInput.value;
+const originalPrice = originalPriceInput.value;
 const discount = document.getElementById(`edit-discount-${id}`).value.trim();
 const discountCode = document.getElementById(`edit-code-${id}`).value.trim();
 const url = document.getElementById(`edit-url-${id}`).value.trim();
