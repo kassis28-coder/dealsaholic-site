@@ -79,6 +79,7 @@ function extractAmazonUrls(text) {
 
 function splitProductBlocks(text) {
   const patterns = [
+    /(?:^|\n)\s*#?\s*\d+\s*:\s*(?=\n|$)/g,
     /(?:^|\n)\s*#\s*\d+\s*(?:\n|$)/g,
     /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame\s*:/g,
     /(?:^|\n)\s*\d+[.)]\s*(?:\n|$)/g,
@@ -96,24 +97,26 @@ function splitProductBlocks(text) {
 
 function extractStructuredProductData(block) {
   const lines = block.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const titleMatch = block.match(/Product\s*[Nn]ame\s*[:：\s]+([^\n]+)/i);
-  let title = titleMatch?.[1]?.trim() || null;
-  if (!title) {
-    title = lines.find(line =>
-      !/^#?\d+[.)]?$/.test(line) &&
-      !/^https?:/i.test(line) &&
-      !/^(?:promo|coupon|discount\s*code|code|deal\s*price|final\s*price|sale\s*price|original\s*price|reg(?:ular)?\s*price|end\s*date|start\s*date|expires?)/i.test(line) &&
-      !/^\$?\d+(?:[.,]\d+)?(?:\s*[-–]\s*\$?\d+(?:[.,]\d+)?)?\s*(?:\(Reg\.|$)/i.test(line)
-    ) || null;
+  const titleLine = lines.findIndex(line => /^Product\s*(?:[Nn]ame|[Tt]itle)\s*[:：]/.test(line));
+  const isHeaderOnly = /^(?:Code\s+(?:End|Start)\s+Date|(?:Great\s+)?Amazon\s+promo\s+deals|\d{1,2}[./-]\d{1,2}\s+Deals)\b/i.test(lines[0] || '');
+  let title = null;
+  if (!isHeaderOnly && titleLine >= 0) {
+    const titleLines = [lines[titleLine].replace(/^Product\s*(?:[Nn]ame|[Tt]itle)\s*[:：]\s*/i, '')];
+    for (let i = titleLine + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^(?:Original|Regular|Reg\.?|Deal|Final|Sale)\s*Price\s*[:：]|^(?:Discount|Promo|Coupon)\s*(?:Code|Ratio)\s*[:：]|^Code\s+(?:Start|End)\s+Date\s*[:：]|^(?:Start|End)\s+Date\s*[:：]|^Link\s*[:：]|^ACC\s/i.test(line) || /^https?:/i.test(line)) break;
+      titleLines.push(line);
+    }
+    title = titleLines.join(' ').trim() || null;
   }
   if (title) title = title
-    .replace(/^#?\d+[.)]?\s*/, '')
+    .replace(/^#?\d+[.)]\s*/, '')
     .replace(/^\d+%\s*off\s*/i, '')
     .replace(/\s*[|:]\s*amazon\b.*/i, '')
     .trim()
     .slice(0, 200);
 
-  const dealMatch = block.match(/(?:^|\n)\s*(?:(?:Deal|Final|Sale)\s*)?Price\s*[:：\s]+\$?([\d.,]+)/im)
+  const dealMatch = block.match(/(?:^|\n)\s*(?:(?:Deal|Final|Sale)\s*)Price\s*[:：\s]+\$?([\d.,]+)/im)
     || block.match(/\b(\d{1,4}\.\d{2})(?:\s*[-–]\s*\d+\.\d{2})?\s*\(Reg\./i);
   const dealPrice = dealMatch?.[1] ? `$${dealMatch[1].replace(/,/g, '')}` : null;
 
@@ -121,10 +124,11 @@ function extractStructuredProductData(block) {
     || block.match(/\(Reg\.\s*([\d.,]+)/i);
   const originalPrice = originalMatch?.[1] ? `$${originalMatch[1].replace(/,/g, '')}` : null;
 
-  const codeMatch = block.match(/(?:^|\n)\s*(?:promo(?:\s*code)?|coupon(?:\s*code)?|discount\s*code|code)\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/im)
-    || block.match(/\b(?:promo(?:\s*code)?|coupon(?:\s*code)?|discount\s*code|code)\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/i)
-    || block.match(/\bwith\s+code\s*[:：=\-]?\s*([A-Z0-9]{4,20})\b/i);
-  const discountCode = codeMatch?.[1]?.toUpperCase() || null;
+  const codeMatch = block.match(/(?:^|\n)\s*(?:(?:Promo|Coupon|Discount)\s+)?Code\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/im)
+    || block.match(/\b(?:with|use|apply|enter)\s+code\s*[:：=\-]?\s*\[?([A-Z0-9]{4,20})\]?\b/i);
+  const invalidCodes = new Set(['RATIO', 'PRICE', 'DATE', 'END', 'START', 'DEAL', 'CODE', 'PROMO', 'AMAZON']);
+  const codeCandidate = codeMatch?.[1]?.toUpperCase() || null;
+  const discountCode = codeCandidate && !invalidCodes.has(codeCandidate) ? codeCandidate : null;
 
   const urls = extractAmazonUrls(block);
   const amazonUrl = urls[0] || null;
@@ -136,7 +140,7 @@ function extractStructuredProductData(block) {
     if (!Number.isNaN(date.getTime())) expirationDate = date.toISOString();
   }
 
-  return { title, dealPrice, originalPrice, discountCode, amazonUrl, asin, expirationDate };
+  return { title, dealPrice, originalPrice, discountCode, amazonUrl, asin, expirationDate, isProductBlock: !isHeaderOnly && titleLine >= 0 };
 }
 
 function parseDollar(str) {
@@ -153,6 +157,12 @@ function buildAffiliateUrl(asin, rawUrl) {
   } catch {
     return rawUrl + (rawUrl.includes('?') ? '&' : '?') + `tag=${AFFILIATE_TAG}`;
   }
+}
+
+function buildAsinImageUrl(asin) {
+  return asin
+    ? `https://images-na.ssl-images-amazon.com/images/P/${asin}.01.LZZZZZZZ.jpg`
+    : null;
 }
 
 async function resolveAsin(url) {
@@ -372,7 +382,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
     const seenUrls = new Set();
     for (const block of blocks) {
       const fields = extractStructuredProductData(block);
-      if (!fields.amazonUrl || seenUrls.has(fields.amazonUrl)) continue;
+      if (!fields.isProductBlock || !fields.amazonUrl || seenUrls.has(fields.amazonUrl)) continue;
       seenUrls.add(fields.amazonUrl);
       const asin = fields.asin || await resolveAsin(fields.amazonUrl);
       drafts.push({
@@ -400,16 +410,15 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
   for (let i = 0; i < urlsToProcess.length; i++) {
     const url = urlsToProcess[i];
     const asin = await resolveAsin(url);
-    const context = getProductContext(rawHtml, plainText || emailText || '', url, asin);
 
     const draft = {
       amazonUrl:      url,
       asin:           asin || null,
-      productName:    extractTitle(context, url)                          || null,
-      dealPrice:      extractPrice(context)                               || null,
-      originalPrice:  extractOriginalPrice(context)                      || null,
-      discountCode:   extractPromoCode(context)                          || null,
-      expirationDate: extractExpirationDate(context)                     || null,
+      productName:    null,
+      dealPrice:      null,
+      originalPrice:  null,
+      discountCode:   null,
+      expirationDate: null,
       imageUrl:       extractImageForProduct(rawHtml, cdnImages, asin, url) || null,
     };
 
@@ -422,7 +431,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
       discountCode:   draft.discountCode,
       expirationDate: draft.expirationDate,
       imageUrl:       draft.imageUrl ? '[found]' : null,
-      contextLen:     context.length,
+      contextLen:     0,
     }));
 
     drafts.push(draft);
@@ -464,6 +473,7 @@ async function saveDraft(draft, store, indexArr, ids, deals) {
     dealPrice     = dealPrice     || meta.price         || null;
     originalPrice = originalPrice || meta.originalPrice || null;
   }
+  imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);
