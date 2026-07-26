@@ -603,7 +603,7 @@ document.getElementById('password-input').addEventListener('keydown', (e) => {
 if (e.key === 'Enter') login();
 });
 (async () => {
-const saved = sessionStorage.getItem('ap');
+const saved = localStorage.getItem('ap');
 if (saved) {
 document.getElementById('password-input').value = saved;
 await login();
