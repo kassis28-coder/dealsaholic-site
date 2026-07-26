@@ -165,13 +165,59 @@ function buildAsinImageUrl(asin) {
     : null;
 }
 
+function toAmazon400ImageUrl(imageUrl) {
+  if (!/^https:\/\/m\.media-amazon\.com\/images\/I\//i.test(imageUrl || '')) return imageUrl;
+  return imageUrl.replace(/(?:\._[^/]+)?\.jpg(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+}
+
+function findFirstAsin(source) {
+  const text = String(source || '');
+  const patterns = [
+    /\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#&"'\s]|$)/gi,
+    /data-asin\s*=\s*["']([A-Z0-9]{10})["']/gi,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[1]) return match[1].toUpperCase();
+  }
+
+  return null;
+}
+
+async function resolvePromoAsin(url) {
+  if (!/amazon\.com\/promocode\//i.test(url || '')) return null;
+
+  try {
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(5000),
+    });
+
+    // A promo link can occasionally redirect directly to one product page.
+    const redirectedAsin = findFirstAsin(r.url);
+    if (redirectedAsin) return redirectedAsin;
+    if (!r.ok) return null;
+
+    // Promo pages can list several products. Use the first product ASIN Amazon
+    // exposes, so this remains a promo-only fallback and never changes /dp/ URLs.
+    return findFirstAsin(await r.text());
+  } catch {
+    return null;
+  }
+}
+
 async function resolveAsin(url) {
   const direct = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1];
   if (direct) return direct;
   try {
     const r = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(4000) });
-    return (r.url || url).match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
-  } catch { return null; }
+    const redirectedAsin = (r.url || url).match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
+    if (redirectedAsin) return redirectedAsin;
+  } catch { /* Try the promo-page-only fallback below. */ }
+
+  return resolvePromoAsin(url);
 }
 
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -464,6 +510,7 @@ function validateDraft(draft, i) {
 
 async function saveDraft(draft, store, indexArr, ids, deals) {
   const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
+  const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
 
   if (!title || !imageUrl || !dealPrice) {
@@ -474,6 +521,7 @@ async function saveDraft(draft, store, indexArr, ids, deals) {
     originalPrice = originalPrice || meta.originalPrice || null;
   }
   imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
+  imageUrl = isPromoUrl ? toAmazon400ImageUrl(imageUrl) : imageUrl;
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);
