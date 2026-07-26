@@ -28,7 +28,9 @@ export default async (req) => {
 
     let index = [];
     try {
-      const existingIndex = await store.get("index", { type: "json" });
+      // Admin refreshes must show the just-saved record, not an edge-cached
+      // copy of the index. This endpoint is admin-only, so correctness wins.
+      const existingIndex = await store.get("index", { type: "json", consistency: "strong" });
       if (Array.isArray(existingIndex)) index = existingIndex;
     } catch {
       // No submissions yet.
@@ -37,7 +39,7 @@ export default async (req) => {
     const submissions = [];
     for (const id of index) {
       try {
-        const record = await store.get(id, { type: "json" });
+        const record = await store.get(id, { type: "json", consistency: "strong" });
         if (record) submissions.push(record);
       } catch {
         // Skip any record that fails to load rather than failing the whole list.

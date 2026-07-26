@@ -50,7 +50,9 @@ export default async (req, context) => {
     const store = getStore("submissions");
     let record;
     try {
-      record = await store.get(submissionId, { type: "json" });
+      // An admin edit must begin from the latest stored record. The default
+      // eventual read can return a stale copy immediately after another edit.
+      record = await store.get(submissionId, { type: "json", consistency: "strong" });
     } catch (e) {
       record = null;
     }
