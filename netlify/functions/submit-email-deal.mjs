@@ -165,6 +165,11 @@ function buildAsinImageUrl(asin) {
     : null;
 }
 
+function toAmazon400ImageUrl(imageUrl) {
+  if (!/^https:\/\/m\.media-amazon\.com\/images\/I\//i.test(imageUrl || '')) return imageUrl;
+  return imageUrl.replace(/(?:\._[^/]+)?\.jpg(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+}
+
 function findFirstAsin(source) {
   const text = String(source || '');
   const patterns = [
@@ -505,6 +510,7 @@ function validateDraft(draft, i) {
 
 async function saveDraft(draft, store, indexArr, ids, deals) {
   const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
+  const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
 
   if (!title || !imageUrl || !dealPrice) {
@@ -515,6 +521,7 @@ async function saveDraft(draft, store, indexArr, ids, deals) {
     originalPrice = originalPrice || meta.originalPrice || null;
   }
   imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
+  imageUrl = isPromoUrl ? toAmazon400ImageUrl(imageUrl) : imageUrl;
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);
