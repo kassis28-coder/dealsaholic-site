@@ -470,19 +470,13 @@ let data = {};
 try { data = await res.json(); } catch (e) {}
 if (!res.ok) throw new Error(data.error || ('Save failed (HTTP ' + res.status + ')'));
 const record = allSubmissions.find(s => s.id === id);
-if (record) {
-record.title = title; record.productTitle = title;
-record.price = price; record.originalPrice = originalPrice;
-record.discount = discount; record.discountCode = discountCode;
-record.expiresOn = expiresOn;
-record.imageUrl = imageUrl;
-record.image = imageUrl;
-record.photoUrl = imageUrl;
-if (data.record && data.record.url) { record.url = data.record.url; record.productUrl = data.record.url; }
-else if (url) { record.url = url; record.productUrl = url; }
-}
+if (record && data.record) Object.assign(record, data.record);
+msgEl.textContent = '✅ Saved and verified.';
+msgEl.style.color = 'var(--green)';
+setTimeout(() => {
 editingId = null;
 renderList();
+}, 900);
 } catch (err) {
 msgEl.textContent = '❌ ' + err.message;
 msgEl.style.color = 'var(--red)';

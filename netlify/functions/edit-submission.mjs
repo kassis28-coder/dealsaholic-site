@@ -119,7 +119,16 @@ export default async (req, context) => {
 
     await store.setJSON(submissionId, updated);
 
-    return new Response(JSON.stringify({ success: true, record: updated }), {
+    // Do not tell the admin page that a change succeeded until the exact Blob
+    // key has been read back. This catches a failed or stale write before the
+    // edit form closes and prevents a misleading local-only update.
+    const persisted = await store.get(submissionId, { type: "json" });
+    if (!persisted || persisted.updatedAt !== updated.updatedAt) {
+      throw new Error("The update could not be verified. Please try again.");
+    }
+    console.log(`[edit-submission] Verified saved record ${submissionId}`);
+
+    return new Response(JSON.stringify({ success: true, record: persisted }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
