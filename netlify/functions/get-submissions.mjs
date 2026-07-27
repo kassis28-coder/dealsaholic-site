@@ -36,14 +36,22 @@ export default async (req) => {
       // No submissions yet.
     }
 
+    // Strong reads are necessary here so a refresh shows the latest admin edit.
+    // Reading hundreds of records one-by-one, however, takes longer than the
+    // browser request timeout. Read a small group in parallel instead.
     const submissions = [];
-    for (const id of index) {
-      try {
-        const record = await store.get(id, { type: "json", consistency: "strong" });
-        if (record) submissions.push(record);
-      } catch {
-        // Skip any record that fails to load rather than failing the whole list.
-      }
+    const batchSize = 25;
+    for (let offset = 0; offset < index.length; offset += batchSize) {
+      const batch = index.slice(offset, offset + batchSize);
+      const records = await Promise.all(batch.map(async (id) => {
+        try {
+          return await store.get(id, { type: "json", consistency: "strong" });
+        } catch {
+          // Skip a single unreadable record rather than failing the whole list.
+          return null;
+        }
+      }));
+      submissions.push(...records.filter(Boolean));
     }
 
     submissions.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
