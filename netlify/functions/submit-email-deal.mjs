@@ -83,28 +83,39 @@ function splitProductBlocks(text) {
     /(?:^|\n)\s*#\s*\d+\s*(?:\n|$)/g,
     /(?:^|\n)\s*\d+\s+Product\s*[Nn]ame\s*:/g,
     /(?:^|\n)\s*\d+[.)]\s*(?:\n|$)/g,
+    // Most seller feeds use a field label instead of a numeric heading.
+    // Splitting here keeps every following field isolated to that product.
+    /(?:^|\n)\s*(?:\d+\s*[#、.)]\s*)?(?:Product\s*)?(?:Name|Title)\s*[:：]/gi,
+    // Some feeds start each card with the discount and product name, e.g.
+    // "65%OFF Scarlet Darkness Women Corset Midi Dress".
+    /(?:^|\n)\s*(?:\d+\s*#\s*\n\s*)?\d{1,2}\s*%\s*off\s+(?!Code\b)[^\n]+/gi,
   ];
+  const starts = new Set();
   for (const pattern of patterns) {
-    const matches = [...text.matchAll(pattern)];
-    if (matches.length > 0) {
-      return matches.map((match, i) =>
-        text.slice(match.index, matches[i + 1]?.index ?? text.length).trim()
-      ).filter(block => block.length > 10);
-    }
+    for (const match of text.matchAll(pattern)) starts.add(match.index);
   }
-  return [];
+  const positions = [...starts].sort((a, b) => a - b);
+  return positions.map((start, i) =>
+    text.slice(start, positions[i + 1] ?? text.length).trim()
+  ).filter(block => block.length > 10);
 }
 
 function extractStructuredProductData(block) {
   const lines = block.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const titleLine = lines.findIndex(line => /^Product\s*(?:[Nn]ame|[Tt]itle)\s*[:：]/.test(line));
+  let titleLine = lines.findIndex(line => /^(?:Product\s*)?(?:[Nn]ame|[Tt]itle)\s*[:：]/.test(line));
   const isHeaderOnly = /^(?:Code\s+(?:End|Start)\s+Date|(?:Great\s+)?Amazon\s+promo\s+deals|\d{1,2}[./-]\d{1,2}\s+Deals)\b/i.test(lines[0] || '');
   let title = null;
+  if (!isHeaderOnly && titleLine < 0) {
+    // Title-first seller format: "52% off ANRABESS Midi Dresses".
+    titleLine = lines.findIndex(line => /^\d{1,2}\s*%\s*off\b/i.test(line));
+  }
   if (!isHeaderOnly && titleLine >= 0) {
-    const titleLines = [lines[titleLine].replace(/^Product\s*(?:[Nn]ame|[Tt]itle)\s*[:：]\s*/i, '')];
+    const titleLines = [lines[titleLine]
+      .replace(/^(?:Product\s*)?(?:[Nn]ame|[Tt]itle)\s*[:：]\s*/i, '')
+      .replace(/^\d{1,2}\s*%\s*off\s*/i, '')];
     for (let i = titleLine + 1; i < lines.length; i++) {
       const line = lines[i];
-      if (/^(?:Original|Regular|Reg\.?|Deal|Final|Sale)\s*Price\s*[:：]|^(?:Discount|Promo|Coupon)\s*(?:Code|Ratio)\s*[:：]|^Code\s+(?:Start|End)\s+Date\s*[:：]|^(?:Start|End)\s+Date\s*[:：]|^Link\s*[:：]|^ACC\s/i.test(line) || /^https?:/i.test(line)) break;
+      if (/^(?:Original|Regular|Reg\.?|Deal|Final|Sale|Product|Discount|After\s+the\s+discount)\s*Price\s*[:：]|^Price\s+before\s+discount\s*[:：]|^(?:Discount|Promo|Coupon)\s*(?:Code|Ratio)\s*[:：]|^Code\s*[:：]|^Code\s+(?:Start|End|Expiration)\s+(?:Date|Time)\s*[:：]|^(?:Start|End)\s+(?:Date|Day|Time)\s*[:：]|^Link\s*[:：]|^URL\s*[:：]|^ASIN\s*[:：]|^ACC\s|^\$?\d+(?:\.\d{2})?\s*\(Reg\.|^\d{1,2}\s*%\s*off\s*=/i.test(line) || /^https?:/i.test(line)) break;
       titleLines.push(line);
     }
     title = titleLines.join(' ').trim() || null;
@@ -116,24 +127,29 @@ function extractStructuredProductData(block) {
     .trim()
     .slice(0, 200);
 
-  const dealMatch = block.match(/(?:^|\n)\s*(?:(?:Deal|Final|Sale)\s*)Price\s*[:：\s]+\$?([\d.,]+)/im)
-    || block.match(/\b(\d{1,4}\.\d{2})(?:\s*[-–]\s*\d+\.\d{2})?\s*\(Reg\./i);
+  const dealMatch = block.match(/(?:^|\n)\s*(?:(?:Deal|Final|Sale|Product|Discount|After\s+the\s+discount)\s*)Price\s*[:：\s]+\$?([\d.,]+)/im)
+    || block.match(/\$?(\d{1,4}(?:\.\d{2})?)(?:\s*[-–]\s*\$?\d+(?:\.\d{2})?)?\s*\(Reg\.?\s*\$?/i);
   const dealPrice = dealMatch?.[1] ? `$${dealMatch[1].replace(/,/g, '')}` : null;
 
-  const originalMatch = block.match(/(?:^|\n)\s*(?:Original\s*Price|Reg\.?\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:：\s]+\$?([\d.,]+)/im)
-    || block.match(/\(Reg\.\s*([\d.,]+)/i);
+  const originalMatch = block.match(/(?:^|\n)\s*(?:Original\s*Price|Price\s+before\s+discount|Reg\.?\s*Price|Was|Regular\s*Price|List\s*Price)\s*[:：\s]+\$?([\d.,]+)/im)
+    || block.match(/\(Reg\.\s*\$?([\d.,]+)/i);
   const originalPrice = originalMatch?.[1] ? `$${originalMatch[1].replace(/,/g, '')}` : null;
 
   const codeMatch = block.match(/(?:^|\n)\s*(?:(?:Promo|Coupon|Discount)\s+)?Code\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/im)
+    || block.match(/\b\d{1,2}\s*%\s*off\s+(?:with\s+)?code\s*[:：=\-]\s*\[?([A-Z0-9]{4,20})\]?\b/i)
     || block.match(/\b(?:with|use|apply|enter)\s+code\s*[:：=\-]?\s*\[?([A-Z0-9]{4,20})\]?\b/i);
   const invalidCodes = new Set(['RATIO', 'PRICE', 'DATE', 'END', 'START', 'DEAL', 'CODE', 'PROMO', 'AMAZON']);
   const codeCandidate = codeMatch?.[1]?.toUpperCase() || null;
   const discountCode = codeCandidate && !invalidCodes.has(codeCandidate) ? codeCandidate : null;
 
   const urls = extractAmazonUrls(block);
-  const amazonUrl = urls[0] || null;
-  const asin = amazonUrl?.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
-  const expirationMatch = block.match(/(?:End\s*Date|Expir(?:es?|ation)\s*(?:Date)?)\s*[:：\s]+([^\n]+)/i);
+  // Prefer the direct product URL when a block includes both a /dp/ link and
+  // a promo campaign link; it is the reliable source for its ASIN and image.
+  const amazonUrl = urls.find(url => /\/(?:dp|gp\/product)\//i.test(url)) || urls[0] || null;
+  const asin = amazonUrl?.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
+    || block.match(/\bASIN\s*[:：]\s*([A-Z0-9]{10})\b/i)?.[1]
+    || null;
+  const expirationMatch = block.match(/(?:Code\s+)?(?:End\s*(?:Date|Day|Time)|Expir(?:es?|ation)\s*(?:Date)?)\s*[:：\s]+([^\n]+)/i);
   let expirationDate = null;
   if (expirationMatch?.[1]) {
     const date = new Date(expirationMatch[1].trim());
@@ -213,7 +229,9 @@ function findFirstAsin(source) {
   const text = String(source || '');
   const patterns = [
     /\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#&"'\s]|$)/gi,
+    /\\?\/(?:dp|gp\\?\/product)\\?\/([A-Z0-9]{10})(?:[/?#&"'\\s]|$)/gi,
     /data-asin\s*=\s*["']([A-Z0-9]{10})["']/gi,
+    /["']asin["']\s*[:=]\s*["']([A-Z0-9]{10})["']/gi,
   ];
 
   for (const pattern of patterns) {
