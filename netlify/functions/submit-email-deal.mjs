@@ -277,6 +277,106 @@ async function resolveAsin(url) {
   return resolvePromoAsin(url);
 }
 
+function decodeHtmlAttribute(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
+function attributeValue(tag, name) {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, 'i'));
+  return match ? decodeHtmlAttribute(match[2]) : null;
+}
+
+function isPromoProductImage(url, imageTag) {
+  if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\//i.test(url || '')) return false;
+  if (/(?:logo|icon|sprite|badge|banner|pixel|transparent|placeholder)/i.test(url)) return false;
+  const width = Number(attributeValue(imageTag, 'width'));
+  const height = Number(attributeValue(imageTag, 'height'));
+  return !(width && height && width < 80 && height < 80);
+}
+
+function imageFromPromoCard(cardHtml) {
+  const images = cardHtml.match(/<img\b[^>]*>/gi) || [];
+  for (const imageTag of images) {
+    const dynamic = attributeValue(imageTag, 'data-a-dynamic-image');
+    if (dynamic) {
+      try {
+        const url = Object.keys(JSON.parse(dynamic))[0];
+        if (isPromoProductImage(url, imageTag)) return url;
+      } catch { /* Continue with the remaining image attributes. */ }
+    }
+
+    const dataSrc = attributeValue(imageTag, 'data-src');
+    if (isPromoProductImage(dataSrc, imageTag)) return dataSrc;
+
+    const srcset = attributeValue(imageTag, 'srcset');
+    for (const source of (srcset || '').split(',')) {
+      const url = source.trim().split(/\s+/)[0];
+      if (isPromoProductImage(url, imageTag)) return url;
+    }
+
+    const src = attributeValue(imageTag, 'src');
+    if (isPromoProductImage(src, imageTag)) return src;
+  }
+  return null;
+}
+
+function normalizedTitleTokens(value) {
+  return new Set(String(value || '').toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+}
+
+function titleMatchScore(targetTitle, cardTitle) {
+  const target = normalizedTitleTokens(targetTitle);
+  const candidate = normalizedTitleTokens(cardTitle);
+  if (!target.size || !candidate.size) return 0;
+  let matches = 0;
+  for (const token of target) if (candidate.has(token)) matches++;
+  return matches / target.size;
+}
+
+// Promo landing pages are not product pages. This reads only their product-card
+// anchors and images; ordinary /dp/ image handling remains unchanged.
+async function fetchPromoProductImage(promoUrl, parsedTitle) {
+  try {
+    const response = await fetch(promoUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok || /\/errors\/404\.html/i.test(response.url)) return null;
+
+    const html = await response.text();
+    const cards = [];
+    const anchorPattern = /<a\b([^>]*\bclass=["'][^"']*\bimageLink\b[^"']*["'][^>]*)>([\s\S]{0,2500}?)<\/a>/gi;
+    let match;
+    while ((match = anchorPattern.exec(html)) !== null) {
+      const href = attributeValue(match[1], 'href');
+      const asin = href?.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
+      const image = imageFromPromoCard(match[2]);
+      if (!asin || !image) continue;
+
+      const afterCard = html.slice(match.index + match[0].length, match.index + match[0].length + 8000);
+      const title = decodeHtmlAttribute(afterCard.match(/class=["'][^"']*\btitleLink\b[^"']*["'][^>]*>[\s\S]{0,800}?class=["'][^"']*\ba-truncate-full\b[^"']*["'][^>]*>([^<]+)/i)?.[1] || '');
+      cards.push({ asin, image, title });
+    }
+    if (!cards.length) return null;
+
+    const best = cards.reduce((current, card) =>
+      titleMatchScore(parsedTitle, card.title) > titleMatchScore(parsedTitle, current.title) ? card : current
+    );
+    console.log(`[Promo image] ${cards.length} cards; matched "${best.title || '[first card]'}" → ${best.asin}`);
+    return best;
+  } catch (error) {
+    console.log(`[Promo image] lookup failed: ${error.message}`);
+    return null;
+  }
+}
+
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // PER-PRODUCT CONTEXT WINDOW (+-600 chars around each URL)
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -579,9 +679,18 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     console.log(`[Phase 3] Duplicate skipped: ${[...dedupKeys].join(', ')}`);
     return null;
   }
-  const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
   const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
+
+  if (isPromoUrl && !imageUrl) {
+    const promoProduct = await fetchPromoProductImage(draft.amazonUrl, title);
+    if (promoProduct) {
+      imageUrl = promoProduct.image;
+      draft.asin = draft.asin || promoProduct.asin;
+    }
+  }
+
+  const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
 
   if (!title || !imageUrl || !dealPrice) {
     const meta = await fetchAmazonMeta(affiliateUrl);
