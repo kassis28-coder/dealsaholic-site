@@ -100,6 +100,18 @@ function splitProductBlocks(text) {
   ).filter(block => block.length > 10);
 }
 
+// Some seller feeds put the product name, discount, code, and price on one
+// line. Keep the product-name portion only; the other fields are extracted
+// independently below.
+function cleanProductTitle(title) {
+  return String(title || '')
+    .replace(/\s+\d{1,2}\s*%\s*off\b[\s\S]*$/i, '')
+    .replace(/\s+(?:(?:promo|discount)\s+)?code\s*[:：]\s*[A-Z0-9]{4,20}\b[\s\S]*$/i, '')
+    .replace(/\s+\$?\d+(?:\.\d{2})?(?:\s*[-–]\s*\$?\d+(?:\.\d{2})?)?\s*\(Reg\.?\s*\$?[\d.\-]+\)[\s\S]*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function extractStructuredProductData(block) {
   const lines = block.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   let titleLine = lines.findIndex(line => /^(?:Product\s*)?(?:[Nn]ame|[Tt]itle)\s*[:：]/.test(line));
@@ -124,8 +136,10 @@ function extractStructuredProductData(block) {
     .replace(/^#?\d+[.)]\s*/, '')
     .replace(/^\d+%\s*off\s*/i, '')
     .replace(/\s*[|:]\s*amazon\b.*/i, '')
-    .trim()
-    .slice(0, 200);
+    .trim();
+  if (title) {
+    title = cleanProductTitle(title).slice(0, 200);
+  }
 
   const dealMatch = block.match(/(?:^|\n)\s*(?:(?:Deal|Final|Sale|Product|Discount|After\s+the\s+discount)\s*)Price\s*[:：\s]+\$?([\d.,]+)/im)
     || block.match(/\$?(\d{1,4}(?:\.\d{2})?)(?:\s*[-–]\s*\$?\d+(?:\.\d{2})?)?\s*\(Reg\.?\s*\$?/i);
@@ -439,7 +453,8 @@ function extractTitle(context, url) {
       !/^\d[\d.\-]*\s*\(Reg/i.test(l) &&
       !/^[\d.\-\s]+$/.test(l.replace(/Reg\.\d[\d.\-]*/gi,'').replace(/[()]/g,'').trim())
     );
-  return lines[lines.length - 1] || null;
+  const title = cleanProductTitle(lines[lines.length - 1] || '');
+  return title || null;
 }
 
 function extractPrice(context) {
