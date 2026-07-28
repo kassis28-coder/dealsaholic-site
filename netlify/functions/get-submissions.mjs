@@ -43,9 +43,13 @@ export default async (req) => {
     const batchSize = 25;
     for (let offset = 0; offset < index.length; offset += batchSize) {
       const batch = index.slice(offset, offset + batchSize);
-      const records = await Promise.all(batch.map(async (id) => {
+      const records = await Promise.all(batch.map(async (storageKey) => {
         try {
-          return await store.get(id, { type: "json", consistency: "strong" });
+          const record = await store.get(storageKey, { type: "json", consistency: "strong" });
+          // The index key is the authoritative Blob key. Legacy records can
+          // contain a stale internal `id`, which made Edit submit an ID that
+          // edit-submission could not find.
+          return record ? { ...record, id: storageKey } : null;
         } catch {
           // Skip a single unreadable record rather than failing the whole list.
           return null;

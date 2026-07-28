@@ -697,7 +697,7 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
 
-  if (isPromoUrl && !imageUrl) {
+  if (isPromoUrl) {
     const promoProduct = await fetchPromoProductImage(draft.amazonUrl, title);
     if (promoProduct) {
       imageUrl = promoProduct.image;
