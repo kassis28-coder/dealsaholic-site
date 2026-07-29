@@ -31,6 +31,13 @@ async function fetchAmazonProductImage(asin) {
   }
 }
 
+// Older imports used this predictable Amazon placeholder instead of a real
+// product image. Treat only this exact legacy pattern as missing so a manual
+// admin save can replace it; custom image URLs remain untouched.
+function isLegacyAsinPlaceholderImage(imageUrl) {
+  return /^https:\/\/images-na\.ssl-images-amazon\.com\/images\/P\/[A-Z0-9]{10}\.01\.LZZZZZZZ\.jpg(?:\?.*)?$/i.test(imageUrl || '');
+}
+
 export default async (req, context) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -87,6 +94,10 @@ export default async (req, context) => {
 
     // Resolve image — fall back through all image field variants
     let resolvedImageUrl = imageUrl || record.imageUrl || record.image || record.photoUrl || null;
+    if (isLegacyAsinPlaceholderImage(resolvedImageUrl)) {
+      console.log('[edit-submission] Replacing legacy ASIN image placeholder');
+      resolvedImageUrl = null;
+    }
     if (!resolvedImageUrl && asin) {
       console.log(`[edit-submission] No imageUrl — auto-fetching from Amazon for ASIN ${asin}`);
       resolvedImageUrl = await fetchAmazonProductImage(asin);
