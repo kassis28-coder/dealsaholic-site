@@ -354,6 +354,8 @@ function titleMatchScore(targetTitle, cardTitle) {
 // anchors and images; ordinary /dp/ image handling remains unchanged.
 async function fetchPromoProductImage(promoUrl, parsedTitle) {
   try {
+    const promoPath = new URL(promoUrl).pathname;
+    console.log(`[Promo image] Starting lookup for ${promoPath}`);
     const response = await fetch(promoUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
@@ -362,9 +364,14 @@ async function fetchPromoProductImage(promoUrl, parsedTitle) {
       redirect: 'follow',
       signal: AbortSignal.timeout(8000),
     });
-    if (!response.ok || /\/errors\/404\.html/i.test(response.url)) return null;
+    console.log(`[Promo image] Response status=${response.status} finalPath=${new URL(response.url).pathname}`);
+    if (!response.ok || /\/errors\/404\.html/i.test(response.url)) {
+      console.log('[Promo image] No usable promo page response');
+      return null;
+    }
 
     const html = await response.text();
+    console.log(`[Promo image] Page length=${html.length} imageLink anchors=${(html.match(/\bimageLink\b/gi) || []).length}`);
     const cards = [];
     const anchorPattern = /<a\b([^>]*\bclass=["'][^"']*\bimageLink\b[^"']*["'][^>]*)>([\s\S]{0,2500}?)<\/a>/gi;
     let match;
@@ -378,12 +385,15 @@ async function fetchPromoProductImage(promoUrl, parsedTitle) {
       const title = decodeHtmlAttribute(afterCard.match(/class=["'][^"']*\btitleLink\b[^"']*["'][^>]*>[\s\S]{0,800}?class=["'][^"']*\ba-truncate-full\b[^"']*["'][^>]*>([^<]+)/i)?.[1] || '');
       cards.push({ asin, image, title });
     }
-    if (!cards.length) return null;
+    if (!cards.length) {
+      console.log('[Promo image] No valid product cards found');
+      return null;
+    }
 
     const best = cards.reduce((current, card) =>
       titleMatchScore(parsedTitle, card.title) > titleMatchScore(parsedTitle, current.title) ? card : current
     );
-    console.log(`[Promo image] ${cards.length} cards; matched "${best.title || '[first card]'}" → ${best.asin}`);
+    console.log(`[Promo image] ${cards.length} cards; matched "${best.title || '[first card]'}" → ${best.asin}; image=${best.image}`);
     return best;
   } catch (error) {
     console.log(`[Promo image] lookup failed: ${error.message}`);
