@@ -130,9 +130,21 @@ export default async (req, context) => {
       updatedAt: new Date().toISOString(),
     };
 
-    await store.setJSON(submissionId, updated);
+    // Use the same raw JSON write format as the email importer, then verify
+    // the exact Blob key with a strong read before telling the admin UI that
+    // the edit was saved. This prevents a success message for an update that
+    // is not yet durable or was written to the wrong key.
+    await store.set(submissionId, JSON.stringify(updated));
+    const savedRecord = await store.get(submissionId, {
+      type: "json",
+      consistency: "strong",
+    });
 
-    return new Response(JSON.stringify({ success: true, record: updated }), {
+    if (!savedRecord || savedRecord.updatedAt !== updated.updatedAt) {
+      throw new Error("Update could not be verified. Please try again.");
+    }
+
+    return new Response(JSON.stringify({ success: true, record: savedRecord }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
