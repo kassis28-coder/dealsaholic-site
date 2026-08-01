@@ -23,7 +23,9 @@ async function getApprovedSellerDeals() {
     const now = Date.now();
 
     // Fetch all records in parallel instead of sequentially
-    const CONCURRENCY = 20;
+    // Blob reads are independent. Higher parallelism keeps the public API
+    // responsive even when the submissions index contains thousands of deals.
+    const CONCURRENCY = 100;
     const approved = [];
 
     for (let i = 0; i < recentIds.length; i += CONCURRENCY) {
