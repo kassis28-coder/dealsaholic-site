@@ -21,6 +21,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/create-joylink"
+  to = "/.netlify/functions/create-joylink"
+  status = 200
+
+[[redirects]]
   from = "/api/post-to-facebook"
   to = "/.netlify/functions/post-to-facebook"
   status = 200
