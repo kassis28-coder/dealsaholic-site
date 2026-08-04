@@ -78,7 +78,7 @@
   // Fallback Amazon affiliate URL (used if JoyLink fails)
   let affiliateUrl;
   if (asin) {
-    affiliateUrl = 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20&linkCode=ll1&language=en_US';
+    affiliateUrl = 'https://www.amazon.com/dp/' + asin + '?tag=daholic-20&linkCode=ll1&language=en_US';
   } else if (url) {
     affiliateUrl = decodeURIComponent(url);
   }
@@ -113,24 +113,28 @@
 
     // Non-Amazon links go directly
     if (store === 'walmart') {
-      window.open(affiliateUrl, '_blank');
+      window.location.href = affiliateUrl;
       return;
     }
 
-    // Try JoyLink deeplink — better tracking, bypasses Amazon app interception
+    // Give JoyLink up to 2 seconds, then use the direct affiliate link.
     const origText = ctaBtn.textContent;
     ctaBtn.textContent = '⏳ Loading deal...';
     ctaBtn.disabled = true;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
     try {
       const amazonUrl = asin
-        ? 'https://www.amazon.com/dp/' + asin + '?tag=kethya08-20&linkCode=ll1&language=en_US'
+        ? 'https://www.amazon.com/dp/' + asin + '?tag=daholic-20&linkCode=ll1&language=en_US'
         : affiliateUrl;
 
       const res = await fetch('/api/create-joylink', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: amazonUrl, asin: asin || null }),
+        signal: controller.signal,
       });
       const data = await res.json();
 
@@ -139,13 +143,15 @@
         return;
       }
     } catch (e) {
-      console.error('JoyLink error:', e);
+      if (e.name !== 'AbortError') console.error('JoyLink error:', e);
+    } finally {
+      clearTimeout(timeoutId);
     }
 
-    // Fallback: direct affiliate URL
+    // Fast fallback: navigate in this tab so popup blockers cannot interfere.
     ctaBtn.textContent = origText;
     ctaBtn.disabled = false;
-    window.open(affiliateUrl, '_blank');
+    window.location.href = affiliateUrl;
   });
 
   function copyCode() {
