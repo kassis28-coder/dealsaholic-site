@@ -120,7 +120,7 @@ async function alreadyPosted(deal, pageId, token) {
   }
 }
 
-async function postToFacebook(postDeal, pageId, token, style) {
+async function postToFacebook(deal, pageId, token, style) {
   const caption = buildCaption(deal, style);
   const params = new URLSearchParams({
     url: deal.image,
@@ -137,7 +137,7 @@ async function postToFacebook(postDeal, pageId, token, style) {
   return data;
 }
 
-async function postToTelegram(postDeal, botToken, chatId, style) {
+async function postToTelegram(deal, botToken, chatId, style) {
   const caption = buildCaption(deal, style);
   const base = `https://api.telegram.org/bot${botToken}`;
 
@@ -246,16 +246,15 @@ export default async () => {
   for (const deal of targets) {
     const joylinkUrl = await getJoyLinkUrl(deal.url, deal.asin || null);
     if (!joylinkUrl) {
-      console.error(`[JoyLink] Skipping post because no deeplink was created for ${deal.asin || deal.url}`);
-      continue;
+      console.warn(`[JoyLink] Deeplink unavailable for ${deal.asin || deal.url}; using raw Amazon URL.`);
     }
-    const postDeal = { ...deal, url: joylinkUrl };
+    const postDeal = { ...deal, url: joylinkUrl || deal.url };
     const style = Math.floor(Math.random() * 15);
 
     // ── Facebook ──────────────────────────────────────────────────────────────
     let fbOk = false;
     try {
-      const result = await postToFacebook(deal, pageId, token, style);
+      const result = await postToFacebook(postDeal, pageId, token, style);
       fbOk = true;
       console.log(`[FB] Posted: "${deal.title.substring(0, 60)}" | id: ${result.id}`);
     } catch (err) {
@@ -266,7 +265,7 @@ export default async () => {
     let tgOk = false;
     if (botToken && chatId) {
       try {
-        const tgResult = await postToTelegram(deal, botToken, chatId, style);
+        const tgResult = await postToTelegram(postDeal, botToken, chatId, style);
         tgOk = tgResult.ok;
       } catch (err) {
         console.error(`[TG] Failed: "${deal.title.substring(0, 60)}" | ${err.message}`);
