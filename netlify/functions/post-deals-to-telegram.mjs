@@ -2,6 +2,39 @@ import { getStore } from "@netlify/blobs";
 
 const LOCK_STALE_MS = 5 * 60 * 1000;
 
+
+async function getJoyLinkUrl(amazonUrl, asin) {
+  const apiKey = process.env.JOYLINK_API_KEY;
+  if (!apiKey || !amazonUrl) return null;
+
+  const cache = getStore("joylink-cache");
+  const cacheKey = asin || amazonUrl;
+  try {
+    const cached = await cache.get(cacheKey, { type: "json" });
+    if (cached?.url) return cached.url;
+  } catch {}
+
+  try {
+    const res = await fetch("https://api.joylink.io/public/createlink", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({
+        destination: amazonUrl,
+        trackingid: process.env.AMAZON_PARTNER_TAG || "daholic-20",
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      await cache.setJSON(cacheKey, { url: data.url, createdAt: new Date().toISOString() }).catch(() => {});
+      return data.url;
+    }
+    console.error("JoyLink API error:", JSON.stringify(data));
+  } catch (err) {
+    console.error("JoyLink request failed:", err.message);
+  }
+  return null;
+}
+
 function buildCaption(deal) {
   const lines = [];
   lines.push(`🛍️ ${deal.title}`);
@@ -139,9 +172,26 @@ export default async (_req, _context) => {
     );
   }
 
+  const joylinkUrl = await getJoyLinkUrl(targetDeal.url, targetDeal.asin || null);
+  if (!joylinkUrl) {
+    const error = "JoyInLink deeplink could not be created";
+    console.error(`${TAG} ${error} for deal ${targetId}; post not published.`);
+    await store.setJSON(targetId, {
+      ...targetDeal,
+      telegramProcessing: false,
+      telegramLastError: error,
+      telegramLastAttempt: new Date().toISOString(),
+    });
+    return new Response(
+      JSON.stringify({ success: false, error }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  const postDeal = { ...targetDeal, url: joylinkUrl };
+
   let tgResult;
   try {
-    tgResult = await postToTelegram(targetDeal, botToken, chatId);
+    tgResult = await postToTelegram(postDeal, botToken, chatId);
   } catch (err) {
     console.error(`${TAG} Exception posting deal ${targetId}: ${err.message}`);
     await store.setJSON(targetId, {
