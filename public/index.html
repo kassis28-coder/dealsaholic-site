@@ -54,6 +54,8 @@
     --brand-dark: #D96E0C;
     --deal-red: #E1432D;
     --green: #1C8C5A;
+    --walmart-blue: #0071DC;
+    --walmart-yellow: #FFC220;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; }
@@ -85,6 +87,19 @@
   .filters__updated { font-size: 12px; color: var(--ink-soft); align-self: center; margin-left: auto; white-space: nowrap; }
   .deals-feed { max-width: 1320px; margin: 0 auto; padding: 0 24px 48px; }
   .deals-feed__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
+  .walmart-section { max-width: 1320px; margin: 30px auto 36px; padding: 0 24px; }
+  .walmart-section[hidden] { display: none; }
+  .walmart-section__panel { background: linear-gradient(135deg, #EAF5FF, #FFFFFF); border: 2px solid var(--walmart-blue); border-radius: 18px; padding: 24px; }
+  .walmart-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+  .walmart-section__eyebrow { display: inline-flex; align-items: center; gap: 6px; background: var(--walmart-blue); color: #fff; border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .walmart-section__title { margin: 0 0 5px; font-family: 'Archivo Black', sans-serif; font-size: 27px; color: #041E42; }
+  .walmart-section__subtitle { margin: 0; color: #35506F; font-size: 13px; line-height: 1.5; }
+  .walmart-section__count { background: var(--walmart-yellow); color: #041E42; border-radius: 999px; padding: 8px 13px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .deal-card--walmart { border-color: #B9DDFC; }
+  .deal-card--walmart:hover { border-color: var(--walmart-blue); box-shadow: 0 10px 24px rgba(0,113,220,0.15); }
+  .deal-card--walmart .deal-card__cta { background: var(--walmart-blue); }
+  .deal-card--walmart:hover .deal-card__cta { background: #005CB8; }
+  .deal-card__store-tag { display: inline-flex; align-items: center; align-self: flex-start; background: #EAF5FF; color: #005CB8; border: 1px solid #B9DDFC; font-size: 10px; font-weight: 800; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px; margin-bottom: 8px; }
   .deal-card { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
   .deal-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(28,26,23,0.10); border-color: var(--brand); }
   .deal-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -113,6 +128,11 @@
     .hero__title { font-size: 26px; }
     .filters { padding: 0 16px 20px; }
     .deals-feed { padding: 0 16px 40px; }
+    .walmart-section { margin: 22px auto 28px; padding: 0 16px; }
+    .walmart-section__panel { padding: 18px 14px; }
+    .walmart-section__header { display: block; }
+    .walmart-section__title { font-size: 23px; }
+    .walmart-section__count { display: inline-block; margin-top: 12px; }
     .deals-feed__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
     .filters__updated { margin-left: 0; }
   }
@@ -120,7 +140,7 @@
 </style>
 </head>
 <body>
-<div class="top-disclaimer">⚠️ Prices and promotions are valid at the time posted and may change or expire at any time without notice. Always verify the current price on Amazon before purchasing. · As an Amazon Associate, Deals-aholic earns from qualifying purchases.</div>
+<div class="top-disclaimer">⚠️ Prices and promotions are valid at the time posted and may change or expire without notice. Always verify the current price with the retailer before purchasing. · Deals-aholic may earn commissions from qualifying purchases.</div>
 <nav class="nav">
   <span class="nav__logo">Deals-<span>aholic</span></span>
   <a href="/submit.html" style="margin-left:auto;font-size:13px;font-weight:700;color:#fff;text-decoration:none;background:var(--brand);padding:10px 20px;border-radius:999px;box-shadow:0 2px 8px rgba(255,138,30,0.4);">💰 Sell Here</a>
@@ -143,6 +163,19 @@
   <p class="seller-banner__sub">Feature your deal on our site and reach real shoppers looking to save. Fast, easy, and affordable.</p>
   <a href="/submit.html" class="seller-banner__cta">💰 Post Your Deal Now</a>
 </div>
+<section class="walmart-section" id="walmart-section" aria-labelledby="walmart-heading" hidden>
+  <div class="walmart-section__panel">
+    <div class="walmart-section__header">
+      <div>
+        <span class="walmart-section__eyebrow">★ WALMART SAVINGS</span>
+        <h2 class="walmart-section__title" id="walmart-heading">Walmart Deals</h2>
+        <p class="walmart-section__subtitle">Fresh rollbacks, clearance prices, and special buys available from Walmart.</p>
+      </div>
+      <span class="walmart-section__count" id="walmart-count"></span>
+    </div>
+    <div class="deals-feed__grid" id="walmart-grid"></div>
+  </div>
+</section>
 <div class="hero">
   <h1 class="hero__title">Today's Best Deals</h1>
   <p class="hero__subtitle">Real prices and discounts, refreshed automatically throughout the day. Filter by category, search a product, and shop the savings.</p>
@@ -239,6 +272,12 @@
       || deal.source === 'email'
       || deal.source === 'submission'
       || deal.sponsored === true;
+  }
+
+  function isWalmartDeal(deal) {
+    const store = String(deal.storeType || deal.store || '').toLowerCase();
+    const url = String(deal.url || deal.productUrl || '').toLowerCase();
+    return store === 'walmart' || url.includes('walmart.com') || url.includes('goto.walmart.com');
   }
 
   function detectCategory(title) {
@@ -342,15 +381,17 @@
     const dealId = deal.id || deal.asin || '';
     const productUrl = deal.url || deal.productUrl || '';
     const dealUrl = buildDealUrl(deal);
-    const storeLabel = deal.sponsored ? 'View Deal' : deal.storeType === 'walmart' ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon';
+    const walmartDeal = isWalmartDeal(deal);
+    const storeLabel = deal.sponsored ? 'View Deal' : walmartDeal ? 'Go to Walmart' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon';
     const showPromoTag = isPromo(deal);
     return `
-      <a class="deal-card" href="${dealUrl}">
+      <a class="deal-card${walmartDeal ? ' deal-card--walmart' : ''}" href="${dealUrl}">
         <div class="deal-card__image-wrap">
           ${deal.sponsored ? `<div class="deal-card__badge" style="background:#6B6459;">SPONSORED</div>` : (deal.discountPercent ? `<div class="deal-card__badge">${deal.discountPercent}% OFF</div>` : '')}
           ${deal.image ? `<img class="deal-card__image" src="${deal.image}" alt="${escapeHtml(deal.title)}" loading="lazy">` : ''}
         </div>
         <div class="deal-card__body">
+          ${walmartDeal ? `<span class="deal-card__store-tag">★ WALMART</span>` : ''}
           ${showPromoTag ? `<span class="deal-card__promo-tag">🏷️ PROMO CODE</span>` : ''}
           <p class="deal-card__title">${escapeHtml(deal.title)}</p>
           <div class="deal-card__price-row">
@@ -373,6 +414,7 @@
     const category = document.getElementById('filter-category').value;
     const sort = document.getElementById('filter-sort').value;
     let filtered = allDeals.filter(d => {
+      if (isWalmartDeal(d)) return false;
       const matchSearch = !search || (d.title || '').toLowerCase().includes(search);
       const matchCategory = !category
         || (category === 'promo' ? isPromo(d) : detectCategory(d.title) === category);
@@ -395,6 +437,20 @@
     grid.innerHTML = filtered.map(renderCard).join('');
   }
 
+  function renderWalmartDeals() {
+    const walmartDeals = allDeals
+      .filter(isWalmartDeal)
+      .sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
+    const section = document.getElementById('walmart-section');
+    if (walmartDeals.length === 0) {
+      section.hidden = true;
+      return;
+    }
+    document.getElementById('walmart-count').textContent = walmartDeals.length + (walmartDeals.length === 1 ? ' deal' : ' deals');
+    document.getElementById('walmart-grid').innerHTML = walmartDeals.map(renderCard).join('');
+    section.hidden = false;
+  }
+
   function renderDeals(data) {
     const updated = document.getElementById('deals-updated');
     updated.textContent = data.generatedAt ? formatUpdated(data.generatedAt) : '';
@@ -404,6 +460,7 @@
       return;
     }
     loadFromURL();
+    renderWalmartDeals();
     applyFilters();
   }
 
