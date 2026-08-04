@@ -25,7 +25,9 @@ async function getApprovedSellerDeals() {
     // Fetch all records in parallel instead of sequentially
     // Blob reads are independent. Higher parallelism keeps the public API
     // responsive even when the submissions index contains thousands of deals.
-    const CONCURRENCY = 100;
+    // Blob reads are independent. Larger batches substantially reduce cold-start
+    // latency while keeping memory bounded for the current catalog size.
+    const CONCURRENCY = 400;
     const approved = [];
 
     for (let i = 0; i < recentIds.length; i += CONCURRENCY) {
@@ -108,6 +110,10 @@ export default async () => {
       headers: {
         "Content-Type": "application/json",
         "Cache-Control": "public, max-age=30",
+        // Share one recently generated response across Netlify edge locations.
+        // Visitors receive the cached response immediately while an expired copy
+        // is refreshed in the background.
+        "Netlify-CDN-Cache-Control": "public, durable, max-age=300, stale-while-revalidate=86400",
       },
     });
   } catch (err) {
