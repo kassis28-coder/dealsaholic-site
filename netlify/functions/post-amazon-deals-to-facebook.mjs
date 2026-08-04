@@ -2,6 +2,39 @@ import { getStore } from "@netlify/blobs";
 
 const LOCK_STALE_MS = 30 * 60 * 1000;
 
+
+async function getJoyLinkUrl(amazonUrl, asin) {
+  const apiKey = process.env.JOYLINK_API_KEY;
+  if (!apiKey || !amazonUrl) return null;
+
+  const cache = getStore("joylink-cache");
+  const cacheKey = asin || amazonUrl;
+  try {
+    const cached = await cache.get(cacheKey, { type: "json" });
+    if (cached?.url) return cached.url;
+  } catch {}
+
+  try {
+    const res = await fetch("https://api.joylink.io/public/createlink", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({
+        destination: amazonUrl,
+        trackingid: process.env.AMAZON_PARTNER_TAG || "daholic-20",
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      await cache.setJSON(cacheKey, { url: data.url, createdAt: new Date().toISOString() }).catch(() => {});
+      return data.url;
+    }
+    console.error("JoyLink API error:", JSON.stringify(data));
+  } catch (err) {
+    console.error("JoyLink request failed:", err.message);
+  }
+  return null;
+}
+
 function buildCaption(deal, style = 0) {
   const headlines = [
     "🔥 Amazon Deal Alert",
@@ -87,7 +120,7 @@ async function alreadyPosted(deal, pageId, token) {
   }
 }
 
-async function postToFacebook(deal, pageId, token, style) {
+async function postToFacebook(postDeal, pageId, token, style) {
   const caption = buildCaption(deal, style);
   const params = new URLSearchParams({
     url: deal.image,
@@ -104,7 +137,7 @@ async function postToFacebook(deal, pageId, token, style) {
   return data;
 }
 
-async function postToTelegram(deal, botToken, chatId, style) {
+async function postToTelegram(postDeal, botToken, chatId, style) {
   const caption = buildCaption(deal, style);
   const base = `https://api.telegram.org/bot${botToken}`;
 
@@ -211,6 +244,12 @@ export default async () => {
   const results = [];
 
   for (const deal of targets) {
+    const joylinkUrl = await getJoyLinkUrl(deal.url, deal.asin || null);
+    if (!joylinkUrl) {
+      console.error(`[JoyLink] Skipping post because no deeplink was created for ${deal.asin || deal.url}`);
+      continue;
+    }
+    const postDeal = { ...deal, url: joylinkUrl };
     const style = Math.floor(Math.random() * 15);
 
     // ── Facebook ──────────────────────────────────────────────────────────────
