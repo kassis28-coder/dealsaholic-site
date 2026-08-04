@@ -22,6 +22,39 @@ function formatExpiry(isoString) {
 
 // ── Caption builder — reads ONLY from DB fields ──────────────────────────────
 
+
+async function getJoyLinkUrl(amazonUrl, asin) {
+  const apiKey = process.env.JOYLINK_API_KEY;
+  if (!apiKey || !amazonUrl) return null;
+
+  const cache = getStore("joylink-cache");
+  const cacheKey = asin || amazonUrl;
+  try {
+    const cached = await cache.get(cacheKey, { type: "json" });
+    if (cached?.url) return cached.url;
+  } catch {}
+
+  try {
+    const res = await fetch("https://api.joylink.io/public/createlink", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({
+        destination: amazonUrl,
+        trackingid: process.env.AMAZON_PARTNER_TAG || "daholic-20",
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      await cache.setJSON(cacheKey, { url: data.url, createdAt: new Date().toISOString() }).catch(() => {});
+      return data.url;
+    }
+    console.error("JoyLink API error:", JSON.stringify(data));
+  } catch (err) {
+    console.error("JoyLink request failed:", err.message);
+  }
+  return null;
+}
+
 function buildCaption(deal) {
   const lines = [];
   lines.push(`🛍️ ${deal.title}`);
@@ -211,15 +244,32 @@ export default async (_req, _context) => {
     });
   }
 
+  // ── Convert to JoyInLink before publishing ────────────────────────────────
+  const joylinkUrl = await getJoyLinkUrl(targetDeal.url, targetDeal.asin || null);
+  if (!joylinkUrl) {
+    const error = "JoyInLink deeplink could not be created";
+    console.error(`${TAG} ${error} for deal ${targetId}; post not published.`);
+    await store.setJSON(targetId, {
+      ...targetDeal,
+      facebookProcessing: false,
+      facebookLastError: error,
+      facebookLastAttempt: new Date().toISOString(),
+    });
+    return new Response(JSON.stringify({ success: false, error }), {
+      status: 503, headers: { "Content-Type": "application/json" },
+    });
+  }
+  const postDeal = { ...targetDeal, url: joylinkUrl };
+
   // ── Step 6: Post to Facebook ─────────────────────────────────────────────
-  const previewCaption = buildCaption(targetDeal);
+  const previewCaption = buildCaption(postDeal);
   console.log(`${TAG} ================ FACEBOOK POST ================`);
   console.log(previewCaption);
   console.log(`${TAG} ===============================================`);
   console.log(`${TAG} Posting to Facebook...`);
   let fbResult;
   try {
-    fbResult = await postToFacebook(targetDeal, pageId, token);
+    fbResult = await postToFacebook(postDeal, pageId, token);
   } catch (err) {
     // ── Step 8: Failure — release lock, log error ────────────────────────
     console.error(`${TAG} Facebook post FAILED for deal ${targetId}: ${err.message}`);
