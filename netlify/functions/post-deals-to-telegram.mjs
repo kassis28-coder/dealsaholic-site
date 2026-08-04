@@ -174,20 +174,9 @@ export default async (_req, _context) => {
 
   const joylinkUrl = await getJoyLinkUrl(targetDeal.url, targetDeal.asin || null);
   if (!joylinkUrl) {
-    const error = "JoyInLink deeplink could not be created";
-    console.error(`${TAG} ${error} for deal ${targetId}; post not published.`);
-    await store.setJSON(targetId, {
-      ...targetDeal,
-      telegramProcessing: false,
-      telegramLastError: error,
-      telegramLastAttempt: new Date().toISOString(),
-    });
-    return new Response(
-      JSON.stringify({ success: false, error }),
-      { status: 503, headers: { "Content-Type": "application/json" } }
-    );
+    console.warn(`${TAG} JoyInLink unavailable for deal ${targetId}; using raw Amazon URL.`);
   }
-  const postDeal = { ...targetDeal, url: joylinkUrl };
+  const postDeal = { ...targetDeal, url: joylinkUrl || targetDeal.url };
 
   let tgResult;
   try {
