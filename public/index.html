@@ -225,6 +225,7 @@
 <script>
   const DEALS_JSON_URL = '/api/deals';
   let allDeals = [];
+  let renderVersion = 0;
 
   function buildDealUrl(deal) {
     const originalUrl = deal.url || deal.productUrl || '';
@@ -409,6 +410,30 @@
     `;
   }
 
+  function renderCardsProgressively(grid, deals) {
+    const version = ++renderVersion;
+    const chunkSize = 120;
+    let index = chunkSize;
+    grid.innerHTML = deals.slice(0, chunkSize).map(renderCard).join('');
+
+    function appendNextChunk() {
+      if (version !== renderVersion || index >= deals.length) return;
+      grid.insertAdjacentHTML('beforeend', deals.slice(index, index + chunkSize).map(renderCard).join(''));
+      index += chunkSize;
+      if (index < deals.length) scheduleNextChunk();
+    }
+
+    function scheduleNextChunk() {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(appendNextChunk, { timeout: 250 });
+      } else {
+        window.setTimeout(appendNextChunk, 16);
+      }
+    }
+
+    if (index < deals.length) scheduleNextChunk();
+  }
+
   function applyFilters() {
     const search = document.getElementById('filter-search').value.trim().toLowerCase();
     const category = document.getElementById('filter-category').value;
@@ -431,10 +456,11 @@
     }
     const grid = document.getElementById('deals-grid');
     if (filtered.length === 0) {
+      renderVersion++;
       grid.innerHTML = '<div class="deals-feed__empty">No deals match your search — try a different term.</div>';
       return;
     }
-    grid.innerHTML = filtered.map(renderCard).join('');
+    renderCardsProgressively(grid, filtered);
   }
 
   function renderWalmartDeals() {
