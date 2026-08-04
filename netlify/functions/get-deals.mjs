@@ -1,5 +1,12 @@
 import { getStore } from "@netlify/blobs";
 
+const PUBLIC_FEED_CACHE_TTL_MS = 5 * 60 * 1000;
+const RESPONSE_HEADERS = {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=30",
+  "Netlify-CDN-Cache-Control": "public, durable, max-age=300, stale-while-revalidate=86400",
+};
+
 // Titles that come from email auto-replies, bounces, or failed parsing.
 const GARBAGE_TITLE_RE = /^(?:the response was|message not delivered|undelivered mail|auto.?reply|delivery status|mail delivery|failure notice|returned mail|amazon deal|no title|untitled)\b/i;
 
@@ -75,7 +82,14 @@ async function getApprovedSellerDeals() {
 }
 
 export default async () => {
+  const publicCache = getStore("public-deals-cache");
+  let cachedFeed = null;
   try {
+    cachedFeed = await publicCache.get("latest", { type: "json" }).catch(() => null);
+    if (cachedFeed?.payload && Date.now() - cachedFeed.cachedAt < PUBLIC_FEED_CACHE_TTL_MS) {
+      return new Response(JSON.stringify(cachedFeed.payload), { headers: RESPONSE_HEADERS });
+    }
+
     const store = getStore("deals");
     const data = await store.get("latest", { type: "json" });
     const sellerDeals = await getApprovedSellerDeals();
@@ -106,17 +120,18 @@ export default async () => {
       deals: deduped,
     };
 
+    await publicCache.setJSON("latest", {
+      cachedAt: Date.now(),
+      payload: combined,
+    }).catch(err => console.log("Public feed cache write failed:", err.message));
+
     return new Response(JSON.stringify(combined), {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=30",
-        // Share one recently generated response across Netlify edge locations.
-        // Visitors receive the cached response immediately while an expired copy
-        // is refreshed in the background.
-        "Netlify-CDN-Cache-Control": "public, durable, max-age=300, stale-while-revalidate=86400",
-      },
+      headers: RESPONSE_HEADERS,
     });
   } catch (err) {
+    if (cachedFeed?.payload) {
+      return new Response(JSON.stringify(cachedFeed.payload), { headers: RESPONSE_HEADERS });
+    }
     return new Response(
       JSON.stringify({ deals: [], error: err.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }
