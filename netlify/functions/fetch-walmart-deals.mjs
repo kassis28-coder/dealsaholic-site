@@ -4,7 +4,9 @@ const ACCOUNT_SID = process.env.IMPACT_ACCOUNT_SID;
 const AUTH_TOKEN = process.env.IMPACT_AUTH_TOKEN;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-const AFFILIATE_PARAM = "wmlspartner=iplc1788825";
+const WALMART_AFFILIATE_ID = "1788825";
+const WALMART_AFFILIATE_BASE = process.env.WALMART_AFFILIATE_BASE
+  || `https://goto.walmart.com/c/${WALMART_AFFILIATE_ID}/1398372/16662?u=`;
 const MIN_DISCOUNT = 10;
 const MAX_AGE_HOURS = 48;
 const BLOCKED_WORDS = ["adult", "sex", "xxx", "erotic", "tobacco", "vape", "cbd"];
@@ -22,11 +24,10 @@ const SEARCH_TERMS = [
   "fitness equipment",
 ];
 
-function addAffiliateTag(url) {
+function buildWalmartAffiliateUrl(url) {
   if (!url) return url;
-  if (url.includes("wmlspartner=")) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}${AFFILIATE_PARAM}`;
+  if (url.includes("goto.walmart.com/c/1788825/")) return url;
+  return `${WALMART_AFFILIATE_BASE}${encodeURIComponent(url)}`;
 }
 
 function isBlocked(title = "") {
@@ -47,27 +48,24 @@ async function getImpactAuth() {
   return Buffer.from(`${ACCOUNT_SID}:${AUTH_TOKEN}`).toString("base64");
 }
 
-async function discoverCatalogs(auth) {
+async function searchCatalogItems(auth, searchTerm) {
+  const params = new URLSearchParams({ PageSize: "100", Keyword: searchTerm });
   const res = await fetch(
-    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs?PageSize=50`,
+    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs/ItemSearch?${params}`,
     { headers: { Authorization: `Basic ${auth}`, Accept: "application/json" } }
   );
-  if (!res.ok) { console.log(`Catalogs list failed: ${res.status}`); return []; }
-  const data = await res.json();
-  const catalogs = data?.Catalogs || data?.catalogs || [];
-  console.log(`Found ${catalogs.length} catalog(s):`, catalogs.map((c) => `${c.Id} - ${c.Name}`).join(", "));
-  return catalogs;
-}
-
-async function fetchCatalogItems(auth, catalogId, searchTerm) {
-  const params = new URLSearchParams({ PageSize: "100", SearchTerm: searchTerm });
-  const res = await fetch(
-    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs/${catalogId}/Items?${params}`,
-    { headers: { Authorization: `Basic ${auth}`, Accept: "application/json" } }
-  );
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.log(`Impact item search failed for "${searchTerm}": ${res.status}`);
+    return [];
+  }
   const data = await res.json();
   return data?.Items || data?.items || [];
+}
+
+function isWalmartImpactItem(raw) {
+  const campaign = `${raw.CampaignName || ""} ${raw.AdvertiserName || ""}`.toLowerCase();
+  const url = String(raw.Url || raw.DirectLink || raw.TrackingLink || "").toLowerCase();
+  return campaign.includes("walmart") || url.includes("walmart.com");
 }
 
 function normalizeImpactItem(raw) {
@@ -86,7 +84,7 @@ function normalizeImpactItem(raw) {
     price: `$${price.toFixed(2)}`,
     originalPrice: originalPrice > 0 ? `$${originalPrice.toFixed(2)}` : null,
     discountPercent,
-    url: addAffiliateTag(rawUrl || `https://www.walmart.com/ip/${id}`),
+    url: buildWalmartAffiliateUrl(rawUrl || `https://www.walmart.com/ip/${id}`),
     image, store: "walmart", status: "approved", sponsored: false, source: "impact-catalog",
     createdAt: new Date().toISOString(),
     expiresOn: new Date(Date.now() + MAX_AGE_HOURS * 60 * 60 * 1000).toISOString(),
@@ -96,26 +94,17 @@ function normalizeImpactItem(raw) {
 async function fetchViaImpactCatalogs() {
   if (!ACCOUNT_SID || !AUTH_TOKEN) { console.log("Missing Impact credentials"); return []; }
   const auth = await getImpactAuth();
-  const catalogs = await discoverCatalogs(auth);
-  if (!catalogs.length) return [];
-  const walmartCatalogs = catalogs.filter((c) => (c.Name || "").toLowerCase().includes("walmart"));
-  if (!walmartCatalogs.length) {
-  console.log("No Walmart-named catalog available in this Impact account; skipping to web scrape.");
-  return [];
-}
-const targetCatalogs = walmartCatalogs;
   const seen = new Set(); const deals = [];
-  for (const catalog of targetCatalogs) {
-    for (const term of SEARCH_TERMS) {
-      const items = await fetchCatalogItems(auth, catalog.Id, term);
-      for (const raw of items) {
-        const deal = normalizeImpactItem(raw);
-        if (!deal || seen.has(deal.id)) continue;
-        seen.add(deal.id);
-        deals.push(deal);
-      }
-      await sleep(500);
+  for (const term of SEARCH_TERMS) {
+    const items = await searchCatalogItems(auth, term);
+    for (const raw of items) {
+      if (!isWalmartImpactItem(raw)) continue;
+      const deal = normalizeImpactItem(raw);
+      if (!deal || seen.has(deal.id)) continue;
+      seen.add(deal.id);
+      deals.push(deal);
     }
+    await sleep(500);
   }
   console.log(`Impact strategy: ${deals.length} deals found.`);
   return deals;
@@ -159,7 +148,7 @@ function normalizeWalmartItem(raw) {
     id: `walmart-${id}`, title,
     price: `$${price.toFixed(2)}`,
     originalPrice: originalPrice > 0 ? `$${originalPrice.toFixed(2)}` : null,
-    discountPercent, url: addAffiliateTag(canonicalUrl),
+    discountPercent, url: buildWalmartAffiliateUrl(canonicalUrl),
     image: raw.imageInfo?.thumbnailUrl || null,
     store: "walmart", status: "approved", sponsored: false, source: "walmart-web",
     createdAt: new Date().toISOString(),
@@ -216,8 +205,6 @@ async function saveDeals(deals) {
     added++;
   }
   await store.setJSON("index", index);
-await store.setJSON("index", index);
-await store.setJSON("index", index);
 return { added, total: deals.length };
 }
 
@@ -250,4 +237,4 @@ export default async function handler(req) {
   try { await run(); } catch (err) { console.error("Scheduled error:", err.message); }
 }
 
-export const config = {};
+export const config = { schedule: "0 */6 * * *" };
