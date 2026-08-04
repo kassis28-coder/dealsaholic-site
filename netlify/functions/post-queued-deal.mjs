@@ -145,7 +145,7 @@ async function getJoyLinkUrl(amazonUrl, asin) {
       },
       body: JSON.stringify({
         destination: amazonUrl,
-        trackingid: process.env.AMAZON_PARTNER_TAG || 'kethya08-20',
+        trackingid: process.env.AMAZON_PARTNER_TAG || 'daholic-20',
       }),
     });
     const data = await res.json();
