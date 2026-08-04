@@ -204,6 +204,29 @@ function extractImage(rawHtml, asin, url) {
     }
   }
 
+  // Strategy 3: Amazon "Save % off" promotion pages do not contain a product
+  // ASIN. Email providers also commonly wrap/encode their URLs, so the full
+  // Amazon URL may not appear verbatim in rawHtml. Only for /promocode/ links
+  // that still have no image, locate the unique promotion ID in the email and
+  // select the closest Amazon product image. Normal /dp/ product deals never
+  // enter this fallback and keep the existing behavior above.
+  if (!asin && /amazon\.com\/promocode\//i.test(url)) {
+    const promoId = url.match(/\/promocode\/([A-Z0-9]+)/i)?.[1];
+    const promoPos = promoId ? rawHtml.toUpperCase().indexOf(promoId.toUpperCase()) : -1;
+
+    if (promoPos >= 0) {
+      let best = null, bestDist = Infinity;
+      for (const img of allImgs) {
+        const pos = rawHtml.indexOf(img);
+        if (pos >= 0) {
+          const d = Math.abs(pos - promoPos);
+          if (d < bestDist && d < 12000) { bestDist = d; best = img; }
+        }
+      }
+      if (best) return best;
+    }
+  }
+
   return null;
 }
 
