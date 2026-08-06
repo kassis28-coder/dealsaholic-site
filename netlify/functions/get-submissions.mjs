@@ -49,7 +49,18 @@ export default async (req) => {
           // The index key is the authoritative Blob key. Legacy records can
           // contain a stale internal `id`, which made Edit submit an ID that
           // edit-submission could not find.
-          return record ? { ...record, id: storageKey } : null;
+          if (!record) return null;
+          // The replaced email importer auto-approved records without an admin
+          // review. Present only those identifiable records as pending again.
+          const wasUnreviewedAutoApproval = storageKey.startsWith('email-')
+            && record.source === 'email'
+            && record.status === 'approved'
+            && !record.reviewedAt;
+          return {
+            ...record,
+            id: storageKey,
+            status: wasUnreviewedAutoApproval ? 'pending' : record.status,
+          };
         } catch {
           // Skip a single unreadable record rather than failing the whole list.
           return null;
