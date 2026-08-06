@@ -19,3 +19,4 @@
   from = "/deal"
   to = "/.netlify/functions/deal-meta"
   status = 200
+  force = true
