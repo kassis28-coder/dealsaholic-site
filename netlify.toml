@@ -27,7 +27,7 @@
 
 [[redirects]]
   from = "/api/deal-image"
-  to = "/.netlify/functions/deal-image"
+  to = "/.netlify/functions/social-image"
   status = 200
 
 [[redirects]]
