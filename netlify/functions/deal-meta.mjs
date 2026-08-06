@@ -22,6 +22,7 @@ export default async (req) => {
   const rawCode    = p.get('code') || '';
   const store      = p.get('store') || 'amazon';
   const rawUrl     = p.get('url') || '';
+  const rawCanonical = p.get('canonical') || '';
 
   // URLSearchParams already decodes query values. Decoding a second time can
   // throw for legitimate titles containing a percent sign.
@@ -44,7 +45,7 @@ export default async (req) => {
   descParts.push('Shop now on Deals-aholic!');
   const description = descParts.join(' · ');
 
-  const canonicalUrl = `https://deals-aholic.com/deal?${p.toString()}`;
+  const canonicalUrl = rawCanonical || `https://deals-aholic.com/deal?${p.toString()}`;
 
   let affiliateUrl = '';
   if (asin) {
