@@ -245,7 +245,7 @@
     if (deal.image) params.set('image', deal.image);
     if (deal.discountCode) params.set('code', deal.discountCode);
     if (deal.storeType) params.set('store', deal.storeType);
-    return '/deal.html?' + params.toString();
+    return '/deal?' + params.toString();
   }
 
   function updateURL() {
