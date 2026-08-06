@@ -27,7 +27,7 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || "kethya08-20";
+const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || "daholic-20";
 
 function isAmazonUrl(url) {
   try {
