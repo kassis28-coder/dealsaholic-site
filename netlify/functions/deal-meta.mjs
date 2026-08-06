@@ -23,12 +23,14 @@ export default async (req) => {
   const store      = p.get('store') || 'amazon';
   const rawUrl     = p.get('url') || '';
 
-  const title      = rawTitle  ? decodeURIComponent(rawTitle)  : '';
-  const price      = rawPrice  ? decodeURIComponent(rawPrice)  : '';
-  const orig       = rawOrig   ? decodeURIComponent(rawOrig)   : '';
-  const image      = rawImage  ? decodeURIComponent(rawImage)  : 'https://deals-aholic.com/og-image.jpg';
-  const code       = rawCode   ? decodeURIComponent(rawCode)   : '';
-  const productUrl = rawUrl    ? decodeURIComponent(rawUrl)    : '';
+  // URLSearchParams already decodes query values. Decoding a second time can
+  // throw for legitimate titles containing a percent sign.
+  const title      = rawTitle;
+  const price      = rawPrice;
+  const orig       = rawOrig;
+  const image      = rawImage || 'https://deals-aholic.com/og-image.jpg';
+  const code       = rawCode;
+  const productUrl = rawUrl;
 
   const pageTitle = title ? `${title} — Deals-aholic` : 'Deal — Deals-aholic';
   const descParts = [];
@@ -130,18 +132,42 @@ export default async (req) => {
   const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
   const isAndroid = /android/i.test(ua);
 
-  document.getElementById('deal-cta').addEventListener('click', function () {
+  const ctaBtn = document.getElementById('deal-cta');
+  ctaBtn.addEventListener('click', async function () {
     if (!affiliateUrl) return;
-    if (isIOS && store !== 'walmart') {
-      window.location.href = 'x-safari-' + affiliateUrl;
-    } else if (isAndroid && store !== 'walmart') {
-      try {
-        const noProtocol = affiliateUrl.replace(/^https?:\/\//, '');
-        window.location.href = 'intent://' + noProtocol + '#Intent;scheme=https;package=com.android.chrome;end';
-      } catch (e) { window.open(affiliateUrl, '_blank'); }
-    } else {
-      window.open(affiliateUrl, '_blank');
+
+    if (store === 'walmart') {
+      window.location.href = affiliateUrl;
+      return;
     }
+
+    const originalText = ctaBtn.textContent;
+    ctaBtn.textContent = '⏳ Loading deal...';
+    ctaBtn.disabled = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    try {
+      const response = await fetch('/api/create-joylink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: affiliateUrl, asin: ${JSON.stringify(asin || null)} }),
+        signal: controller.signal,
+      });
+      const result = await response.json();
+      if (response.ok && result.url) {
+        window.location.href = result.url;
+        return;
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') console.error('JoyLink error:', error);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    ctaBtn.textContent = originalText;
+    ctaBtn.disabled = false;
+    window.location.href = affiliateUrl;
   });
 
   function copyCode() {
