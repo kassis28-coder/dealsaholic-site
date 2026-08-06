@@ -129,7 +129,8 @@ async function getJoyLinkUrl(amazonUrl, asin) {
   if (!apiKey) return null;
 
   const cache = getStore('joylink-cache');
-  const cacheKey = asin || amazonUrl;
+  const trackingId = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
+  const cacheKey = `${trackingId}:${asin || amazonUrl}`;
 
   try {
     const cached = await cache.get(cacheKey, { type: 'json' });
@@ -145,7 +146,7 @@ async function getJoyLinkUrl(amazonUrl, asin) {
       },
       body: JSON.stringify({
         destination: amazonUrl,
-        trackingid: process.env.AMAZON_PARTNER_TAG || 'daholic-20',
+        trackingid: trackingId,
       }),
     });
     const data = await res.json();
