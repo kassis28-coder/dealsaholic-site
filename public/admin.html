@@ -277,6 +277,10 @@ document.getElementById('create-post-form').style.display = 'none';
 renderList();
 }
 }
+function readableAmazonImage(imageUrl) {
+if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(imageUrl || '')) return imageUrl;
+return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+}
 function renderFlaggedAmazonDeals() {
 const container = document.getElementById('amazon-flagged-list');
 if (flaggedAmazonDeals.length === 0) {
@@ -286,7 +290,7 @@ return;
 container.innerHTML = '<h3 style="margin:20px 0 12px; font-size:14px; color:var(--red);">⚠️ Suspicious Amazon Deals (Auto-flagged)</h3>' +
 flaggedAmazonDeals.map(d => `
 <div class="submission-card" id="amazon-card-${d.asin}">
-${d.image ? `<img src="${d.image}" alt="" onerror="this.style.display='none'">` : ''}
+${d.image ? `<img src="${readableAmazonImage(d.image)}" alt="" onerror="this.style.display='none'">` : ''}
 <div class="submission-card__body">
 <p class="submission-card__title">${escapeHtml(d.title)}
 <span class="badge badge--amazon">🛒 Amazon API</span>
@@ -366,7 +370,7 @@ container.innerHTML = filtered.map(s => {
 const isEditing = editingId === s.id;
 const expiryDate = s.expiresOn ? s.expiresOn.split('T')[0] : '';
 const isEmail = s.source === 'email';
-const displayImage = s.photoUrl || s.imageUrl || s.image;
+const displayImage = readableAmazonImage(s.photoUrl || s.imageUrl || s.image);
 return `
 <div class="submission-card" id="card-${s.id}">
 ${displayImage ? `<img src="${displayImage}" alt="" onerror="this.style.display='none'">` : ''}
