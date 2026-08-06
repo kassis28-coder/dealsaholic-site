@@ -44,7 +44,7 @@ export default async (req) => {
 
   let affiliateUrl = '';
   if (asin) {
-    affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=kethya08-20&linkCode=ll1&language=en_US`;
+    affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=daholic-20&linkCode=ll1&language=en_US`;
   } else if (productUrl) {
     affiliateUrl = productUrl;
   }
