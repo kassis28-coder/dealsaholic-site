@@ -29,6 +29,10 @@ export default async (req) => {
   const price      = rawPrice;
   const orig       = rawOrig;
   const image      = rawImage || 'https://deals-aholic.com/og-image.jpg';
+  const isAmazonImage = /^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(image);
+  const previewImage = isAmazonImage
+    ? `https://deals-aholic.com/api/deal-image?src=${encodeURIComponent(image)}`
+    : image;
   const code       = rawCode;
   const productUrl = rawUrl;
 
@@ -67,14 +71,15 @@ export default async (req) => {
 <meta property="og:url" content="${esc(canonicalUrl)}">
 <meta property="og:title" content="${esc(title || 'Deal — Deals-aholic')}">
 <meta property="og:description" content="${esc(description)}">
-<meta property="og:image" content="${esc(image)}">
+<meta property="og:image" content="${esc(previewImage)}">
+<meta property="og:image:secure_url" content="${esc(previewImage)}">
 <meta property="og:image:width" content="800">
 <meta property="og:image:height" content="800">
 <meta property="og:site_name" content="Deals-aholic">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(title || 'Deal — Deals-aholic')}">
 <meta name="twitter:description" content="${esc(description)}">
-<meta name="twitter:image" content="${esc(image)}">
+<meta name="twitter:image" content="${esc(previewImage)}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
