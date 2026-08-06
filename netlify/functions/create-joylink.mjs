@@ -1,7 +1,7 @@
 import { getStore } from "@netlify/blobs";
 
 // Converts an Amazon URL to a JoyLink deeplink.
-// Caches results in the "joylink-cache" blob store keyed by ASIN
+// Caches results in the "joylink-cache" blob store keyed by tracking ID + ASIN
 // so each product only burns one API call (limit: 1440/day).
 export default async (req) => {
   let body = {};
@@ -22,7 +22,8 @@ export default async (req) => {
   }
 
   const cache = getStore('joylink-cache');
-  const cacheKey = asin || url;
+  const trackingId = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
+  const cacheKey = `${trackingId}:${asin || url}`;
 
   // Return cached link if available
   try {
@@ -44,7 +45,7 @@ export default async (req) => {
       },
       body: JSON.stringify({
         destination: url,
-        trackingid: process.env.AMAZON_PARTNER_TAG || 'daholic-20',
+        trackingid: trackingId,
       }),
     });
 
