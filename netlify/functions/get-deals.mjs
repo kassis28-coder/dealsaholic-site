@@ -1,6 +1,7 @@
 import { getStore } from "@netlify/blobs";
 
 const PUBLIC_FEED_CACHE_TTL_MS = 5 * 60 * 1000;
+const PUBLIC_FEED_CACHE_KEY = "latest-after-review-restore";
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "public, max-age=30",
@@ -45,6 +46,12 @@ async function getApprovedSellerDeals() {
 
       for (const record of records) {
         if (!record || record.status !== "approved") continue;
+        // The temporary replacement importer used `email-*` IDs and approved
+        // them without an admin action. Keep those records off the public site
+        // until the admin explicitly approves them (which sets reviewedAt).
+        if (String(record.id || '').startsWith('email-')
+            && record.source === 'email'
+            && !record.reviewedAt) continue;
         if (isGarbageSubmission(record)) continue;
         const expiresAt = new Date(record.expiresOn).getTime();
         if (!isNaN(expiresAt) && expiresAt < now) continue;
@@ -85,7 +92,7 @@ export default async () => {
   const publicCache = getStore("public-deals-cache");
   let cachedFeed = null;
   try {
-    cachedFeed = await publicCache.get("latest", { type: "json" }).catch(() => null);
+    cachedFeed = await publicCache.get(PUBLIC_FEED_CACHE_KEY, { type: "json" }).catch(() => null);
     if (cachedFeed?.payload && Date.now() - cachedFeed.cachedAt < PUBLIC_FEED_CACHE_TTL_MS) {
       return new Response(JSON.stringify(cachedFeed.payload), { headers: RESPONSE_HEADERS });
     }
@@ -120,7 +127,7 @@ export default async () => {
       deals: deduped,
     };
 
-    await publicCache.setJSON("latest", {
+    await publicCache.setJSON(PUBLIC_FEED_CACHE_KEY, {
       cachedAt: Date.now(),
       payload: combined,
     }).catch(err => console.log("Public feed cache write failed:", err.message));
