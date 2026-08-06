@@ -31,7 +31,7 @@ export default async (req) => {
   const image      = rawImage || 'https://deals-aholic.com/og-image.jpg';
   const isAmazonImage = /^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(image);
   const previewImage = isAmazonImage
-    ? `https://deals-aholic.com/api/deal-image?src=${encodeURIComponent(image)}`
+    ? `https://deals-aholic.com/.netlify/functions/social-image?src=${encodeURIComponent(image)}`
     : image;
   const code       = rawCode;
   const productUrl = rawUrl;
