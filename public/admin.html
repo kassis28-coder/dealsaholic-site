@@ -279,7 +279,7 @@ renderList();
 }
 function readableAmazonImage(imageUrl) {
 if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(imageUrl || '')) return imageUrl;
-return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SL1000_.jpg');
 }
 function renderFlaggedAmazonDeals() {
 const container = document.getElementById('amazon-flagged-list');

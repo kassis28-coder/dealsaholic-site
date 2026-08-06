@@ -228,11 +228,12 @@ function hasAnyDedupKey(keys, existingKeys) {
   return [...keys].some(key => existingKeys.has(key));
 }
 
-function toAmazon400ImageUrl(imageUrl) {
+function toAmazonLargeImageUrl(imageUrl) {
   if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(imageUrl || '')) return imageUrl;
-  // Email templates frequently provide _SS40_, _SL75_, or other thumbnail
-  // variants. Strip that sizing token and request a readable square image.
-  return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+  // Email templates frequently provide _SS40_, _SL75_, or padded _SR images.
+  // Strip that token and request a large natural-aspect image so the product
+  // fills the review thumbnail instead of sitting inside a white square.
+  return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SL1000_.jpg');
 }
 
 function decodeAmazonImageUrl(imageUrl) {
@@ -798,7 +799,7 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
   // Normalize Amazon email thumbnails for every email deal. This does not
   // affect manually uploaded images or any non-Amazon URL.
-  imageUrl = toAmazon400ImageUrl(imageUrl);
+  imageUrl = toAmazonLargeImageUrl(imageUrl);
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);
