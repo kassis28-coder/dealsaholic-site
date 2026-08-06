@@ -44,7 +44,7 @@ export default async (req) => {
       },
       body: JSON.stringify({
         destination: url,
-        trackingid: process.env.AMAZON_PARTNER_TAG || 'kethya08-20',
+        trackingid: process.env.AMAZON_PARTNER_TAG || 'daholic-20',
       }),
     });
 
