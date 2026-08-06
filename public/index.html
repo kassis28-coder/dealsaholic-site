@@ -245,6 +245,9 @@
     if (deal.image) params.set('image', deal.image);
     if (deal.discountCode) params.set('code', deal.discountCode);
     if (deal.storeType) params.set('store', deal.storeType);
+    // Meta caches link cards by URL for a long time. Increment this value when
+    // social preview metadata changes so newly copied links get a fresh scrape.
+    params.set('preview', '2');
     return '/deal.html?' + params.toString();
   }
 
