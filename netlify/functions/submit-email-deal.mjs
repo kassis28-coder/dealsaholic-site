@@ -229,8 +229,10 @@ function hasAnyDedupKey(keys, existingKeys) {
 }
 
 function toAmazon400ImageUrl(imageUrl) {
-  if (!/^https:\/\/m\.media-amazon\.com\/images\/I\//i.test(imageUrl || '')) return imageUrl;
-  return imageUrl.replace(/(?:\._[^/]+)?\.jpg(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+  if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(imageUrl || '')) return imageUrl;
+  // Email templates frequently provide _SS40_, _SL75_, or other thumbnail
+  // variants. Strip that sizing token and request a readable square image.
+  return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
 }
 
 function decodeAmazonImageUrl(imageUrl) {
@@ -794,7 +796,9 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     originalPrice = originalPrice || meta.originalPrice || null;
   }
   imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
-  imageUrl = isPromoUrl ? toAmazon400ImageUrl(imageUrl) : imageUrl;
+  // Normalize Amazon email thumbnails for every email deal. This does not
+  // affect manually uploaded images or any non-Amazon URL.
+  imageUrl = toAmazon400ImageUrl(imageUrl);
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);
