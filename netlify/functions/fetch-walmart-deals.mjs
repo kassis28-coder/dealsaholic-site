@@ -9,18 +9,7 @@ const MIN_DISCOUNT = 10;
 const MAX_AGE_HOURS = 48;
 const BLOCKED_WORDS = ["adult", "sex", "xxx", "erotic", "tobacco", "vape", "cbd"];
 
-const SEARCH_TERMS = [
-  "rollback",
-  "clearance",
-  "special buy",
-  "electronics deal",
-  "kitchen appliances",
-  "toys sale",
-  "clothing clearance",
-  "home goods deal",
-  "beauty deals",
-  "fitness equipment",
-];
+const CATALOG_PAGES = 3;
 
 function addAffiliateTag(url) {
   if (!url) return url;
@@ -58,15 +47,21 @@ async function discoverCatalogs(auth) {
   return catalogs;
 }
 
-async function fetchCatalogItems(auth, catalogId, searchTerm) {
-  const params = new URLSearchParams({ PageSize: "100", Keyword: searchTerm, CatalogId: String(catalogId) });
+async function fetchCatalogItems(auth, catalogId, page) {
+  // Use the catalog-specific endpoint. ItemSearch searches every available
+  // catalog and does not document CatalogId as a supported parameter.
+  const params = new URLSearchParams({ PageSize: "200", Page: String(page) });
   const res = await fetch(
-    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs/ItemSearch?${params}`,
+    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs/${catalogId}/Items?${params}`,
     { headers: { Authorization: `Basic ${auth}`, Accept: "application/json" } }
   );
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.log(`Walmart catalog ${catalogId}, page ${page} failed: ${res.status}`);
+    return [];
+  }
   const data = await res.json();
-  return data?.Items || data?.items || [];
+  if (Array.isArray(data)) return data;
+  return data?.Items || data?.items || data?.CatalogItems || data?.catalogItems || [];
 }
 
 function normalizeImpactItem(raw) {
@@ -76,10 +71,13 @@ function normalizeImpactItem(raw) {
   const price = parseFloat(raw.CurrentPrice || raw.SalePrice || raw.Price || 0);
   const originalPrice = parseFloat(raw.OriginalPrice || raw.WasPrice || raw.RegularPrice || 0);
   if (!price || price <= 0) return null;
-  const discountPercent = calcDiscount(price, originalPrice);
-  if (discountPercent !== null && discountPercent < MIN_DISCOUNT) return null;
+  const calculatedDiscount = calcDiscount(price, originalPrice);
+  const suppliedDiscount = parseFloat(raw.DiscountPercentage || 0);
+  const discountPercent = calculatedDiscount ?? (suppliedDiscount > 0 ? Math.round(suppliedDiscount) : null);
+  const hasPromotion = Array.isArray(raw.Promotions) && raw.Promotions.length > 0;
+  if ((discountPercent === null || discountPercent < MIN_DISCOUNT) && !hasPromotion) return null;
   const image = raw.ImageUrl || raw.ThumbnailUrl || raw.Image || null;
-  const rawUrl = raw.DirectLink || raw.TrackingLink || raw.Url || raw.Link;
+  const rawUrl = raw.DirectLink || raw.TrackingLink || raw.Url || raw.URL || raw.MobileUrl || raw.Link;
   return {
     id: `walmart-${id}`, title,
     price: `$${price.toFixed(2)}`,
@@ -99,21 +97,21 @@ async function fetchViaImpactCatalogs() {
   if (!catalogs.length) return [];
   const walmartCatalogs = catalogs.filter((c) => (c.Name || "").toLowerCase().includes("walmart"));
   if (!walmartCatalogs.length) {
-  console.log("No Walmart-named catalog available in this Impact account; skipping to web scrape.");
-  return [];
-}
-const targetCatalogs = walmartCatalogs;
+    console.log("No Walmart-named catalog is available in this Impact account.");
+    return [];
+  }
   const seen = new Set(); const deals = [];
-  for (const catalog of targetCatalogs) {
-    for (const term of SEARCH_TERMS) {
-      const items = await fetchCatalogItems(auth, catalog.Id, term);
+  for (const catalog of walmartCatalogs) {
+    for (let page = 0; page < CATALOG_PAGES; page++) {
+      const items = await fetchCatalogItems(auth, catalog.Id, page);
       for (const raw of items) {
         const deal = normalizeImpactItem(raw);
         if (!deal || seen.has(deal.id)) continue;
         seen.add(deal.id);
         deals.push(deal);
       }
-      await sleep(500);
+      if (items.length < 200) break;
+      await sleep(250);
     }
   }
   console.log(`Impact strategy: ${deals.length} deals found.`);
@@ -131,12 +129,11 @@ async function fetchWalmartPage(query) {
     },
   });
   if (!res.ok) { console.log(`Walmart fetch failed: ${res.status}`); return []; }
-console.log(`Walmart fetch ok: status=${res.status} finalUrl=${res.url}`);
+  console.log(`Walmart fetch ok: status=${res.status} finalUrl=${res.url}`);
   const html = await res.text();
   console.log(`Walmart HTML length: ${html.length}, hasNextData: ${html.includes("__NEXT_DATA__")}`);
   const match = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
   if (!match) return [];
-  // (diag) note: above line returns early if no NEXT_DATA match
   let pageData; try { pageData = JSON.parse(match[1]); } catch { return []; }
   const sr = pageData?.props?.pageProps?.initialData?.searchResult || pageData?.props?.pageProps?.searchResult || null;
   console.log(`Walmart parsed: hasSearchResult=${!!sr}, stacks=${(sr?.itemStacks||[]).length}, items=${(sr?.itemStacks||[]).reduce((n,s)=>n+(s.items?.length||0),0)}`);
@@ -247,4 +244,4 @@ export default async function handler(req) {
   try { await run(); } catch (err) { console.error("Scheduled error:", err.message); }
 }
 
-export const config = {};
+export const config = { schedule: "15 * * * *" };
