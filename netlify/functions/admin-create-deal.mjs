@@ -17,6 +17,7 @@ function detectStore(url) {
     const host = new URL(url).hostname.toLowerCase();
     if (host.includes("goto.walmart.")) return "walmart_affiliate";
     if (host.includes("goto.target.") || host.includes("target.sjv.io")) return "target_affiliate";
+    if (host === "mavely.app.link" || host.endsWith(".mavely.app.link") || host.includes("mavelyinfluencer.com")) return "target_affiliate";
     if (host.includes("temuaffiliateprogram.")) return "temu_affiliate";
     if (host.includes("amazon.")) return "amazon";
     if (host.includes("walmart.")) return "walmart";
