@@ -165,8 +165,8 @@ async function postToTelegram(deal) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!botToken || !chatId) return false;
 
-  const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
-  const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
+  const storeIcon = deal.store === 'walmart' ? '🛒' : deal.store === 'target' ? '🎯' : '🛍️';
+  const storeName = deal.store === 'walmart' ? 'Walmart.com' : deal.store === 'target' ? 'Target.com' : deal.store === 'amazon' ? 'Amazon.com' : 'Online Retailer';
   const codeLine = deal.promoCode ? '\n🏷 Code: ' + deal.promoCode : '';
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
   const caption = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
@@ -203,8 +203,8 @@ async function postToFacebook(deal) {
   const pageId = process.env.FACEBOOK_PAGE_ID;
   if (!pageToken || !pageId) return false;
 
-  const storeIcon = deal.store === 'walmart' ? '🛒' : '🛍️';
-  const storeName = deal.store === 'walmart' ? 'Walmart.com' : 'Amazon.com';
+  const storeIcon = deal.store === 'walmart' ? '🛒' : deal.store === 'target' ? '🎯' : '🛍️';
+  const storeName = deal.store === 'walmart' ? 'Walmart.com' : deal.store === 'target' ? 'Target.com' : deal.store === 'amazon' ? 'Amazon.com' : 'Online Retailer';
   const codeLine = deal.promoCode ? '\n🏷 Code: ' + deal.promoCode : '';
   const discountLine = deal.discount ? ' (' + deal.discount + '% off)' : '';
   const message = '🔥 New Deal Alert!\n\n' + storeIcon + ' ' + storeName + '\n\n' +
@@ -277,7 +277,7 @@ export default async (req, context) => {
   }
 
   // Convert Amazon URL to JoyLink deeplink for better affiliate tracking
-  if (deal.store !== 'walmart' && deal.url) {
+  if (deal.store === 'amazon' && deal.url) {
     const joylinkUrl = await getJoyLinkUrl(deal.url, deal.asin || null);
     if (joylinkUrl) {
       console.log('JoyLink URL created:', joylinkUrl);

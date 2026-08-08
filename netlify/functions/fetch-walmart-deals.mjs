@@ -4,7 +4,7 @@ const ACCOUNT_SID = process.env.IMPACT_ACCOUNT_SID;
 const AUTH_TOKEN = process.env.IMPACT_AUTH_TOKEN;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-const AFFILIATE_PARAM = "wmlspartner=iplc1788825";
+const WALMART_IMPACT_PREFIX = process.env.WALMART_IMPACT_PREFIX || "https://goto.walmart.com/c/1788825/1398372/16662?u=";
 const MIN_DISCOUNT = 10;
 const MAX_AGE_HOURS = 48;
 const BLOCKED_WORDS = ["adult", "sex", "xxx", "erotic", "tobacco", "vape", "cbd"];
@@ -24,9 +24,8 @@ const SEARCH_TERMS = [
 
 function addAffiliateTag(url) {
   if (!url) return url;
-  if (url.includes("wmlspartner=")) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}${AFFILIATE_PARAM}`;
+  if (/goto\.walmart\.com\/c\/1788825\//i.test(url)) return url;
+  return `${WALMART_IMPACT_PREFIX}${encodeURIComponent(url)}`;
 }
 
 function isBlocked(title = "") {
@@ -60,9 +59,9 @@ async function discoverCatalogs(auth) {
 }
 
 async function fetchCatalogItems(auth, catalogId, searchTerm) {
-  const params = new URLSearchParams({ PageSize: "100", SearchTerm: searchTerm });
+  const params = new URLSearchParams({ PageSize: "100", Keyword: searchTerm, CatalogId: String(catalogId) });
   const res = await fetch(
-    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs/${catalogId}/Items?${params}`,
+    `https://api.impact.com/Mediapartners/${ACCOUNT_SID}/Catalogs/ItemSearch?${params}`,
     { headers: { Authorization: `Basic ${auth}`, Accept: "application/json" } }
   );
   if (!res.ok) return [];
@@ -216,9 +215,7 @@ async function saveDeals(deals) {
     added++;
   }
   await store.setJSON("index", index);
-await store.setJSON("index", index);
-await store.setJSON("index", index);
-return { added, total: deals.length };
+  return { added, total: deals.length };
 }
 
 async function run() {

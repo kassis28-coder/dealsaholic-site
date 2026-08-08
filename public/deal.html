@@ -107,12 +107,14 @@
 
   const ctaBtn = document.getElementById('deal-cta');
   if (store === 'walmart') ctaBtn.textContent = '🛒 Get This Deal on Walmart';
+  if (store === 'target') ctaBtn.textContent = '🎯 Get This Deal on Target';
+  if (!['amazon', 'walmart', 'target'].includes(store)) ctaBtn.textContent = '🛍️ Get This Deal';
 
   ctaBtn.addEventListener('click', async function () {
     if (!affiliateUrl) return;
 
     // Non-Amazon links go directly
-    if (store === 'walmart') {
+    if (store !== 'amazon') {
       window.location.href = affiliateUrl;
       return;
     }

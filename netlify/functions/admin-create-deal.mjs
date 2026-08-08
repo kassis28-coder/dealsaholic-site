@@ -8,17 +8,20 @@ const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
 const CATALOG_URL = "https://creatorsapi.amazon/catalog/v1/searchItems";
 
-const WALMART_AFFILIATE = "https://goto.walmart.com/c/1788825/1398372/16662?u=";
+const WALMART_AFFILIATE = process.env.WALMART_IMPACT_PREFIX || "https://goto.walmart.com/c/1788825/1398372/16662?u=";
+const TARGET_AFFILIATE = process.env.TARGET_IMPACT_PREFIX || "";
 const TEMU_AFFILIATE = "https://temuaffiliateprogram.pxf.io/c/1788825/1580294/18350?u=";
 
 function detectStore(url) {
   try {
     const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("goto.walmart.")) return "walmart_affiliate";
+    if (host.includes("goto.target.") || host.includes("target.sjv.io")) return "target_affiliate";
+    if (host.includes("temuaffiliateprogram.")) return "temu_affiliate";
     if (host.includes("amazon.")) return "amazon";
     if (host.includes("walmart.")) return "walmart";
+    if (host.includes("target.")) return "target";
     if (host.includes("temu.")) return "temu";
-    if (host.includes("goto.walmart.")) return "walmart_affiliate";
-    if (host.includes("temuaffiliateprogram.")) return "temu_affiliate";
     return "other";
   } catch {
     return "other";
@@ -35,6 +38,9 @@ function buildAffiliateUrl(url, store) {
     }
     case "walmart":
       return `${WALMART_AFFILIATE}${encodeURIComponent(url)}`;
+    case "target":
+      if (!TARGET_AFFILIATE) throw new Error("Target Impact link is not configured. Paste an already-tracked Target Impact link or add TARGET_IMPACT_PREFIX in Netlify.");
+      return `${TARGET_AFFILIATE}${encodeURIComponent(url)}`;
     case "temu":
       return `${TEMU_AFFILIATE}${encodeURIComponent(url)}`;
     default:
@@ -202,7 +208,7 @@ export default async (req, context) => {
             imageUrl = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
           }
         }
-      } else if (store === "walmart" || store === "temu") {
+      } else if (store === "walmart" || store === "target" || store === "temu") {
         imageUrl = await fetchPageImage(finalUrl);
       }
     }
@@ -243,7 +249,7 @@ export default async (req, context) => {
       imageUrl: imageUrl || null,
       discountCode: discountCode || null,
       source: "admin",
-      storeType: store,
+      storeType: store.replace('_affiliate', ''),
       status: "approved",
       sponsored: false,
       createdAt: new Date().toISOString(),
@@ -279,7 +285,7 @@ export default async (req, context) => {
           imageUrl,
           promoCode: discountCode || null,
           asin,
-          store: store === 'walmart' ? 'walmart' : 'amazon',
+          store: store.replace('_affiliate', ''),
         });
 
         await queueStore.setJSON('queue', queue);

@@ -172,8 +172,10 @@ export default async (_req, _context) => {
     );
   }
 
-  const joylinkUrl = await getJoyLinkUrl(targetDeal.url, targetDeal.asin || null);
-  if (!joylinkUrl) {
+  const isAmazon = String(targetDeal.storeType || targetDeal.store || '').toLowerCase() === 'amazon'
+    || /amazon\./i.test(targetDeal.url || '');
+  const joylinkUrl = isAmazon ? await getJoyLinkUrl(targetDeal.url, targetDeal.asin || null) : null;
+  if (isAmazon && !joylinkUrl) {
     console.warn(`${TAG} JoyInLink unavailable for deal ${targetId}; using raw Amazon URL.`);
   }
   const postDeal = { ...targetDeal, url: joylinkUrl || targetDeal.url };
