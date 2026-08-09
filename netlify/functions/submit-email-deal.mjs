@@ -228,15 +228,79 @@ function hasAnyDedupKey(keys, existingKeys) {
   return [...keys].some(key => existingKeys.has(key));
 }
 
-function toAmazon400ImageUrl(imageUrl) {
-  if (!/^https:\/\/m\.media-amazon\.com\/images\/I\//i.test(imageUrl || '')) return imageUrl;
-  return imageUrl.replace(/(?:\._[^/]+)?\.jpg(?:\?[^#]*)?$/i, '._SR400,400_.jpg');
+function toAmazonLargeImageUrl(imageUrl) {
+  if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(imageUrl || '')) return imageUrl;
+  // Email templates frequently provide _SS40_, _SL75_, or padded _SR images.
+  // Strip that token and request a large natural-aspect image so the product
+  // fills the review thumbnail instead of sitting inside a white square.
+  return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SL1000_.jpg');
 }
 
 function decodeAmazonImageUrl(imageUrl) {
   return imageUrl
-    ? imageUrl.replace(/\\u0026/gi, '&').replace(/\\\//g, '/')
+    ? decodeHtmlAttribute(imageUrl)
+        .replace(/\\u0026/gi, '&')
+        .replace(/\\u003d/gi, '=')
+        .replace(/\\\//g, '/')
     : null;
+}
+
+// Amazon exposes the primary product photo through several different variables
+// depending on the product/variation template. Promo-code records use this
+// exhaustive reader only when their landing-page card did not provide an image.
+function firstAmazonProductImage(html) {
+  const source = String(html || '');
+  const candidates = [];
+  const add = value => {
+    const decoded = decodeAmazonImageUrl(value);
+    if (decoded && /^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\//i.test(decoded)) {
+      candidates.push(decoded);
+    }
+  };
+
+  const landingImage = source.match(/<img\b[^>]*\bid=["']landingImage["'][^>]*>/i)?.[0];
+  if (landingImage) {
+    add(attributeValue(landingImage, 'data-old-hires'));
+    const dynamic = attributeValue(landingImage, 'data-a-dynamic-image');
+    if (dynamic) {
+      try { Object.keys(JSON.parse(dynamic)).forEach(add); } catch { /* Try other variables. */ }
+    }
+    add(attributeValue(landingImage, 'src'));
+  }
+
+  for (const pattern of [
+    /["']hiRes["']\s*:\s*["'](https?(?:\\.|[^"'])+)["']/gi,
+    /["']large["']\s*:\s*["'](https?(?:\\.|[^"'])+)["']/gi,
+    /["']mainUrl["']\s*:\s*["'](https?(?:\\.|[^"'])+)["']/gi,
+    /["']thumb["']\s*:\s*["'](https?(?:\\.|[^"'])+)["']/gi,
+  ]) {
+    let match;
+    while ((match = pattern.exec(source)) !== null) add(match[1]);
+  }
+
+  // Last resort for templates whose variation data uses an unfamiliar key.
+  const cdnPattern = /https?:\\?\/\\?\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\\?\/images\\?\/[A-Za-z0-9%._,\/-]+\.(?:jpg|jpeg|png|webp)/gi;
+  for (const match of source.match(cdnPattern) || []) add(match);
+  return candidates.find(url => !/(?:logo|icon|sprite|badge|banner|pixel|transparent|placeholder)/i.test(url)) || null;
+}
+
+async function fetchPromoAsinImage(asin) {
+  if (!/^[A-Z0-9]{10}$/i.test(asin || '')) return null;
+  try {
+    const response = await fetch(`https://www.amazon.com/dp/${asin}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return null;
+    return firstAmazonProductImage(await response.text());
+  } catch (error) {
+    console.log(`[Promo image] ASIN image lookup failed for ${asin}: ${error.message}`);
+    return null;
+  }
 }
 
 function findFirstAsin(source) {
@@ -379,7 +443,7 @@ async function fetchPromoProductImage(promoUrl, parsedTitle) {
       const href = attributeValue(match[1], 'href');
       const asin = href?.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
       const image = imageFromPromoCard(match[2]);
-      if (!asin || !image) continue;
+      if (!asin) continue;
 
       const afterCard = html.slice(match.index + match[0].length, match.index + match[0].length + 8000);
       const title = decodeHtmlAttribute(afterCard.match(/class=["'][^"']*\btitleLink\b[^"']*["'][^>]*>[\s\S]{0,800}?class=["'][^"']*\ba-truncate-full\b[^"']*["'][^>]*>([^<]+)/i)?.[1] || '');
@@ -393,6 +457,11 @@ async function fetchPromoProductImage(promoUrl, parsedTitle) {
     const best = cards.reduce((current, card) =>
       titleMatchScore(parsedTitle, card.title) > titleMatchScore(parsedTitle, current.title) ? card : current
     );
+    best.image = best.image || await fetchPromoAsinImage(best.asin);
+    if (!best.image) {
+      console.log(`[Promo image] Product ${best.asin} found but none of its image variables were usable`);
+      return null;
+    }
     console.log(`[Promo image] ${cards.length} cards; matched "${best.title || '[first card]'}" → ${best.asin}; image=${best.image}`);
     return best;
   } catch (error) {
@@ -713,6 +782,9 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
       imageUrl = promoProduct.image;
       draft.asin = draft.asin || promoProduct.asin;
     }
+    // If the promo page exposed an ASIN but not a card image, fetch the first
+    // usable primary/variation image from that ASIN's product page.
+    if (!imageUrl && draft.asin) imageUrl = await fetchPromoAsinImage(draft.asin);
   }
 
   const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
@@ -725,7 +797,9 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     originalPrice = originalPrice || meta.originalPrice || null;
   }
   imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
-  imageUrl = isPromoUrl ? toAmazon400ImageUrl(imageUrl) : imageUrl;
+  // Normalize Amazon email thumbnails for every email deal. This does not
+  // affect manually uploaded images or any non-Amazon URL.
+  imageUrl = toAmazonLargeImageUrl(imageUrl);
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);

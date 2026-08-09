@@ -38,7 +38,7 @@ body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; co
 .tab--email.active { background: #7B2FBE; border-color: #7B2FBE; color: #fff; }
 .tab--review.active { background: #E1432D; border-color: #E1432D; color: #fff; }
 .submission-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 14px; display: flex; gap: 16px; }
-.submission-card img { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; flex-shrink: 0; }
+.submission-card img { width: 128px; height: 128px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; flex-shrink: 0; }
 .submission-card__body { flex: 1; min-width: 0; }
 .submission-card__title { font-weight: 700; font-size: 14px; margin: 0 0 4px; }
 .submission-card__meta { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; line-height: 1.5; }
@@ -86,7 +86,7 @@ body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; co
 .image-preview { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; margin-top: 8px; display: none; }
 .upload-btn { background: var(--paper); border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; font-size: 13px; color: var(--ink-soft); transition: border-color 0.15s; }
 .upload-btn:hover { border-color: var(--brand); color: var(--brand); }
-@media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .edit-form-row { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } .edit-form-row { grid-template-columns: 1fr; } .submission-card img { width: 96px; height: 96px; } }
 </style>
 </head>
 <body>
@@ -277,6 +277,10 @@ document.getElementById('create-post-form').style.display = 'none';
 renderList();
 }
 }
+function readableAmazonImage(imageUrl) {
+if (!/^https:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com)\/images\/I\//i.test(imageUrl || '')) return imageUrl;
+return imageUrl.replace(/(?:\._[^/]+)?\.(?:jpg|jpeg|png|webp)(?:\?[^#]*)?$/i, '._SL1000_.jpg');
+}
 function renderFlaggedAmazonDeals() {
 const container = document.getElementById('amazon-flagged-list');
 if (flaggedAmazonDeals.length === 0) {
@@ -286,7 +290,7 @@ return;
 container.innerHTML = '<h3 style="margin:20px 0 12px; font-size:14px; color:var(--red);">⚠️ Suspicious Amazon Deals (Auto-flagged)</h3>' +
 flaggedAmazonDeals.map(d => `
 <div class="submission-card" id="amazon-card-${d.asin}">
-${d.image ? `<img src="${d.image}" alt="" onerror="this.style.display='none'">` : ''}
+${d.image ? `<img src="${readableAmazonImage(d.image)}" alt="" onerror="this.style.display='none'">` : ''}
 <div class="submission-card__body">
 <p class="submission-card__title">${escapeHtml(d.title)}
 <span class="badge badge--amazon">🛒 Amazon API</span>
@@ -366,7 +370,7 @@ container.innerHTML = filtered.map(s => {
 const isEditing = editingId === s.id;
 const expiryDate = s.expiresOn ? s.expiresOn.split('T')[0] : '';
 const isEmail = s.source === 'email';
-const displayImage = s.photoUrl || s.imageUrl || s.image;
+const displayImage = readableAmazonImage(s.photoUrl || s.imageUrl || s.image);
 return `
 <div class="submission-card" id="card-${s.id}">
 ${displayImage ? `<img src="${displayImage}" alt="" onerror="this.style.display='none'">` : ''}

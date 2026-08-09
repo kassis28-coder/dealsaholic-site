@@ -1,5 +1,16 @@
 import { getStore } from "@netlify/blobs";
 
+// Rebuilding this feed requires reading more than 2,000 reviewed submissions.
+// Keep the already-built feed warm long enough that normal visitors never pay
+// that cold-build cost. New approvals still appear on the next refresh.
+const PUBLIC_FEED_CACHE_TTL_MS = 30 * 60 * 1000;
+const PUBLIC_FEED_CACHE_KEY = "latest-after-review-restore";
+const RESPONSE_HEADERS = {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=30",
+  "Netlify-CDN-Cache-Control": "public, durable, max-age=1800, stale-while-revalidate=86400",
+};
+
 // Titles that come from email auto-replies, bounces, or failed parsing.
 const GARBAGE_TITLE_RE = /^(?:the response was|message not delivered|undelivered mail|auto.?reply|delivery status|mail delivery|failure notice|returned mail|amazon deal|no title|untitled)\b/i;
 
@@ -25,7 +36,9 @@ async function getApprovedSellerDeals() {
     // Fetch all records in parallel instead of sequentially
     // Blob reads are independent. Higher parallelism keeps the public API
     // responsive even when the submissions index contains thousands of deals.
-    const CONCURRENCY = 100;
+    // Blob reads are independent. Larger batches substantially reduce cold-start
+    // latency while keeping memory bounded for the current catalog size.
+    const CONCURRENCY = 400;
     const approved = [];
 
     for (let i = 0; i < recentIds.length; i += CONCURRENCY) {
@@ -36,6 +49,12 @@ async function getApprovedSellerDeals() {
 
       for (const record of records) {
         if (!record || record.status !== "approved") continue;
+        // The temporary replacement importer used `email-*` IDs and approved
+        // them without an admin action. Keep those records off the public site
+        // until the admin explicitly approves them (which sets reviewedAt).
+        if (String(record.id || '').startsWith('email-')
+            && record.source === 'email'
+            && !record.reviewedAt) continue;
         if (isGarbageSubmission(record)) continue;
         const expiresAt = new Date(record.expiresOn).getTime();
         if (!isNaN(expiresAt) && expiresAt < now) continue;
@@ -73,7 +92,14 @@ async function getApprovedSellerDeals() {
 }
 
 export default async () => {
+  const publicCache = getStore("public-deals-cache");
+  let cachedFeed = null;
   try {
+    cachedFeed = await publicCache.get(PUBLIC_FEED_CACHE_KEY, { type: "json" }).catch(() => null);
+    if (cachedFeed?.payload && Date.now() - cachedFeed.cachedAt < PUBLIC_FEED_CACHE_TTL_MS) {
+      return new Response(JSON.stringify(cachedFeed.payload), { headers: RESPONSE_HEADERS });
+    }
+
     const store = getStore("deals");
     const data = await store.get("latest", { type: "json" });
     const sellerDeals = await getApprovedSellerDeals();
@@ -104,13 +130,18 @@ export default async () => {
       deals: deduped,
     };
 
+    await publicCache.setJSON(PUBLIC_FEED_CACHE_KEY, {
+      cachedAt: Date.now(),
+      payload: combined,
+    }).catch(err => console.log("Public feed cache write failed:", err.message));
+
     return new Response(JSON.stringify(combined), {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=30",
-      },
+      headers: RESPONSE_HEADERS,
     });
   } catch (err) {
+    if (cachedFeed?.payload) {
+      return new Response(JSON.stringify(cachedFeed.payload), { headers: RESPONSE_HEADERS });
+    }
     return new Response(
       JSON.stringify({ deals: [], error: err.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }

@@ -26,6 +26,25 @@
   status = 200
 
 [[redirects]]
+  from = "/api/deal-image"
+  to = "/.netlify/functions/social-image"
+  status = 200
+
+[[redirects]]
   from = "/api/post-to-facebook"
   to = "/.netlify/functions/post-to-facebook"
   status = 200
+
+# Render deal pages server-side so Facebook and other sharing services receive
+# the product image, while the page keeps the original working deal behavior.
+[[redirects]]
+  from = "/deal.html"
+  to = "/.netlify/functions/deal-meta"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/deal"
+  to = "/.netlify/functions/deal-meta"
+  status = 200
+  force = true
