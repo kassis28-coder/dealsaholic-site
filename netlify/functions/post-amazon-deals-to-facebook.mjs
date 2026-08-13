@@ -173,17 +173,31 @@ async function postToTelegram(deal, botToken, chatId, style) {
 }
 
 export default async () => {
-  const pageId   = process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID;
-  const token    = process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN;
+  const dealsAholicPage = {
+    name: "Deals-Aholic",
+    pageId: process.env.FB_PAGE_ID || process.env.FACEBOOK_PAGE_ID,
+    token: process.env.FB_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN,
+  };
+  const savings101Page = {
+    name: "101 Savings",
+    pageId: process.env.FACEBOOK_101SAVINGS_PAGE_ID,
+    token: process.env.FACEBOOK_101SAVINGS_PAGE_TOKEN,
+  };
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId   = process.env.TELEGRAM_CHAT_ID;
 
-  if (!pageId || !token) {
+  if (!dealsAholicPage.pageId || !dealsAholicPage.token) {
     return new Response(
-      JSON.stringify({ success: false, error: "Missing Facebook credentials" }),
+      JSON.stringify({ success: false, error: "Missing Deals-Aholic Facebook credentials" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
+
+  // Use both pages only after 101 Savings has been securely configured in
+  // Netlify. Until then, preserve the existing Deals-Aholic posting behavior.
+  const facebookPages = [dealsAholicPage];
+  if (savings101Page.pageId && savings101Page.token) facebookPages.push(savings101Page);
+  const maxPostsPerRun = facebookPages.length === 2 ? 6 : 5;
 
   const dealStore = getStore("deals");
   const data = await dealStore.get("latest", { type: "json" });
@@ -215,7 +229,9 @@ export default async () => {
   let posted = [];
   try { posted = await store.get("posted", { type: "json" }) || []; } catch {}
 
-  // Build target batch (up to 5 unposted valid deals)
+  // Build target batch. With both pages connected, publish six distinct deals:
+  // three to each page. A deal is stored globally after a successful post, so it
+  // cannot be sent to the other page in a later run.
   const targets = [];
   for (const deal of data.deals) {
     if (!validateDeal(deal)) continue;
@@ -223,14 +239,18 @@ export default async () => {
     const key = deal.asin || deal.url || deal.title;
     if (posted.includes(key)) continue;
 
-    const exists = await alreadyPosted(deal, pageId, token);
-    if (exists) {
+    // Check every connected Page. This also prevents a deal posted before this
+    // rotation was added from being reused on the other Page.
+    const existsOnAnyPage = await Promise.all(
+      facebookPages.map(page => alreadyPosted(deal, page.pageId, page.token))
+    );
+    if (existsOnAnyPage.some(Boolean)) {
       posted.push(key);
       continue;
     }
 
     targets.push(deal);
-    if (targets.length >= 5) break;
+    if (targets.length >= maxPostsPerRun) break;
   }
 
   if (targets.length === 0) {
@@ -244,7 +264,7 @@ export default async () => {
 
   const results = [];
 
-  for (const deal of targets) {
+  for (const [dealIndex, deal] of targets.entries()) {
     const joylinkUrl = await getJoyLinkUrl(deal.url, deal.asin || null);
     if (!joylinkUrl) {
       console.warn(`[JoyLink] Deeplink unavailable for ${deal.asin || deal.url}; using raw Amazon URL.`);
@@ -253,13 +273,15 @@ export default async () => {
     const style = Math.floor(Math.random() * 15);
 
     // ── Facebook ──────────────────────────────────────────────────────────────
+    // Alternate destinations. With six posts, each Page receives exactly three.
+    const destination = facebookPages[dealIndex % facebookPages.length];
     let fbOk = false;
     try {
-      const result = await postToFacebook(postDeal, pageId, token, style);
+      const result = await postToFacebook(postDeal, destination.pageId, destination.token, style);
       fbOk = true;
-      console.log(`[FB] Posted: "${deal.title.substring(0, 60)}" | id: ${result.id}`);
+      console.log(`[FB] Posted to ${destination.name}: "${deal.title.substring(0, 60)}" | id: ${result.id}`);
     } catch (err) {
-      console.error(`[FB] Failed: "${deal.title.substring(0, 60)}" | ${err.message}`);
+      console.error(`[FB] Failed for ${destination.name}: "${deal.title.substring(0, 60)}" | ${err.message}`);
     }
 
     // ── Telegram (same deal, same caption style) ──────────────────────────────
@@ -278,7 +300,7 @@ export default async () => {
     // Mark as posted if at least one platform succeeded
     if (fbOk || tgOk) {
       posted.push(deal.asin || deal.url);
-      results.push({ title: deal.title, fbOk, tgOk });
+      results.push({ title: deal.title, facebookPage: destination.name, fbOk, tgOk });
     }
   }
 
