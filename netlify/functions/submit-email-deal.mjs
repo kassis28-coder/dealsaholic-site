@@ -2,6 +2,19 @@ import { getStore } from "@netlify/blobs";
 
 const AFFILIATE_TAG = process.env.AMAZON_PARTNER_TAG || 'daholic-20';
 
+// Explicit sexual/adult products are never stored. Keep this deliberately
+// specific so ordinary products that merely use words such as "adult size"
+// are not accidentally blocked.
+const ADULT_PRODUCT_RE = /\b(?:adult\s+(?:toy|novelty|product)|sex(?:ual)?\s+(?:toy|aid|product)|vibrators?|dildos?|masturbators?|mastubators?|masturbation|male\s+enhancement|penis\s+(?:pump|ring)|cock\s+ring|butt\s+plug|anal\s+(?:plug|toy|beads)|bondage\s+(?:gear|kit|toy)|erotic\s+(?:toy|massager)|love\s+doll)\b/i;
+
+function isAdultProduct(value) {
+  return ADULT_PRODUCT_RE.test(String(value || ''));
+}
+
+function isValidPromoCode(value) {
+  return /^[A-Z0-9]{4,20}$/i.test(String(value || '').trim());
+}
+
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // HTML / TEXT UTILITIES
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -221,8 +234,17 @@ function getDedupKeys({ asin, discountCode, amazonUrl, productUrl }) {
   // Keep the promo campaign ID and, once Amazon resolves it, its first ASIN.
   // Saved promo records use the resolved /dp/ URL, so retaining both keys lets
   // a later copy of the same email match the record already in the system.
-  if (urlKey) keys.add(`${urlKey}${suffix}`);
-  if (asin) keys.add(`asin:${String(asin).toUpperCase()}${suffix}`);
+  // Product-only keys prevent the same item from being auto-approved again
+  // when a repeated seller email uses a different coupon code.
+  if (urlKey) {
+    keys.add(urlKey);
+    keys.add(`${urlKey}${suffix}`);
+  }
+  if (asin) {
+    const asinKey = `asin:${String(asin).toUpperCase()}`;
+    keys.add(asinKey);
+    keys.add(`${asinKey}${suffix}`);
+  }
   return keys;
 }
 
@@ -682,6 +704,10 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
     const drafts = [];
     const seenKeys = new Set();
     for (const block of blocks) {
+      if (isAdultProduct(block)) {
+        console.warn('[Adult filter] Blocked explicit adult product block');
+        continue;
+      }
       const fields = extractStructuredProductData(block);
       if (!fields.isProductBlock || !fields.amazonUrl) continue;
       const asin = fields.asin || await resolveAsin(fields.amazonUrl);
@@ -777,6 +803,12 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   }
   const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
+  let imageVerified = false;
+
+  if (isAdultProduct(title)) {
+    console.warn(`[Adult filter] Blocked product before enrichment: "${title}"`);
+    return null;
+  }
 
   // Some older email markup contains the same obsolete ASIN-derived URL that
   // used to be generated below. Treat it as missing before enrichment so it
@@ -787,21 +819,37 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     const promoProduct = await fetchPromoProductImage(draft.amazonUrl, title);
     if (promoProduct) {
       imageUrl = promoProduct.image;
+      imageVerified = Boolean(promoProduct.image);
       draft.asin = draft.asin || promoProduct.asin;
     }
     // If the promo page exposed an ASIN but not a card image, fetch the first
     // usable primary/variation image from that ASIN's product page.
-    if (!imageUrl && draft.asin) imageUrl = await fetchPromoAsinImage(draft.asin);
+    if (!imageUrl && draft.asin) {
+      imageUrl = await fetchPromoAsinImage(draft.asin);
+      imageVerified = Boolean(imageUrl);
+    }
   }
 
   const affiliateUrl = buildAffiliateUrl(draft.asin, draft.amazonUrl);
 
-  if (!title || !imageUrl || !dealPrice) {
-    const meta = await fetchAmazonMeta(affiliateUrl);
-    title         = title         || meta.title         || null;
-    imageUrl      = imageUrl      || meta.image         || null;
-    dealPrice     = dealPrice     || meta.price         || null;
-    originalPrice = originalPrice || meta.originalPrice || null;
+  // Always read the canonical product title. It is the independent signal
+  // used to confirm that an email title and its selected image belong to the
+  // same Amazon product before automatic approval.
+  const meta = await fetchAmazonMeta(affiliateUrl);
+  title         = title         || meta.title         || null;
+  // Prefer Amazon's canonical product-page image when available. Unlike a
+  // proximity match in an email containing many products, this image is tied
+  // to the same page and ASIN as meta.title.
+  if (meta.image) {
+    imageUrl = meta.image;
+    imageVerified = true;
+  }
+  dealPrice     = dealPrice     || meta.price         || null;
+  originalPrice = originalPrice || meta.originalPrice || null;
+
+  if (isAdultProduct(title) || isAdultProduct(meta.title)) {
+    console.warn(`[Adult filter] Blocked product after enrichment: "${title || meta.title}"`);
+    return null;
   }
 
   if (isLegacyAsinPlaceholderImage(imageUrl)) imageUrl = null;
@@ -809,10 +857,32 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   // final focused attempt using the existing exhaustive product-image reader.
   // Do not manufacture the obsolete /images/P/ fallback: a missing image is
   // safer than storing Amazon's 1x1 placeholder as a deal photo.
-  if (!imageUrl && draft.asin) imageUrl = await fetchPromoAsinImage(draft.asin);
+  if (!imageUrl && draft.asin) {
+    imageUrl = await fetchPromoAsinImage(draft.asin);
+    imageVerified = Boolean(imageUrl);
+  }
   // Normalize Amazon email thumbnails for every email deal. This does not
   // affect manually uploaded images or any non-Amazon URL.
   imageUrl = toAmazonLargeImageUrl(imageUrl);
+
+  const reviewIssues = [];
+  if (!title) reviewIssues.push('missing title');
+  if (!imageUrl) reviewIssues.push('missing image');
+  else if (!imageVerified) reviewIssues.push('image could not be verified against product page');
+  if (!isValidPromoCode(draft.discountCode)) reviewIssues.push('missing or invalid promo code');
+
+  // Amazon's title is tied to the same ASIN page from which the primary image
+  // is verified. A meaningful token overlap prevents a nearby email image from
+  // being auto-approved for the wrong product. If Amazon blocks verification,
+  // the deal stays available in Needs Review instead of being discarded.
+  const titleMatch = meta.title && title
+    ? titleMatchScore(title, meta.title)
+    : 0;
+  if (!draft.asin || !meta.title || titleMatch < 0.5) {
+    reviewIssues.push('title/image match could not be verified');
+  }
+
+  const autoApproved = reviewIssues.length === 0;
 
   const priceNum        = parseDollar(dealPrice);
   const origNum         = parseDollar(originalPrice);
@@ -835,10 +905,14 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     discountCode:   draft.discountCode || null,
     image:          imageUrl || null,
     expiresOn,
-    status:         'pending',
+    status:         autoApproved ? 'approved' : 'needs-review',
+    reviewReason:   autoApproved ? null : reviewIssues.join('; '),
+    autoApproved,
+    titleMatchScore: Number(titleMatch.toFixed(2)),
     source:         'email',
     createdAt:      new Date().toISOString(),
     submittedAt:    new Date().toISOString(),
+    reviewedAt:     autoApproved ? new Date().toISOString() : null,
   };
 
   await store.set(id, JSON.stringify(record));
@@ -847,7 +921,7 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   ids.push(id);
   deals.push({ id, title: record.productTitle, price: record.price, url: affiliateUrl, imageUrl: record.image, discountCode: record.discountCode });
 
-  console.log(`[Phase 3] Saved ${id}: "${record.productTitle}" ${record.price} code=${record.discountCode}`);
+  console.log(`[Phase 3] Saved ${id} as ${record.status}: "${record.productTitle}" ${record.price} code=${record.discountCode}`);
   return record;
 }
 

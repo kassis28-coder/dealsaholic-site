@@ -383,6 +383,7 @@ ${s.flagReason ? '<span class="badge badge--needs-review">⚠️ Expired Code Re
 </p>
 <p class="submission-card__meta">
 Price: ${escapeHtml(s.price || 'N/A')} &middot; Code: ${escapeHtml(s.discountCode || 'none')}<br>
+${s.reviewReason ? `Review: ${escapeHtml(s.reviewReason)}<br>` : ''}
 <a href="${s.productUrl || s.url || '#'}" target="_blank" rel="noopener">View link</a><br>
 Expires: ${escapeHtml(s.expiresOn || 'N/A')}<br>
 ${s.sellerEmail ? 'Seller: ' + escapeHtml(s.sellerEmail) + '<br>' : ''}
