@@ -5,6 +5,9 @@ import { getStore } from "@netlify/blobs";
 // that cold-build cost. New approvals still appear on the next refresh.
 const PUBLIC_FEED_CACHE_TTL_MS = 30 * 60 * 1000;
 const PUBLIC_FEED_CACHE_KEY = "latest-after-review-restore";
+// Keep Amazon search inventory fresh; seller deals still use their own expiry dates.
+const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_PUBLIC_AMAZON_DEALS = 120;
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "public, max-age=30",
@@ -110,7 +113,15 @@ export default async () => {
     };
 
     // Filter out flagged/suspicious Amazon deals from public view
-    const amazonDeals = (base.deals || []).filter(d => !d.needsReview);
+    const amazonCutoff = Date.now() - AMAZON_PUBLIC_WINDOW_MS;
+    const amazonDeals = (base.deals || [])
+      .filter(d => !d.needsReview)
+      .filter(d => {
+        const fetchedAt = new Date(d.fetchedAt || 0).getTime();
+        return Number.isFinite(fetchedAt) && fetchedAt >= amazonCutoff;
+      })
+      .sort((a, b) => new Date(b.fetchedAt || 0) - new Date(a.fetchedAt || 0))
+      .slice(0, MAX_PUBLIC_AMAZON_DEALS);
 
     // Combine all deals and sort newest first
     const allDeals = [...sellerDeals, ...amazonDeals];
