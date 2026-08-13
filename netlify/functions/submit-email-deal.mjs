@@ -699,6 +699,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
   const combined = rawHtml + '\n' + (plainText || '') + '\n' + (emailText || '');
   const structuredText = plainText || emailText || htmlToTextWithLines(rawHtml);
   const blocks = splitProductBlocks(structuredText);
+  const blockedAdultUrls = new Set();
 
   if (blocks.length > 0) {
     const drafts = [];
@@ -706,6 +707,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
     for (const block of blocks) {
       if (isAdultProduct(block)) {
         console.warn('[Adult filter] Blocked explicit adult product block');
+        for (const url of extractAmazonUrls(block)) blockedAdultUrls.add(canonicalAmazonUrl(url));
         continue;
       }
       const fields = extractStructuredProductData(block);
@@ -731,7 +733,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
     }
   }
 
-  const allUrls = extractAmazonUrls(combined);
+  const allUrls = extractAmazonUrls(combined).filter(url => !blockedAdultUrls.has(canonicalAmazonUrl(url)));
   const urlsToProcess = allUrls;
   console.log(`[Phase 1] Fallback URLs found: ${allUrls.length}, processing: ${urlsToProcess.length}, CDN images: ${cdnImages.length}`);
 
