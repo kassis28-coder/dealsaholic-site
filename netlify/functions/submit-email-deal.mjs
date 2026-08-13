@@ -189,10 +189,12 @@ function buildAffiliateUrl(asin, rawUrl) {
   }
 }
 
-function buildAsinImageUrl(asin) {
-  return asin
-    ? `https://images-na.ssl-images-amazon.com/images/P/${asin}.01.LZZZZZZZ.jpg`
-    : null;
+// Amazon's old predictable /images/P/{ASIN}.01.LZZZZZZZ.jpg URL now returns a
+// 1x1 placeholder for some products. Recognize only that exact legacy pattern;
+// real email images, manually supplied URLs, and other Amazon CDN URLs remain
+// valid candidates.
+function isLegacyAsinPlaceholderImage(imageUrl) {
+  return /^https:\/\/images-na\.ssl-images-amazon\.com\/images\/P\/[A-Z0-9]{10}\.01\.LZZZZZZZ\.jpg(?:\?.*)?$/i.test(imageUrl || '');
 }
 
 function canonicalAmazonUrl(rawUrl) {
@@ -776,6 +778,11 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   const isPromoUrl = /amazon\.com\/promocode\//i.test(draft.amazonUrl || '');
   let { productName: title, dealPrice, originalPrice, imageUrl } = draft;
 
+  // Some older email markup contains the same obsolete ASIN-derived URL that
+  // used to be generated below. Treat it as missing before enrichment so it
+  // cannot win over a real product-page image.
+  if (isLegacyAsinPlaceholderImage(imageUrl)) imageUrl = null;
+
   if (isPromoUrl) {
     const promoProduct = await fetchPromoProductImage(draft.amazonUrl, title);
     if (promoProduct) {
@@ -796,7 +803,13 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     dealPrice     = dealPrice     || meta.price         || null;
     originalPrice = originalPrice || meta.originalPrice || null;
   }
-  imageUrl = imageUrl || buildAsinImageUrl(draft.asin);
+
+  if (isLegacyAsinPlaceholderImage(imageUrl)) imageUrl = null;
+  // If the regular metadata request was blocked or omitted og:image, make one
+  // final focused attempt using the existing exhaustive product-image reader.
+  // Do not manufacture the obsolete /images/P/ fallback: a missing image is
+  // safer than storing Amazon's 1x1 placeholder as a deal photo.
+  if (!imageUrl && draft.asin) imageUrl = await fetchPromoAsinImage(draft.asin);
   // Normalize Amazon email thumbnails for every email deal. This does not
   // affect manually uploaded images or any non-Amazon URL.
   imageUrl = toAmazonLargeImageUrl(imageUrl);

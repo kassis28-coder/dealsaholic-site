@@ -8,6 +8,10 @@ import { getStore } from "@netlify/blobs";
 
 const HOSTED_PREFIX = "https://deals-aholic.com/api/deal-image?id=";
 
+function isLegacyAsinPlaceholderImage(imageUrl) {
+  return /^https:\/\/images-na\.ssl-images-amazon\.com\/images\/P\/[A-Z0-9]{10}\.01\.LZZZZZZZ\.jpg(?:\?.*)?$/i.test(imageUrl || "");
+}
+
 function extractAsinFromUrl(url) {
   if (!url) return null;
   const m = url.match(/\/(dp|gp\/product)\/([A-Z0-9]{10})/i);
@@ -170,7 +174,15 @@ export default async (req) => {
       }
 
       if (!record) { results.skipped++; continue; }
-      if (record.imageUrl?.startsWith(HOSTED_PREFIX)) { results.skipped++; continue; }
+
+      // Repair only genuinely missing images and the exact obsolete Amazon
+      // ASIN placeholder. Leave every working hosted, uploaded, Amazon CDN, or
+      // third-party image untouched.
+      const existingImage = record.imageUrl || record.image || record.photoUrl || null;
+      if (existingImage && !isLegacyAsinPlaceholderImage(existingImage)) {
+        results.skipped++;
+        continue;
+      }
 
       // Try all possible URL field names
       const productUrl = record.url || record.amazonUrl || record.link || null;
@@ -193,7 +205,7 @@ export default async (req) => {
       }
 
       // Get image — via ASIN first, then directly from URL
-      let imageUrl = record.imageUrl;
+      let imageUrl = null;
       if (!imageUrl) {
         if (asin) {
           imageUrl = await fetchAmazonProductImage(asin);
@@ -219,7 +231,9 @@ export default async (req) => {
       }
 
       if (!dry) {
+        record.image = hostedUrl;
         record.imageUrl = hostedUrl;
+        record.photoUrl = hostedUrl;
         if (asin) record.asin = asin;
         await store.setJSON(id, record);
       }
