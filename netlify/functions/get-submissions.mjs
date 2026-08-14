@@ -40,7 +40,11 @@ export default async (req) => {
     // Reading hundreds of records one-by-one, however, takes longer than the
     // browser request timeout. Read a small group in parallel instead.
     const submissions = [];
-    const batchSize = 25;
+    // Blob reads are independent. The old batch size of 25 forced thousands
+    // of records through many sequential network rounds and made a correct
+    // password look like it was still being verified. Keep memory bounded,
+    // but use enough parallelism to return the admin list promptly.
+    const batchSize = 250;
     for (let offset = 0; offset < index.length; offset += batchSize) {
       const batch = index.slice(offset, offset + batchSize);
       const records = await Promise.all(batch.map(async (storageKey) => {
