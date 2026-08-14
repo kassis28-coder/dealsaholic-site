@@ -94,9 +94,10 @@ function buildCaption(deal) {
 
 export async function postPendingDeals(limit = 5) {
   const store = getStore("submissions");
+  const stateStore = getStore("automation-state");
   const results = [];
   let posted = 0;
-  const batchSize = 200;
+  const scanLimit = 25;
 
   // The submissions index is already newest-first. Read it in parallel,
   // bounded batches and stop as soon as the requested number is posted. The
@@ -108,46 +109,64 @@ export async function postPendingDeals(limit = 5) {
     keys = blobs.map(blob => blob.key).filter(key => key !== "index");
   }
 
-  for (let offset = 0; offset < keys.length && posted < limit; offset += batchSize) {
-    const batchKeys = keys.slice(offset, offset + batchSize);
-    const records = await Promise.all(batchKeys.map(async key => ({
-      key,
-      deal: await store.get(key, { type: "json" }).catch(() => null),
-    })));
+  if (keys.length === 0) return { posted, results };
 
-    for (const { key, deal } of records) {
-      if (posted >= limit) break;
-      if (!deal || deal.status !== "approved") continue;
+  // Resume where the previous run stopped. This prevents every scheduled run
+  // from rescanning thousands of older records before reaching Facebook.
+  const savedCursor = await stateStore.get("facebook-101-cursor", { type: "json" }).catch(() => null);
+  const start = Number.isInteger(savedCursor?.position)
+    ? savedCursor.position % keys.length
+    : 0;
+  const batchKeys = Array.from(
+    { length: Math.min(scanLimit, keys.length) },
+    (_, index) => keys[(start + index) % keys.length]
+  );
+  const records = await Promise.all(batchKeys.map(async key => ({
+    key,
+    deal: await store.get(key, { type: "json" }).catch(() => null),
+  })));
+
+  for (let index = 0; index < records.length && posted < limit; index += 1) {
+    const { key, deal } = records[index];
+    const nextPosition = (start + index + 1) % keys.length;
+    if (!deal || deal.status !== "approved") continue;
       // Never publish incomplete/review-only deals. The scheduled Page feed is
       // intentionally image-first, matching the existing Facebook workflow.
-      if (!deal.title || !deal.url || !deal.image) continue;
+    if (!deal.title || !deal.url || !deal.image) continue;
       // Independent posted-flag from the deals-aholic Page, so a deal can be
       // posted to one Page, both, or neither without the two functions
       // interfering with each other.
-      if (deal.postedTo101Savings) continue;
+    if (deal.postedTo101Savings) continue;
 
-      try {
-        if (await isAlreadyPostedOn101Savings(deal)) {
-          deal.postedTo101Savings = true;
-          deal.duplicateSkipped101Savings = true;
-          deal.postedAt101Savings = new Date().toISOString();
-          await store.setJSON(key, deal);
-          results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
-          continue;
-        }
-
-        const result = await postDealToFacebook(deal);
+    try {
+      if (await isAlreadyPostedOn101Savings(deal)) {
         deal.postedTo101Savings = true;
-        deal.facebookPostId101Savings = result.id;
+        deal.duplicateSkipped101Savings = true;
         deal.postedAt101Savings = new Date().toISOString();
         await store.setJSON(key, deal);
-        results.push({ title: deal.title.slice(0, 50), ...result });
-        posted += 1;
-      } catch (err) {
-        results.push({ title: deal.title?.slice(0, 50), error: err.message });
+        await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
+        results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
+        return { posted, results };
       }
+
+      const result = await postDealToFacebook(deal);
+      deal.postedTo101Savings = true;
+      deal.facebookPostId101Savings = result.id;
+      deal.postedAt101Savings = new Date().toISOString();
+      await store.setJSON(key, deal);
+      await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
+      results.push({ title: deal.title.slice(0, 50), ...result });
+      posted += 1;
+    } catch (err) {
+      results.push({ title: deal.title?.slice(0, 50), error: err.message });
+      await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
+      return { posted, results };
     }
   }
+
+  await stateStore.setJSON("facebook-101-cursor", {
+    position: (start + records.length) % keys.length,
+  });
 
   return {
     posted,
