@@ -90,15 +90,30 @@ function buildCaption(deal) {
 
 export async function postPendingDeals(limit = 5) {
   const store = getStore("submissions");
-  const { blobs } = await store.list();
+  const results = [];
+  let posted = 0;
+  const batchSize = 200;
 
-  const deals = [];
-  for (const blob of blobs) {
-    try {
-      const raw = await store.get(blob.key);
-      if (!raw) continue;
-      const deal = JSON.parse(raw);
-      if (deal.status !== "approved") continue;
+  // The submissions index is already newest-first. Read it in parallel,
+  // bounded batches and stop as soon as the requested number is posted. The
+  // previous implementation read every Blob sequentially and timed out before
+  // it ever reached Facebook.
+  let keys = await store.get("index", { type: "json" }).catch(() => []);
+  if (!Array.isArray(keys) || keys.length === 0) {
+    const { blobs } = await store.list();
+    keys = blobs.map(blob => blob.key).filter(key => key !== "index");
+  }
+
+  for (let offset = 0; offset < keys.length && posted < limit; offset += batchSize) {
+    const batchKeys = keys.slice(offset, offset + batchSize);
+    const records = await Promise.all(batchKeys.map(async key => ({
+      key,
+      deal: await store.get(key, { type: "json" }).catch(() => null),
+    })));
+
+    for (const { key, deal } of records) {
+      if (posted >= limit) break;
+      if (!deal || deal.status !== "approved") continue;
       // Never publish incomplete/review-only deals. The scheduled Page feed is
       // intentionally image-first, matching the existing Facebook workflow.
       if (!deal.title || !deal.url || !deal.image) continue;
@@ -106,38 +121,27 @@ export async function postPendingDeals(limit = 5) {
       // posted to one Page, both, or neither without the two functions
       // interfering with each other.
       if (deal.postedTo101Savings) continue;
-      deals.push({ key: blob.key, deal });
-    } catch {}
-  }
 
-  deals.sort((a, b) =>
-    new Date(b.deal.createdAt) - new Date(a.deal.createdAt)
-  );
+      try {
+        if (await isAlreadyPostedOn101Savings(deal)) {
+          deal.postedTo101Savings = true;
+          deal.duplicateSkipped101Savings = true;
+          deal.postedAt101Savings = new Date().toISOString();
+          await store.setJSON(key, deal);
+          results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
+          continue;
+        }
 
-  const results = [];
-  let posted = 0;
-
-  for (const { key, deal } of deals) {
-    if (posted >= limit) break;
-    try {
-      if (await isAlreadyPostedOn101Savings(deal)) {
+        const result = await postDealToFacebook(deal);
         deal.postedTo101Savings = true;
-        deal.duplicateSkipped101Savings = true;
+        deal.facebookPostId101Savings = result.id;
         deal.postedAt101Savings = new Date().toISOString();
-        await store.set(key, JSON.stringify(deal));
-        results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
-        continue;
+        await store.setJSON(key, deal);
+        results.push({ title: deal.title.slice(0, 50), ...result });
+        posted += 1;
+      } catch (err) {
+        results.push({ title: deal.title?.slice(0, 50), error: err.message });
       }
-
-      const result = await postDealToFacebook(deal);
-      deal.postedTo101Savings = true;
-      deal.facebookPostId101Savings = result.id;
-      deal.postedAt101Savings = new Date().toISOString();
-      await store.set(key, JSON.stringify(deal));
-      results.push({ title: deal.title.slice(0, 50), ...result });
-      posted += 1;
-    } catch (err) {
-      results.push({ title: deal.title?.slice(0, 50), error: err.message });
     }
   }
 
