@@ -5,6 +5,7 @@ import { getStore } from "@netlify/blobs";
 const FB_PAGE_TOKEN = process.env.FB_PAGE_TOKEN_101SAVINGS;
 const FB_PAGE_ID = process.env.FB_PAGE_ID_101SAVINGS;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const FB_REQUEST_TIMEOUT_MS = 12_000;
 
 async function postDealToFacebook(deal) {
   if (!FB_PAGE_TOKEN || !FB_PAGE_ID) {
@@ -18,6 +19,7 @@ async function postDealToFacebook(deal) {
       `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/photos`,
       {
         method: "POST",
+        signal: AbortSignal.timeout(FB_REQUEST_TIMEOUT_MS),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: deal.image,
@@ -35,6 +37,7 @@ async function postDealToFacebook(deal) {
     `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/feed`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(FB_REQUEST_TIMEOUT_MS),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: caption,
@@ -51,7 +54,8 @@ async function postDealToFacebook(deal) {
 async function isAlreadyPostedOn101Savings(deal) {
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/posts?fields=message&limit=100&access_token=${FB_PAGE_TOKEN}`
+      `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/posts?fields=message&limit=100&access_token=${FB_PAGE_TOKEN}`,
+      { signal: AbortSignal.timeout(FB_REQUEST_TIMEOUT_MS) }
     );
     const data = await res.json();
     if (!res.ok || !Array.isArray(data.data)) return false;
