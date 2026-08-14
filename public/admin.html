@@ -221,7 +221,14 @@ async function login() {
 const input = document.getElementById('password-input');
 const password = input.value;
 const errorEl = document.getElementById('login-error');
+const loginButton = document.querySelector('#login-screen button');
 errorEl.textContent = '';
+input.disabled = true;
+if (loginButton) {
+loginButton.disabled = true;
+loginButton.dataset.label = loginButton.textContent;
+loginButton.textContent = 'Loading deals…';
+}
 try {
 const res = await fetch('/.netlify/functions/get-submissions', {
 method: 'POST',
@@ -239,6 +246,12 @@ loadFlaggedDeals();
 renderList();
 } catch (err) {
 errorEl.textContent = 'Could not reach the server. Please try again.';
+} finally {
+input.disabled = false;
+if (loginButton) {
+loginButton.disabled = false;
+loginButton.textContent = loginButton.dataset.label || 'Login';
+}
 }
 }
 async function loadFlaggedDeals() {
