@@ -13,6 +13,12 @@ const RESPONSE_HEADERS = {
   "Cache-Control": "public, max-age=30",
   "Netlify-CDN-Cache-Control": "public, durable, max-age=1800, stale-while-revalidate=86400",
 };
+const STALE_RESPONSE_HEADERS = {
+  ...RESPONSE_HEADERS,
+  // Check back soon after the background refresh, instead of caching the old
+  // payload at the edge for another full 30 minutes.
+  "Netlify-CDN-Cache-Control": "public, durable, max-age=60, stale-while-revalidate=86400",
+};
 
 // Titles that come from email auto-replies, bounces, or failed parsing.
 const GARBAGE_TITLE_RE = /^(?:the response was|message not delivered|undelivered mail|auto.?reply|delivery status|mail delivery|failure notice|returned mail|amazon deal|no title|untitled)\b/i;
@@ -94,15 +100,7 @@ async function getApprovedSellerDeals() {
   }
 }
 
-export default async () => {
-  const publicCache = getStore("public-deals-cache");
-  let cachedFeed = null;
-  try {
-    cachedFeed = await publicCache.get(PUBLIC_FEED_CACHE_KEY, { type: "json" }).catch(() => null);
-    if (cachedFeed?.payload && Date.now() - cachedFeed.cachedAt < PUBLIC_FEED_CACHE_TTL_MS) {
-      return new Response(JSON.stringify(cachedFeed.payload), { headers: RESPONSE_HEADERS });
-    }
-
+async function rebuildPublicFeed(publicCache) {
     const store = getStore("deals");
     const data = await store.get("latest", { type: "json" });
     const sellerDeals = await getApprovedSellerDeals();
@@ -145,6 +143,33 @@ export default async () => {
       cachedAt: Date.now(),
       payload: combined,
     }).catch(err => console.log("Public feed cache write failed:", err.message));
+
+    return combined;
+}
+
+export default async (_req, context) => {
+  const publicCache = getStore("public-deals-cache");
+  let cachedFeed = null;
+  try {
+    cachedFeed = await publicCache.get(PUBLIC_FEED_CACHE_KEY, { type: "json" }).catch(() => null);
+    if (cachedFeed?.payload) {
+      const cacheAge = Date.now() - cachedFeed.cachedAt;
+      if (cacheAge >= PUBLIC_FEED_CACHE_TTL_MS && context?.waitUntil) {
+        // Return the last good feed immediately. Netlify keeps this invocation
+        // alive only for the refresh, so visitors never wait for thousands of
+        // Blob reads after a deploy or cache expiry.
+        context.waitUntil(
+          rebuildPublicFeed(publicCache).catch(err =>
+            console.log("Background public feed refresh failed:", err.message)
+          )
+        );
+      }
+      return new Response(JSON.stringify(cachedFeed.payload), {
+        headers: cacheAge >= PUBLIC_FEED_CACHE_TTL_MS ? STALE_RESPONSE_HEADERS : RESPONSE_HEADERS,
+      });
+    }
+
+    const combined = await rebuildPublicFeed(publicCache);
 
     return new Response(JSON.stringify(combined), {
       headers: RESPONSE_HEADERS,
