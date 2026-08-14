@@ -48,6 +48,26 @@ async function postDealToFacebook(deal) {
   return { type: "feed", id: data.id };
 }
 
+async function isAlreadyPostedOn101Savings(deal) {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/posts?fields=message&limit=100&access_token=${FB_PAGE_TOKEN}`
+    );
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data.data)) return false;
+
+    const title = String(deal.title || "").trim().toLowerCase();
+    const url = String(deal.url || "").trim().toLowerCase();
+    return data.data.some((post) => {
+      const message = String(post.message || "").toLowerCase();
+      return (url && message.includes(url)) || (title && message.includes(title));
+    });
+  } catch (err) {
+    console.warn("[101-savings] Live duplicate check failed:", err.message);
+    return false;
+  }
+}
+
 function buildCaption(deal) {
   const lines = [];
   lines.push(`🔥 New Deal Alert!`);
@@ -68,7 +88,7 @@ function buildCaption(deal) {
   return lines.join("\n");
 }
 
-async function postPendingDeals(limit = 5) {
+export async function postPendingDeals(limit = 5) {
   const store = getStore("submissions");
   const { blobs } = await store.list();
 
@@ -79,6 +99,9 @@ async function postPendingDeals(limit = 5) {
       if (!raw) continue;
       const deal = JSON.parse(raw);
       if (deal.status !== "approved") continue;
+      // Never publish incomplete/review-only deals. The scheduled Page feed is
+      // intentionally image-first, matching the existing Facebook workflow.
+      if (!deal.title || !deal.url || !deal.image) continue;
       // Independent posted-flag from the deals-aholic Page, so a deal can be
       // posted to one Page, both, or neither without the two functions
       // interfering with each other.
@@ -91,23 +114,37 @@ async function postPendingDeals(limit = 5) {
     new Date(b.deal.createdAt) - new Date(a.deal.createdAt)
   );
 
-  const toPost = deals.slice(0, limit);
   const results = [];
+  let posted = 0;
 
-  for (const { key, deal } of toPost) {
+  for (const { key, deal } of deals) {
+    if (posted >= limit) break;
     try {
+      if (await isAlreadyPostedOn101Savings(deal)) {
+        deal.postedTo101Savings = true;
+        deal.duplicateSkipped101Savings = true;
+        deal.postedAt101Savings = new Date().toISOString();
+        await store.set(key, JSON.stringify(deal));
+        results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
+        continue;
+      }
+
       const result = await postDealToFacebook(deal);
       deal.postedTo101Savings = true;
       deal.facebookPostId101Savings = result.id;
       deal.postedAt101Savings = new Date().toISOString();
       await store.set(key, JSON.stringify(deal));
       results.push({ title: deal.title.slice(0, 50), ...result });
+      posted += 1;
     } catch (err) {
       results.push({ title: deal.title?.slice(0, 50), error: err.message });
     }
   }
 
-  return { posted: results.length, results };
+  return {
+    posted,
+    results,
+  };
 }
 
 export default async function handler(req) {
