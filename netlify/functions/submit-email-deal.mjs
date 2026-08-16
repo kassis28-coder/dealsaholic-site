@@ -880,7 +880,7 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   const titleMatch = meta.title && title
     ? titleMatchScore(title, meta.title)
     : 0;
-  if (!draft.asin || !meta.title || titleMatch < 0.5) {
+  if (!draft.asin || !imageVerified || !title || (meta.title && titleMatch < 0.5)) {
     reviewIssues.push('title/image match could not be verified');
   }
 
