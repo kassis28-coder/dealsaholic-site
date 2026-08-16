@@ -135,7 +135,8 @@ export default async (req) => {
       if (!resolvedTitle) issues.push('missing title');
       if (!meta.image) issues.push('missing verified image');
       if (!/^[A-Z0-9]{4,20}$/i.test(String(record.discountCode || '').trim())) issues.push('missing or invalid promo code');
-      if (!meta.title || matchScore < 0.5) issues.push('title/image match could not be verified');
+      const titleAndImageVerified = Boolean(asin && meta.image && resolvedTitle && (!meta.title || matchScore >= 0.5));
+      if (!titleAndImageVerified) issues.push('title/image match could not be verified');
 
       const approved = issues.length === 0;
       if (!dry) {
