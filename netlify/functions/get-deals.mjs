@@ -4,7 +4,7 @@ import { getStore } from "@netlify/blobs";
 // Keep the already-built feed warm long enough that normal visitors never pay
 // that cold-build cost. New approvals still appear on the next refresh.
 const PUBLIC_FEED_CACHE_TTL_MS = 30 * 60 * 1000;
-const PUBLIC_FEED_CACHE_KEY = "latest-after-review-restore";
+const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v2";
 // Keep Amazon search inventory fresh; seller deals still use their own expiry dates.
 const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_PUBLIC_AMAZON_DEALS = 120;
@@ -22,6 +22,103 @@ const STALE_RESPONSE_HEADERS = {
 
 // Titles that come from email auto-replies, bounces, or failed parsing.
 const GARBAGE_TITLE_RE = /^(?:the response was|message not delivered|undelivered mail|auto.?reply|delivery status|mail delivery|failure notice|returned mail|amazon deal|no title|untitled)\b/i;
+const GENERIC_DEAL_TITLES = new Set([
+  "with deal",
+  "price drop",
+  "at checkout",
+  "amazon deal",
+  "limited time deal",
+]);
+const COMMON_COLORS_RE = /\b(?:black|white|gray|grey|red|blue|green|yellow|orange|purple|pink|brown|beige|tan|navy|teal|gold|silver|rose gold|multicolor|multi color|assorted|clear)\b/g;
+const COMMON_SIZE_WORDS_RE = /\b(?:xxs|xs|small|medium|large|xl|xxl|xxxl|extra small|extra large|one size|os|twin|twin xl|full|queen|king|cal king|california king|standard|mini|compact|regular|short|long|wide|narrow)\b/g;
+
+function normalizeAsin(value) {
+  const asin = String(value || "").trim().toUpperCase();
+  return /^[A-Z0-9]{10}$/.test(asin) ? asin : "";
+}
+
+function normalizeAmazonUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!/(^|\.)amazon\.com$/.test(host)) return "";
+    const asin = url.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?]|$)/i)?.[1];
+    if (asin) return `amazon.com/dp/${asin.toUpperCase()}`;
+    const path = url.pathname.replace(/\/+$/, "").toLowerCase();
+    return path ? `${host}${path}` : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeImage(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const path = decodeURIComponent(url.pathname)
+      .replace(/\._[^/]+_(?=\.[a-z0-9]+$)/i, "")
+      .replace(/\/+$/, "")
+      .toLowerCase();
+    return path ? `${host}${path}` : "";
+  } catch {
+    return String(value).trim().toLowerCase().split(/[?#]/, 1)[0];
+  }
+}
+
+function normalizeMeaningfulTitle(value) {
+  const normalized = String(value || "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(COMMON_COLORS_RE, " ")
+    .replace(COMMON_SIZE_WORDS_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized || GENERIC_DEAL_TITLES.has(normalized)) return "";
+  // Very short titles are too broad to safely merge across independent sellers.
+  if (normalized.length < 8 || normalized.split(" ").length < 2) return "";
+  return normalized;
+}
+
+function dealTimestamp(deal) {
+  const timestamp = new Date(deal.createdAt || deal.fetchedAt || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function deduplicateDeals(candidates) {
+  const sorted = [...candidates].sort((a, b) =>
+    (Number(b.discountPercent) || 0) - (Number(a.discountPercent) || 0)
+      || dealTimestamp(b) - dealTimestamp(a)
+  );
+  const seenAsins = new Set();
+  const seenUrls = new Set();
+  const seenImages = new Set();
+  const seenTitles = new Set();
+  const deduped = [];
+
+  for (const deal of sorted) {
+    const asin = normalizeAsin(deal.asin);
+    const url = !asin ? normalizeAmazonUrl(deal.url) : "";
+    const image = normalizeImage(deal.image);
+    const title = normalizeMeaningfulTitle(deal.title);
+
+    if (asin && seenAsins.has(asin)) continue;
+    if (url && seenUrls.has(url)) continue;
+    if (image && seenImages.has(image)) continue;
+    if (title && seenTitles.has(title)) continue;
+
+    if (asin) seenAsins.add(asin);
+    if (url) seenUrls.add(url);
+    if (image) seenImages.add(image);
+    if (title) seenTitles.add(title);
+    deduped.push(deal);
+  }
+
+  return deduped;
+}
 
 function isGarbageSubmission(record) {
   const title = (record.productTitle || record.title || '').trim();
@@ -121,17 +218,10 @@ async function rebuildPublicFeed(publicCache) {
       .sort((a, b) => new Date(b.fetchedAt || 0) - new Date(a.fetchedAt || 0))
       .slice(0, MAX_PUBLIC_AMAZON_DEALS);
 
-    // Combine all deals and sort newest first
+    // Keep the strongest version of a product. Amazon variations can have
+    // different ASINs, so also compare canonical images and meaningful titles.
     const allDeals = [...sellerDeals, ...amazonDeals];
-    allDeals.sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
-
-    // Deduplicate by ASIN to prevent duplicate deals
-    const seen = new Map();
-    for (const deal of allDeals) {
-      const key = deal.asin || deal.url;
-      if (key && !seen.has(key)) seen.set(key, deal);
-    }
-    const deduped = Array.from(seen.values());
+    const deduped = deduplicateDeals(allDeals);
 
     const combined = {
       ...base,
