@@ -2,7 +2,7 @@ import { getStore } from "@netlify/blobs";
 
 const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
-const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG;
+const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || "daholic-20";
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
 const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
 const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
@@ -109,10 +109,25 @@ const ALL_CATEGORIES = [
   "pet supplies",
 ];
 
-const BATCH_SIZE = 7;
+const PRIORITY_CATEGORIES = [
+  "limited time deals",
+  "lightning deals",
+  "deal of the day",
+  "today's deals",
+];
+const priorityCategorySet = new Set(PRIORITY_CATEGORIES.map(category => category.toLowerCase()));
+const ROTATING_CATEGORIES = ALL_CATEGORIES.filter(
+  category => !priorityCategorySet.has(category.toLowerCase())
+);
+const BATCH_SIZE = 3;
 const BATCHES = [];
-for (let i = 0; i < ALL_CATEGORIES.length; i += BATCH_SIZE) {
-  BATCHES.push(ALL_CATEGORIES.slice(i, i + BATCH_SIZE));
+for (let i = 0; i < ROTATING_CATEGORIES.length; i += BATCH_SIZE) {
+  BATCHES.push(ROTATING_CATEGORIES.slice(i, i + BATCH_SIZE));
+}
+
+function normalizeAsin(value) {
+  const asin = String(value || "").trim().toUpperCase();
+  return /^[A-Z0-9]{10}$/.test(asin) ? asin : "";
 }
 
 async function getAccessToken() {
@@ -218,7 +233,7 @@ function normalizeDeal(item) {
   const discountPercent = computeDiscountPercent(item);
 
   return {
-    asin: item.asin,
+    asin: normalizeAsin(item.asin),
     title: item.itemInfo?.title?.displayValue || "Untitled product",
     image: item.images?.primary?.large?.url || null,
     price: apiDisplayPrice || null,
@@ -248,7 +263,8 @@ async function fetchAndStoreDeals() {
     }
   } catch { }
 
-  const batch = BATCHES[batchIndex % BATCHES.length];
+  const rotatingBatch = BATCHES[batchIndex % BATCHES.length];
+  const batch = [...PRIORITY_CATEGORIES, ...rotatingBatch];
   const nextBatchIndex = (batchIndex + 1) % BATCHES.length;
 
   console.error(`Running batch ${batchIndex + 1} of ${BATCHES.length}: ${JSON.stringify(batch)}`);
@@ -264,9 +280,16 @@ async function fetchAndStoreDeals() {
 
   console.error(`Batch ${batchIndex + 1} fetched ${newItems.length} raw items.`);
 
-  const normalizedNew = newItems
-    .map(normalizeDeal)
-    .filter((d) => d.discountPercent !== null && d.discountPercent >= MIN_DISCOUNT);
+  const normalizedByAsin = new Map();
+  for (const item of newItems) {
+    const deal = normalizeDeal(item);
+    if (!deal.asin || deal.discountPercent === null || deal.discountPercent < MIN_DISCOUNT) continue;
+    const current = normalizedByAsin.get(deal.asin);
+    if (!current || (deal.discountPercent || 0) > (current.discountPercent || 0)) {
+      normalizedByAsin.set(deal.asin, deal);
+    }
+  }
+  const normalizedNew = Array.from(normalizedByAsin.values());
 
   console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals.`);
 
@@ -329,7 +352,7 @@ async function fetchAndStoreDeals() {
   // Merge: update existing deals with fresh prices
   const merged = [...freshExisting];
   for (const deal of normalizedNew) {
-    const idx = merged.findIndex((d) => d.asin === deal.asin);
+    const idx = merged.findIndex((d) => normalizeAsin(d.asin) === deal.asin);
     if (idx >= 0) {
       merged[idx] = { ...merged[idx], ...deal };
     } else {
@@ -353,6 +376,8 @@ async function fetchAndStoreDeals() {
     deals,
     debug: {
       lastBatchIndex: batchIndex,
+      priorityCategories: PRIORITY_CATEGORIES,
+      rotatingBatchCategories: rotatingBatch,
       lastBatchCategories: batch,
       lastBatchRawItems: newItems.length,
       lastBatchQualifyingDeals: normalizedNew.length,
