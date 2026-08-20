@@ -181,6 +181,111 @@ async function fetchViaWalmartWeb() {
   return deals;
 }
 
+
+// Walmart blocks automated product-search requests from cloud functions. Use the
+// public Slickdeals RSS feed only as a fallback when both authorized Impact
+// catalogs and Walmart's own page return zero items.
+const SLICKDEALS_WALMART_RSS =
+  "https://slickdeals.net/newsearch.php?q=walmart&searcharea=deals&searchin=first&rss=1";
+
+function decodeXml(value = "") {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&#039;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+}
+
+function xmlTag(xml, tag) {
+  const match = xml.match(new RegExp("<" + tag + "[^>]*>([\\s\\S]*?)<\\/" + tag + ">", "i"));
+  return match ? decodeXml(match[1]).trim() : "";
+}
+
+function cleanDealTitle(title) {
+  return decodeXml(title).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function moneyFrom(value) {
+  const match = String(value || "").match(/\$\s*(\d{1,5}(?:\.\d{1,2})?)/);
+  return match ? Number(match[1]) : null;
+}
+
+function walmartUrlFromFeed(item, title) {
+  const text = decodeXml(item).replace(/&amp;/g, "&");
+  const direct = text.match(/https?:\/\/(?:www\.)?walmart\.com\/[^\s<"'\\]+/i)?.[0] || "";
+  if (direct && !direct.includes("...")) return direct;
+  return "https://www.walmart.com/search?q=" + encodeURIComponent(title);
+}
+
+function normalizeSlickdealsItem(item) {
+  const title = cleanDealTitle(xmlTag(item, "title"));
+  const guid = xmlTag(item, "guid").replace(/^thread-/, "");
+  const description = decodeXml(xmlTag(item, "description"));
+  const content = decodeXml(xmlTag(item, "content:encoded"));
+  const combined = title + " " + description + " " + content;
+  if (!title || !guid || !/walmart(?:\.com)?/i.test(combined) || isBlocked(title)) return null;
+
+  const price = moneyFrom(title) || moneyFrom(description);
+  if (!price || price <= 0) return null;
+
+  const originalMatch = combined.match(/(?:reg(?:ular)?\.?|was|orig(?:inal)?(?: price)?)\s*[:$]?\s*\$?\s*(\d{1,5}(?:\.\d{1,2})?)/i);
+  const originalPrice = originalMatch ? Number(originalMatch[1]) : null;
+  const discountPercent = calcDiscount(price, originalPrice);
+  const image = content.match(/<img[^>]+src=["']([^"']+)/i)?.[1] || null;
+  const publishedAt = xmlTag(item, "pubDate");
+  const createdAt = publishedAt && !Number.isNaN(Date.parse(publishedAt))
+    ? new Date(publishedAt).toISOString()
+    : new Date().toISOString();
+
+  return {
+    id: "walmart-sd-" + guid,
+    title,
+    price: "$" + price.toFixed(2),
+    originalPrice: originalPrice ? "$" + originalPrice.toFixed(2) : null,
+    discountPercent,
+    url: addAffiliateTag(walmartUrlFromFeed(combined, title)),
+    image,
+    store: "walmart",
+    status: "approved",
+    sponsored: false,
+    source: "slickdeals-walmart",
+    createdAt,
+    expiresOn: new Date(Date.now() + MAX_AGE_HOURS * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+async function fetchViaSlickdeals() {
+  try {
+    const res = await fetch(SLICKDEALS_WALMART_RSS, {
+      headers: {
+        Accept: "application/rss+xml, application/xml, text/xml;q=0.9",
+        "User-Agent": "DealsAholic/1.0",
+      },
+    });
+    if (!res.ok) {
+      console.log("Slickdeals Walmart RSS failed: " + res.status);
+      return [];
+    }
+    const xml = await res.text();
+    const seen = new Set();
+    const deals = [];
+    for (const item of xml.match(/<item>[\s\S]*?<\/item>/gi) || []) {
+      const deal = normalizeSlickdealsItem(item);
+      if (!deal || seen.has(deal.id)) continue;
+      seen.add(deal.id);
+      deals.push(deal);
+    }
+    console.log("Slickdeals Walmart fallback: " + deals.length + " deals found.");
+    return deals;
+  } catch (err) {
+    console.log("Slickdeals Walmart RSS error: " + err.message);
+    return [];
+  }
+}
+
 async function saveDeals(deals) {
   const store = getStore("submissions");
   const { blobs } = await store.list();
@@ -217,8 +322,9 @@ async function saveDeals(deals) {
 
 async function run() {
   let deals = await fetchViaImpactCatalogs();
-  if (deals.length === 0) { console.log("Impact returned 0. Trying web..."); deals = await fetchViaWalmartWeb(); }
-  if (deals.length === 0) return { success: true, added: 0, total: 0, note: "No deals found" };
+  if (deals.length === 0) { console.log("Impact returned 0. Trying Walmart web..."); deals = await fetchViaWalmartWeb(); }
+  if (deals.length === 0) { console.log("Walmart web returned 0. Trying RSS fallback..."); deals = await fetchViaSlickdeals(); }
+  if (deals.length === 0) return { success: true, added: 0, total: 0, note: "No Walmart deals found from any configured source" };
   const result = await saveDeals(deals);
   return { success: true, ...result };
 }
