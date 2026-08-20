@@ -4,8 +4,7 @@ async function checkCodeOnAmazon(productUrl, code) {
   try {
     const asinMatch = productUrl.match(/\/dp\/([A-Z0-9]{10})/);
     if (!asinMatch) return false;
-    const asin = asinMatch[1];
-    const url = `https://www.amazon.com/dp/${asin}`;
+    const url = `https://www.amazon.com/dp/${asinMatch[1]}`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
@@ -23,40 +22,69 @@ async function checkCodeOnAmazon(productUrl, code) {
   }
 }
 
+function flagReasonFor(issueType) {
+  if (issueType === 'missing-price') return 'missing-price';
+  if (issueType === 'missing-image') return 'missing-image';
+  if (issueType === 'missing-price-image') return 'missing-price-and-image';
+  return 'expired-code-not-found-on-amazon';
+}
+
+async function saveFlag({ dealId, dealSource, code, productUrl, issueType }) {
+  const flagReason = flagReasonFor(issueType);
+  if (dealSource === 'submission') {
+    const store = getStore("submissions");
+    let record;
+    try { record = await store.get(dealId, { type: "json" }); } catch {
+      return false;
+    }
+    if (!record) return false;
+    record.status = 'needs-review';
+    record.flaggedAt = new Date().toISOString();
+    record.flagReason = flagReason;
+    await store.setJSON(dealId, record);
+    return true;
+  }
+
+  const flagStore = getStore("flagged-deals");
+  await flagStore.setJSON(`flag-${dealId}`, {
+    dealId,
+    code: code || null,
+    productUrl,
+    issueType,
+    flaggedAt: new Date().toISOString(),
+    flagReason,
+    status: 'needs-review',
+  });
+  return true;
+}
+
 export default async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
   }
+
   try {
-    const { dealId, dealSource, code, productUrl } = await req.json();
-    if (!dealId || !code || !productUrl) {
+    const { dealId, dealSource, code, productUrl, issueType = 'expired-code' } = await req.json();
+    if (!dealId || !productUrl) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
     }
-    const codeFound = await checkCodeOnAmazon(productUrl, code);
-    if (codeFound) {
-      return new Response(JSON.stringify({ ok: true, action: 'ignored', reason: 'code_still_valid' }), { status: 200 });
+    if (issueType === 'expired-code' && !code) {
+      return new Response(JSON.stringify({ error: 'Missing promo code' }), { status: 400 });
     }
-    if (dealSource === 'submission') {
-      const store = getStore("submissions");
-      let record;
-      try { record = await store.get(dealId, { type: "json" }); } catch {
-        return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404 });
+
+    if (issueType === 'expired-code') {
+      const codeFound = await checkCodeOnAmazon(productUrl, code);
+      if (codeFound) {
+        return new Response(JSON.stringify({ ok: true, action: 'ignored', reason: 'code_still_valid' }), { status: 200 });
       }
-      if (!record) return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404 });
-      record.status = 'needs-review';
-      record.flaggedAt = new Date().toISOString();
-      record.flagReason = 'expired-code-not-found-on-amazon';
-      await store.setJSON(dealId, record);
-    } else {
-      const flagStore = getStore("flagged-deals");
-      await flagStore.setJSON(`flag-${dealId}`, {
-        dealId, code, productUrl,
-        flaggedAt: new Date().toISOString(),
-        flagReason: 'expired-code-not-found-on-amazon',
-        status: 'needs-review',
-      });
     }
-    return new Response(JSON.stringify({ ok: true, action: 'flagged', reason: 'code_not_found' }), { status: 200 });
+
+    const saved = await saveFlag({ dealId, dealSource, code, productUrl, issueType });
+    if (!saved) {
+      return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404 });
+    }
+
+    return new Response(JSON.stringify({ ok: true, action: 'flagged', reason: flagReasonFor(issueType) }), { status: 200 });
   } catch (err) {
     console.error('flag-deal error:', err.message);
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
