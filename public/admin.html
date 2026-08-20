@@ -263,11 +263,12 @@ body: JSON.stringify({ password: adminPassword }),
 });
 const data = await res.json();
 flaggedAmazonDeals = data.flaggedDeals || [];
+if (currentTab === 'needs-review') renderFlaggedAmazonDeals();
 } catch (err) {
 flaggedAmazonDeals = [];
 }
 }
-function setTab(status) {
+async function setTab(status) {
 currentTab = status;
 editingId = null;
 document.querySelectorAll('.tab').forEach(t => {
@@ -281,6 +282,20 @@ document.getElementById('create-post-form').style.display = 'block';
 document.getElementById('submissions-list').style.display = 'block';
 document.getElementById('amazon-flagged-list').style.display = 'block';
 document.getElementById('create-post-form').style.display = 'none';
+document.getElementById('submissions-list').innerHTML = '<div class="empty-state">Refreshing reported deals…</div>';
+document.getElementById('amazon-flagged-list').innerHTML = '';
+try {
+const submissionsRes = await fetch('/.netlify/functions/get-submissions', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword }),
+});
+const submissionsData = await submissionsRes.json();
+if (submissionsRes.ok) allSubmissions = submissionsData.submissions || [];
+await loadFlaggedDeals();
+} catch (err) {
+console.error('Could not refresh Needs Review:', err);
+}
 renderList();
 renderFlaggedAmazonDeals();
 } else {
