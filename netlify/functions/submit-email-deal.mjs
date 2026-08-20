@@ -876,7 +876,8 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   // Amazon's title is tied to the same ASIN page from which the primary image
   // is verified. A meaningful token overlap prevents a nearby email image from
   // being auto-approved for the wrong product. If Amazon blocks verification,
-  // the deal stays available in Needs Review instead of being discarded.
+  // the deal stays available in Pending for manual approval instead of being
+  // discarded.
   const titleMatch = meta.title && title
     ? titleMatchScore(title, meta.title)
     : 0;
@@ -907,7 +908,7 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
     discountCode:   draft.discountCode || null,
     image:          imageUrl || null,
     expiresOn,
-    status:         autoApproved ? 'approved' : 'needs-review',
+    status:         autoApproved ? 'approved' : 'pending',
     reviewReason:   autoApproved ? null : reviewIssues.join('; '),
     autoApproved,
     titleMatchScore: Number(titleMatch.toFixed(2)),

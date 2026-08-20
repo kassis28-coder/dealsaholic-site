@@ -2,10 +2,47 @@ import { getStore } from "@netlify/blobs";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
-const FB_PAGE_TOKEN = process.env.FB_PAGE_TOKEN_101SAVINGS;
-const FB_PAGE_ID = process.env.FB_PAGE_ID_101SAVINGS;
+const FB_PAGE_TOKEN =
+  process.env.FB_PAGE_TOKEN_101SAVINGS ||
+  process.env.FACEBOOK_101SAVINGS_PAGE_TOKEN;
+const FB_PAGE_ID =
+  process.env.FB_PAGE_ID_101SAVINGS ||
+  process.env.FACEBOOK_101SAVINGS_PAGE_ID;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const FB_REQUEST_TIMEOUT_MS = 12_000;
+const LOCK_STALE_MS = 30 * 60 * 1000;
+
+async function getJoyLinkUrl(amazonUrl, asin) {
+  const apiKey = process.env.JOYLINK_API_KEY;
+  if (!apiKey || !amazonUrl) return null;
+
+  const cache = getStore("joylink-cache");
+  const trackingId = process.env.AMAZON_PARTNER_TAG || "daholic-20";
+  const cacheKey = `${trackingId}:${asin || amazonUrl}`;
+
+  try {
+    const cached = await cache.get(cacheKey, { type: "json" });
+    if (cached?.url) return cached.url;
+  } catch {}
+
+  try {
+    const res = await fetch("https://api.joylink.io/public/createlink", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+      body: JSON.stringify({ destination: amazonUrl, trackingid: trackingId }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      await cache.setJSON(cacheKey, { url: data.url, createdAt: new Date().toISOString() }).catch(() => {});
+      return data.url;
+    }
+    console.error("[101-savings] JoyLink API error:", JSON.stringify(data));
+  } catch (err) {
+    console.error("[101-savings] JoyLink request failed:", err.message);
+  }
+
+  return null;
+}
 
 async function postDealToFacebook(deal) {
   if (!FB_PAGE_TOKEN || !FB_PAGE_ID) {
@@ -90,6 +127,67 @@ function buildCaption(deal) {
   lines.push(``);
   lines.push(`#ad #deals #101savings #sale #shopping`);
   return lines.join("\n");
+}
+
+function siteDealKey(deal) {
+  return String(deal.asin || deal.id || deal.url || deal.title || "");
+}
+
+export async function postSiteDealsTo101Savings(limit = 1) {
+  const dealsStore = getStore("deals");
+  const stateStore = getStore("amazon-101-savings-posts");
+  const data = await dealsStore.get("latest", { type: "json" }).catch(() => null);
+  const deals = Array.isArray(data?.deals) ? data.deals : [];
+
+  if (deals.length === 0) return { posted: 0, results: [] };
+
+  const lock = await stateStore.get("posting-lock", { type: "json" }).catch(() => null);
+  if (
+    lock?.startedAt &&
+    Date.now() - new Date(lock.startedAt).getTime() < LOCK_STALE_MS
+  ) {
+    return { posted: 0, results: [], message: "Posting already running" };
+  }
+
+  await stateStore.setJSON("posting-lock", { startedAt: new Date().toISOString() });
+
+  try {
+    const postedKeys = await stateStore.get("posted", { type: "json" }).catch(() => []);
+    const posted = Array.isArray(postedKeys) ? postedKeys : [];
+    const results = [];
+
+    for (const deal of deals) {
+      if (results.length >= limit) break;
+      if (
+        deal.needsReview ||
+        !deal.title ||
+        !deal.url ||
+        !deal.image ||
+        Number(deal.discountPercent) < 20
+      ) {
+        continue;
+      }
+
+      const key = siteDealKey(deal);
+      if (!key || posted.includes(key)) continue;
+
+      if (await isAlreadyPostedOn101Savings(deal)) {
+        posted.push(key);
+        results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
+        continue;
+      }
+
+      const joyLinkUrl = await getJoyLinkUrl(deal.url, deal.asin || null);
+      const result = await postDealToFacebook({ ...deal, url: joyLinkUrl || deal.url });
+      posted.push(key);
+      results.push({ title: deal.title.slice(0, 50), ...result });
+    }
+
+    await stateStore.setJSON("posted", posted);
+    return { posted: results.filter(result => !result.duplicateSkipped).length, results };
+  } finally {
+    await stateStore.delete("posting-lock").catch(() => {});
+  }
 }
 
 export async function postPendingDeals(limit = 5) {

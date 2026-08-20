@@ -72,13 +72,20 @@ export default async (req) => {
   try {
     const store = getStore('submissions');
     const index = await store.get('index', { type: 'json', consistency: 'strong' }).catch(() => []) || [];
-    const results = { total: index.length, processed: 0, approved: 0, needsReview: 0, rejectedAdult: 0, skipped: 0, log: [] };
+    const results = { total: index.length, processed: 0, approved: 0, pending: 0, rejectedDuplicate: 0, rejectedAdult: 0, skipped: 0, log: [] };
     const seenAsins = new Set();
 
     for (const id of index) {
       if (limit && results.processed >= limit) break;
       const record = await store.get(id, { type: 'json', consistency: 'strong' }).catch(() => null);
       if (!record || record.source !== 'email' || !['pending', 'needs-review', 'approved'].includes(record.status)) {
+        results.skipped++;
+        continue;
+      }
+
+      // Shopper reports are post-publication review items. Leave those for the
+      // admin review workflow instead of treating them as verification work.
+      if (record.status === 'needs-review' && (record.flaggedAt || record.flagReason)) {
         results.skipped++;
         continue;
       }
@@ -91,14 +98,14 @@ export default async (req) => {
       // and pull every older copy of the same ASIN out of the public feed.
       if (asin && seenAsins.has(asin)) {
         if (!dry) {
-          record.status = 'needs-review';
+          record.status = 'rejected';
           record.reviewReason = `duplicate Amazon product (${asin})`;
           record.autoApproved = false;
-          record.reviewedAt = null;
+          record.reviewedAt = new Date().toISOString();
           await store.setJSON(id, record);
         }
-        results.needsReview++;
-        results.log.push({ id, title: currentTitle, asin, status: 'needs-review', issues: ['duplicate deal'] });
+        results.rejectedDuplicate++;
+        results.log.push({ id, title: currentTitle, asin, status: 'rejected', issues: ['duplicate deal'] });
         continue;
       }
       if (asin) seenAsins.add(asin);
@@ -148,7 +155,7 @@ export default async (req) => {
           record.imageUrl = meta.image;
           record.photoUrl = meta.image;
         }
-        record.status = approved ? 'approved' : 'needs-review';
+        record.status = approved ? 'approved' : 'pending';
         record.reviewReason = approved ? null : issues.join('; ');
         record.autoApproved = approved;
         record.titleMatchScore = Number(matchScore.toFixed(2));
@@ -157,8 +164,8 @@ export default async (req) => {
       }
 
       if (approved) results.approved++;
-      else results.needsReview++;
-      results.log.push({ id, title: resolvedTitle, asin, status: approved ? 'approved' : 'needs-review', issues });
+      else results.pending++;
+      results.log.push({ id, title: resolvedTitle, asin, status: approved ? 'approved' : 'pending', issues });
     }
 
     return new Response(JSON.stringify({ dry, ...results }, null, 2), {

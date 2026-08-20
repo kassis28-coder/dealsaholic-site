@@ -458,7 +458,7 @@ filtered = allSubmissions.filter(s => s.status === 'needs-review');
 
 } else {
 filtered = allSubmissions.filter(
-s => s.status === currentTab && s.source !== 'email'
+s => s.status === currentTab && (currentTab === 'pending' || s.source !== 'email')
 );
 }
 
