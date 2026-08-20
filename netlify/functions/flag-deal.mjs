@@ -127,7 +127,7 @@ async function flagAmazonDeal(
    * deal is removed on the next request.
    */
   await getStore("public-deals-cache")
-    .delete("latest-deduped-v2")
+    .delete("latest-deduped-v3")
     .catch(() => {});
 
   return true;

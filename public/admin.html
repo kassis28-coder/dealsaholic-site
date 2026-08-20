@@ -454,7 +454,12 @@ if (currentTab === 'email') {
 filtered = allSubmissions.filter(s => s.source === 'email');
 
 } else if (currentTab === 'needs-review') {
-filtered = allSubmissions.filter(s => s.status === 'needs-review');
+// Needs Review is for reports made after a deal was public, not for an
+// incomplete email import. Amazon reports are loaded separately above; this
+// list covers a reported live submission.
+filtered = allSubmissions.filter(
+s => s.status === 'needs-review' && (s.flaggedAt || s.flagReason)
+);
 
 } else {
 filtered = allSubmissions.filter(
@@ -470,7 +475,7 @@ return;
 
 if (filtered.length === 0 && currentTab === 'needs-review') {
 container.innerHTML =
-'<div class="empty-state">No flagged seller/email submissions.</div>';
+'<div class="empty-state">No shopper-reported site deals.</div>';
 return;
 }
 

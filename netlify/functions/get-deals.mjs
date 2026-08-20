@@ -4,7 +4,10 @@ import { getStore } from "@netlify/blobs";
 // Keep the already-built feed warm long enough that normal visitors never pay
 // that cold-build cost. New approvals still appear on the next refresh.
 const PUBLIC_FEED_CACHE_TTL_MS = 30 * 60 * 1000;
-const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v2";
+// Bump this whenever the rules that decide whether an approved deal is public
+// change, so the first request after deployment rebuilds instead of serving
+// the old decision from a durable cache.
+const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v3";
 
 // Keep Amazon search inventory fresh; seller deals still use their own expiry dates.
 const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -312,16 +315,6 @@ async function getApprovedSellerDeals() {
         if (
           !record ||
           record.status !== "approved"
-        ) {
-          continue;
-        }
-
-        if (
-          String(
-            record.id || ""
-          ).startsWith("email-") &&
-          record.source === "email" &&
-          !record.reviewedAt
         ) {
           continue;
         }

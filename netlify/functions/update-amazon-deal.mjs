@@ -49,7 +49,7 @@ export default async (req) => {
 
     await store.setJSON("latest", data);
     await clearLegacyFlags(asin);
-    await getStore("public-deals-cache").delete("latest-deduped-v2").catch(() => {});
+    await getStore("public-deals-cache").delete("latest-deduped-v3").catch(() => {});
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   } catch (err) {
