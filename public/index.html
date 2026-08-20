@@ -44,473 +44,201 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --paper: #FAF8F4;
-    --card: #FFFFFF;
-    --ink: #1C1A17;
-    --ink-soft: #6B6459;
-    --line: #ECE6DB;
-    --brand: #FF8A1E;
-    --brand-dark: #D96E0C;
-    --deal-red: #E1432D;
-    --green: #1C8C5A;
-    --walmart-blue: #0071DC;
-    --walmart-yellow: #FFC220;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; }
-  .nav { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; align-items: center; gap: 24px; }
-  .nav__logo { font-family: 'Archivo Black', sans-serif; font-size: 19px; color: var(--ink); text-transform: uppercase; letter-spacing: -0.01em; white-space: nowrap; }
-  .nav__logo span { color: var(--brand); }
-  .top-disclaimer { background: var(--ink); color: #E8E3D9; text-align: center; font-size: 11.5px; padding: 7px 16px; line-height: 1.6; }
-  .social-banner { background: #FBE6BD; padding: 18px 20px 22px; text-align: center; }
-  .social-banner__text { margin: 0 0 14px; font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.35; max-width: 420px; margin-inline: auto; }
-  .social-banner__buttons { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
-  .social-banner__link { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; text-decoration: none; padding: 13px 26px; border-radius: 999px; color: #fff; white-space: nowrap; box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
-  .social-banner__link svg { width: 18px; height: 18px; flex-shrink: 0; }
-  .social-banner__link--telegram { background: linear-gradient(180deg, #4FB3F5, #2196E0); }
-  .social-banner__link--instagram { background: linear-gradient(135deg, #F58529, #DD2A7B, #8134AF, #515BD4); }
-  .social-banner__link:hover { opacity: 0.9; }
-  .seller-banner { background: linear-gradient(135deg, #fff8f0, #fff3e0); border-top: 3px solid var(--brand); border-bottom: 3px solid var(--brand); padding: 22px 24px; text-align: center; }
-  .seller-banner__title { margin: 0 0 6px; font-family: 'Archivo Black', sans-serif; font-size: 18px; color: var(--ink); }
-  .seller-banner__sub { margin: 0 0 16px; font-size: 14px; color: var(--ink-soft); }
-  .seller-banner__cta { display: inline-block; background: var(--brand); color: #fff; font-weight: 700; font-size: 15px; padding: 13px 32px; border-radius: 999px; text-decoration: none; box-shadow: 0 4px 14px rgba(255,138,30,0.45); transition: background 0.15s ease, transform 0.15s ease; }
-  .seller-banner__cta:hover { background: var(--brand-dark); transform: translateY(-1px); }
-  .hero { max-width: 1320px; margin: 0 auto; padding: 36px 24px 20px; }
-  .hero__title { font-family: 'Archivo Black', sans-serif; font-size: 34px; margin: 0 0 8px; letter-spacing: -0.01em; }
-  .hero__subtitle { font-size: 14px; color: var(--ink-soft); margin: 0; max-width: 560px; line-height: 1.5; }
-  .filters { max-width: 1320px; margin: 0 auto; padding: 0 24px 28px; display: flex; flex-wrap: wrap; gap: 10px; }
-  .filters input, .filters select { font-family: 'Inter', sans-serif; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); padding: 10px 14px; }
-  .filters input::placeholder { color: var(--ink-soft); }
-  .filters__search { flex: 1 1 240px; min-width: 180px; }
-  .filters select { min-width: 130px; }
-  .filters__updated { font-size: 12px; color: var(--ink-soft); align-self: center; margin-left: auto; white-space: nowrap; }
-  .deals-feed { max-width: 1320px; margin: 0 auto; padding: 0 24px 48px; }
-  .deals-feed__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
-  .walmart-section { max-width: 1320px; margin: 30px auto 36px; padding: 0 24px; }
-  .walmart-section[hidden] { display: none; }
-  .walmart-section__panel { background: linear-gradient(135deg, #EAF5FF, #FFFFFF); border: 2px solid var(--walmart-blue); border-radius: 18px; padding: 24px; }
-  .walmart-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-  .walmart-section__eyebrow { display: inline-flex; align-items: center; gap: 6px; background: var(--walmart-blue); color: #fff; border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; margin-bottom: 8px; }
-  .walmart-section__title { margin: 0 0 5px; font-family: 'Archivo Black', sans-serif; font-size: 27px; color: #041E42; }
-  .walmart-section__subtitle { margin: 0; color: #35506F; font-size: 13px; line-height: 1.5; }
-  .walmart-section__count { background: var(--walmart-yellow); color: #041E42; border-radius: 999px; padding: 8px 13px; font-size: 12px; font-weight: 800; white-space: nowrap; }
-  .deal-card--walmart { border-color: #B9DDFC; }
-  .deal-card--walmart:hover { border-color: var(--walmart-blue); box-shadow: 0 10px 24px rgba(0,113,220,0.15); }
-  .deal-card--walmart .deal-card__cta { background: var(--walmart-blue); }
-  .deal-card--walmart:hover .deal-card__cta { background: #005CB8; }
-  .deal-card__store-tag { display: inline-flex; align-items: center; align-self: flex-start; background: #EAF5FF; color: #005CB8; border: 1px solid #B9DDFC; font-size: 10px; font-weight: 800; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px; margin-bottom: 8px; }
-  .deal-card { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
-  .deal-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(28,26,23,0.10); border-color: var(--brand); }
-  .deal-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-  .deal-card__image-wrap { position: relative; background: #fff; aspect-ratio: 1/1; overflow: hidden; border-bottom: 1px solid var(--line); }
-  .deal-card__image { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: 80%; max-height: 80%; object-fit: contain; }
-  .deal-card__badge { position: absolute; z-index: 2; top: 10px; right: 10px; background: var(--green); color: #fff; font-weight: 700; font-size: 11px; letter-spacing: 0.02em; padding: 5px 9px; border-radius: 999px; white-space: nowrap; }
-  .deal-card__body { padding: 14px 14px 16px; display: flex; flex-direction: column; flex: 1; }
-  .deal-card__title { font-size: 13px; font-weight: 500; line-height: 1.35; margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 35px; }
-  .deal-card__price-row { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; }
-  .deal-card__price { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 19px; color: var(--ink); }
-  .deal-card__price-original { font-size: 13px; color: var(--ink-soft); text-decoration: line-through; }
-  .deal-card__meta-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .deal-card__rating { font-size: 11px; font-weight: 500; color: var(--ink-soft); }
-  .deal-card__code-btn { display: block; width: 100%; background: #FFF3E0; border: 1.5px dashed var(--brand); border-radius: 8px; padding: 9px 12px; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; text-align: center; margin-bottom: 10px; font-family: 'Inter', sans-serif; transition: background 0.15s ease; }
-  .deal-card__code-btn:hover { background: #FFE0B2; }
-  .deal-card__cta { margin-top: auto; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px; text-align: center; border-radius: 8px; padding: 10px 0; transition: background 0.15s ease; }
-  .deal-card:hover .deal-card__cta { background: var(--brand-dark); }
-  .deal-card__report-btn { display: block; width: 100%; background: none; border: none; padding: 8px 0 0; font-size: 11px; color: var(--ink-soft); cursor: pointer; text-align: center; font-family: 'Inter', sans-serif; transition: color 0.15s ease; }
-  .deal-card__report-btn:hover { color: var(--deal-red); }
-  .deal-card__report-btn:disabled { cursor: default; opacity: 0.7; }
-  .deal-card__promo-tag { display: inline-flex; align-items: center; gap: 4px; background: #FFF3E0; border: 1px solid var(--brand); color: var(--brand-dark); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px; margin-bottom: 8px; }
-  .deals-feed__empty { grid-column: 1/-1; padding: 64px 20px; text-align: center; color: var(--ink-soft); font-size: 14px; }
-  .site-footer { text-align: center; padding: 28px 20px 44px; font-size: 12px; color: var(--ink-soft); border-top: 1px solid var(--line); }
-  @media (max-width: 480px) {
-    .hero { padding: 28px 16px 16px; }
-    .hero__title { font-size: 26px; }
-    .filters { padding: 0 16px 20px; }
-    .deals-feed { padding: 0 16px 40px; }
-    .walmart-section { margin: 22px auto 28px; padding: 0 16px; }
-    .walmart-section__panel { padding: 18px 14px; }
-    .walmart-section__header { display: block; }
-    .walmart-section__title { font-size: 23px; }
-    .walmart-section__count { display: inline-block; margin-top: 12px; }
-    .deals-feed__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-    .filters__updated { margin-left: 0; }
-  }
-  @media (prefers-reduced-motion: reduce) { .deal-card { transition: none; } }
+:root {
+  --paper:#f6f7fb; --card:#fff; --ink:#111827; --muted:#667085; --line:#e6e9f0;
+  --brand:#ff6b2c; --brand-dark:#e84f12; --brand-soft:#fff0e8;
+  --amazon:#111827; --amazon-orange:#ff9900; --walmart:#0071dc; --walmart-yellow:#ffc220;
+  --green:#14a05a; --red:#e9324b; --purple:#7c3aed; --shadow:0 14px 34px rgba(15,23,42,.08);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);font-family:'Inter',sans-serif;color:var(--ink);min-height:100vh}
+a{color:inherit}
+.top-strip{background:linear-gradient(90deg,#fb5b1a,#ff8d1f);color:#fff;text-align:center;font-size:12px;font-weight:700;padding:9px 16px;letter-spacing:.01em}
+.top-strip a{color:#fff;margin-left:8px;text-underline-offset:3px}
+.site-header{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.site-header__inner{max-width:1440px;margin:0 auto;padding:15px 24px;display:grid;grid-template-columns:auto minmax(0,1fr) minmax(240px,360px) auto;align-items:center;gap:22px}
+.logo{font-family:'Archivo Black',sans-serif;font-size:25px;text-decoration:none;letter-spacing:-.04em;white-space:nowrap}.logo span{color:var(--brand)}
+.main-nav{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none}.main-nav::-webkit-scrollbar{display:none}
+.nav-link{display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;text-decoration:none;padding:10px 13px;border-radius:999px;font-size:13px;font-weight:800;white-space:nowrap;color:#3d4656;cursor:pointer;font-family:inherit}
+.nav-link:hover,.nav-link.is-active{background:var(--brand-soft);color:var(--brand-dark)}
+.nav-link--amazon.is-active{background:#fff3db;color:#9a5700}.nav-link--walmart.is-active{background:#e8f4ff;color:#005cb8}
+.nav-dot{width:8px;height:8px;border-radius:50%;background:var(--brand)}.nav-link--amazon .nav-dot{background:var(--amazon-orange)}.nav-link--walmart .nav-dot{background:var(--walmart)}
+.header-search{position:relative}.header-search input{width:100%;height:43px;border:1px solid var(--line);border-radius:999px;background:#f8fafc;padding:0 44px 0 18px;font:600 13px 'Inter',sans-serif;outline:none}.header-search input:focus{border-color:var(--brand);box-shadow:0 0 0 4px rgba(255,107,44,.12);background:#fff}.header-search button{position:absolute;right:5px;top:5px;width:33px;height:33px;border:0;border-radius:50%;background:var(--ink);color:#fff;cursor:pointer;font-size:15px}
+.sell-link{background:var(--ink);color:#fff;text-decoration:none;padding:11px 17px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}.sell-link:hover{background:var(--brand)}
+.page{max-width:1440px;margin:0 auto;padding:0 24px 64px}
+.home-hero{padding:48px 0 24px;display:flex;justify-content:space-between;align-items:flex-end;gap:24px}.eyebrow{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-dark)}
+.home-hero h1{font-family:'Archivo Black',sans-serif;font-size:clamp(36px,5vw,68px);line-height:.98;letter-spacing:-.055em;margin:15px 0 14px;max-width:820px}.home-hero p{margin:0;color:var(--muted);max-width:650px;font-size:16px;line-height:1.65}.hero-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.store-button{display:inline-flex;align-items:center;gap:9px;text-decoration:none;border-radius:14px;padding:13px 17px;font-size:13px;font-weight:900;background:#fff;border:1px solid var(--line);box-shadow:0 5px 16px rgba(15,23,42,.05)}.store-button:hover{transform:translateY(-2px);box-shadow:var(--shadow)}.store-button--amazon i{background:var(--amazon-orange)}.store-button--walmart i{background:var(--walmart)}.store-button i{width:10px;height:10px;border-radius:50%}
+.feature-grid{display:grid;grid-template-columns:1.2fr .82fr .82fr;grid-template-rows:245px 220px;gap:18px;margin-bottom:34px}.feature-card{position:relative;overflow:hidden;border-radius:26px;text-decoration:none;min-height:0;isolation:isolate;box-shadow:var(--shadow);transition:transform .18s ease,box-shadow .18s ease}.feature-card:hover{transform:translateY(-4px);box-shadow:0 20px 42px rgba(15,23,42,.14)}.feature-card--main{grid-row:1/3;background:linear-gradient(145deg,#0ea5e9,#0756d8);color:#fff}.feature-card--amazon{background:linear-gradient(140deg,#151b27,#293446);color:#fff}.feature-card--walmart{background:linear-gradient(140deg,#0071dc,#16a7ed);color:#fff}.feature-card--promo{background:linear-gradient(140deg,#ff6b2c,#f13654);color:#fff}.feature-card--category{background:linear-gradient(140deg,#7c3aed,#ca55e8);color:#fff}.feature-copy{position:relative;z-index:3;padding:27px;max-width:66%}.feature-card--main .feature-copy{padding:38px;max-width:72%}.feature-kicker{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);padding:6px 9px;border-radius:999px}.feature-copy h2{font-family:'Archivo Black',sans-serif;font-size:clamp(25px,3vw,48px);line-height:1;margin:14px 0 10px;letter-spacing:-.04em}.feature-card:not(.feature-card--main) .feature-copy h2{font-size:26px}.feature-copy p{font-size:13px;line-height:1.45;margin:0 0 16px;color:rgba(255,255,255,.82)}.feature-cta{display:inline-flex;background:#fff;color:#151b27;padding:10px 14px;border-radius:999px;font-size:12px;font-weight:900}.feature-products{position:absolute;z-index:2;right:18px;bottom:16px;display:flex;align-items:flex-end;gap:8px}.feature-products img{width:115px;height:145px;object-fit:contain;background:#fff;border-radius:18px;padding:10px;filter:drop-shadow(0 12px 14px rgba(0,0,0,.2))}.feature-card--main .feature-products img{width:150px;height:190px}.feature-card:not(.feature-card--main) .feature-products img:nth-child(n+2){display:none}.feature-orb{position:absolute;width:280px;height:280px;border-radius:50%;right:-60px;bottom:-95px;background:rgba(255,255,255,.13);z-index:1}
+.collections{margin:12px 0 44px}.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 17px}.section-head h2{font-family:'Archivo Black',sans-serif;font-size:30px;letter-spacing:-.035em;margin:0}.section-head p{margin:6px 0 0;color:var(--muted);font-size:13px}.section-link{display:inline-flex;align-items:center;gap:7px;text-decoration:none;background:#fff;border:1px solid var(--line);padding:10px 14px;border-radius:999px;font-size:12px;font-weight:900;white-space:nowrap}.section-link:hover{border-color:var(--brand);color:var(--brand-dark)}
+.collection-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.collection-card{position:relative;min-height:116px;padding:18px;border-radius:20px;text-decoration:none;overflow:hidden;border:1px solid rgba(255,255,255,.65);box-shadow:0 8px 22px rgba(15,23,42,.06);transition:transform .16s ease}.collection-card:hover{transform:translateY(-3px)}.collection-card strong{display:block;font-family:'Archivo',sans-serif;font-weight:800;font-size:15px;margin-bottom:5px}.collection-card span{font-size:11px;color:#4c5564}.collection-card b{position:absolute;right:14px;bottom:8px;font-size:36px;opacity:.55}.collection-card:nth-child(1){background:#dff4ff}.collection-card:nth-child(2){background:#f4e8ff}.collection-card:nth-child(3){background:#fff0d7}.collection-card:nth-child(4){background:#e1f9e9}.collection-card:nth-child(5){background:#ffe5eb}.collection-card:nth-child(6){background:#e6ebff}
+.deal-section{margin:0 0 46px}.deal-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:15px}.deal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}.deal-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:20px;overflow:hidden;text-decoration:none;color:var(--ink);display:flex;flex-direction:column;min-width:0;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.deal-card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:#cbd1dc}.deal-card__media{position:relative;aspect-ratio:1.08/1;background:linear-gradient(180deg,#fff,#f8fafc);border-bottom:1px solid #edf0f5;overflow:hidden}.deal-card__media img{width:100%;height:100%;object-fit:contain;padding:18px}.deal-card__badge{position:absolute;top:10px;left:10px;background:var(--red);color:#fff;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:900;z-index:2}.deal-card__body{padding:14px;display:flex;flex-direction:column;flex:1}.store-pill{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 8px;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;margin-bottom:9px}.store-pill--amazon{background:#fff2d8;color:#925700}.store-pill--walmart{background:#e4f3ff;color:#005cb8}.store-pill--other{background:#f0eaff;color:#6d28d9}.store-pill i{width:6px;height:6px;border-radius:50%;background:currentColor}.deal-card h3{font-size:13px;line-height:1.35;margin:0 0 12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:35px}.price-row{display:flex;align-items:baseline;gap:8px;margin-top:auto}.price{font-family:'Archivo',sans-serif;font-weight:800;font-size:20px}.original{font-size:12px;color:#9aa1ad;text-decoration:line-through}.promo-code{margin-top:11px;border:1px dashed #f7a35a;background:#fff7ed;border-radius:10px;padding:8px;font-size:10px;font-weight:800;color:#a54908;text-align:center}.deal-card__cta{margin-top:11px;border-radius:10px;padding:10px;text-align:center;background:var(--ink);color:#fff;font-size:11px;font-weight:900}.deal-card--walmart .deal-card__cta{background:var(--walmart)}.deal-card--amazon .deal-card__cta{background:var(--amazon)}
+.store-page{padding-top:38px}.store-page[hidden],.home-view[hidden]{display:none}.store-hero{position:relative;overflow:hidden;border-radius:28px;padding:38px;margin-bottom:22px;color:#fff}.store-hero--amazon{background:linear-gradient(135deg,#111827,#344154)}.store-hero--walmart{background:linear-gradient(135deg,#0067ca,#20a9ed)}.store-hero--all{background:linear-gradient(135deg,#ff6b2c,#f04467)}.store-hero h1{font-family:'Archivo Black',sans-serif;font-size:clamp(36px,5vw,62px);letter-spacing:-.05em;margin:10px 0 10px}.store-hero p{margin:0;max-width:600px;color:rgba(255,255,255,.8);line-height:1.6}.store-count{position:absolute;right:30px;top:30px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:10px 14px;border-radius:999px;font-size:12px;font-weight:900}.browse-tools{background:#fff;border:1px solid var(--line);border-radius:22px;padding:16px;margin-bottom:18px;box-shadow:0 7px 24px rgba(15,23,42,.04)}.tool-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tool-row input,.tool-row select{height:42px;border:1px solid var(--line);border-radius:12px;background:#f8fafc;padding:0 13px;font:600 12px 'Inter',sans-serif;color:var(--ink);outline:none}.tool-row input{flex:1;min-width:220px}.tool-row input:focus,.tool-row select:focus{border-color:var(--brand);background:#fff}.category-chips{display:flex;gap:8px;overflow-x:auto;padding:13px 0 2px;scrollbar-width:none}.category-chips::-webkit-scrollbar{display:none}.category-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 12px;white-space:nowrap;font:800 11px 'Inter',sans-serif;color:#4b5565;cursor:pointer}.category-chip:hover,.category-chip.is-active{background:var(--ink);border-color:var(--ink);color:#fff}.browse-meta{display:flex;justify-content:space-between;align-items:center;margin:0 2px 15px;font-size:12px;color:var(--muted)}
+.empty{grid-column:1/-1;background:#fff;border:1px dashed #ccd2dc;border-radius:18px;padding:50px 18px;text-align:center;color:var(--muted)}
+.footer{background:#101827;color:#cad0da;margin-top:20px}.footer__inner{max-width:1440px;margin:0 auto;padding:38px 24px;display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:30px}.footer .logo{color:#fff}.footer p{font-size:12px;line-height:1.7;color:#9ea7b5}.footer h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#fff;margin:0 0 13px}.footer a{display:block;color:#b9c1cd;text-decoration:none;font-size:12px;margin:0 0 9px}.footer a:hover{color:#fff}.footer__bottom{border-top:1px solid #273142;padding:14px 24px;text-align:center;font-size:10px;color:#8791a0}.social-links{display:flex;gap:8px}.social-links a{background:#263142;color:#fff;padding:9px 11px;border-radius:10px;font-weight:800}
+@media(max-width:1100px){.site-header__inner{grid-template-columns:auto 1fr auto}.header-search{grid-column:1/-1;grid-row:2}.feature-grid{grid-template-columns:1fr 1fr;grid-template-rows:340px 210px}.feature-card--main{grid-column:1/3;grid-row:auto}.feature-card--category{display:none}.collection-grid{grid-template-columns:repeat(3,1fr)}.deal-row{grid-template-columns:repeat(3,1fr)}.deal-row .deal-card:nth-child(n+4){display:none}.footer__inner{grid-template-columns:1.5fr 1fr 1fr}.footer__inner>div:last-child{display:none}}
+@media(max-width:720px){.top-strip{font-size:10px}.site-header__inner{padding:11px 14px;gap:10px}.logo{font-size:20px}.sell-link{padding:9px 11px;font-size:10px}.main-nav{grid-column:1/-1;grid-row:2}.header-search{grid-row:3}.page{padding:0 14px 44px}.home-hero{display:block;padding:32px 0 18px}.home-hero h1{font-size:39px}.home-hero p{font-size:14px}.hero-actions{justify-content:flex-start;margin-top:20px}.feature-grid{grid-template-columns:1fr;grid-template-rows:330px 190px 190px}.feature-card--main{grid-column:auto}.feature-card--promo{display:none}.feature-card--main .feature-copy{padding:25px;max-width:88%}.feature-copy{padding:21px;max-width:72%}.feature-card--main .feature-products img{width:108px;height:136px}.feature-products img{width:95px;height:115px}.collections{margin-bottom:32px}.section-head h2{font-size:25px}.section-head p{display:none}.collection-grid{display:flex;overflow-x:auto;gap:10px;scroll-snap-type:x mandatory}.collection-card{min-width:155px;scroll-snap-align:start}.deal-row{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px}.deal-row .deal-card,.deal-row .deal-card:nth-child(n+4){display:flex;min-width:215px;scroll-snap-align:start}.deal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.deal-card{border-radius:15px}.deal-card__body{padding:11px}.deal-card__media img{padding:11px}.deal-card h3{font-size:12px}.price{font-size:17px}.store-hero{padding:27px 20px}.store-count{position:static;display:inline-block;margin-top:16px}.tool-row input{min-width:100%}.footer__inner{grid-template-columns:1fr 1fr}.footer__inner>div:first-child{grid-column:1/-1}}
+@media(max-width:390px){.feature-grid{grid-template-rows:310px 175px 175px}.deal-grid{grid-template-columns:1fr 1fr}.nav-link{font-size:11px;padding:8px 10px}.collection-card{min-width:142px}.deal-row .deal-card{min-width:205px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
 <body>
-<div class="top-disclaimer">⚠️ Prices and promotions are valid at the time posted and may change or expire without notice. Always verify the current price with the retailer before purchasing. · Deals-aholic may earn commissions from qualifying purchases.</div>
-<nav class="nav">
-  <span class="nav__logo">Deals-<span>aholic</span></span>
-  <a href="/submit.html" style="margin-left:auto;font-size:13px;font-weight:700;color:#fff;text-decoration:none;background:var(--brand);padding:10px 20px;border-radius:999px;box-shadow:0 2px 8px rgba(255,138,30,0.4);">💰 Sell Here</a>
-</nav>
-<div class="social-banner">
-  <p class="social-banner__text">New deals drop daily. Join the Deals-aholic Telegram channel and follow on Instagram so you never miss a discount.</p>
-  <div class="social-banner__buttons">
-    <a class="social-banner__link social-banner__link--telegram" href="https://t.me/dealsaholic" target="_blank" rel="noopener">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.5 4.5L2.7 11.9c-1 .4-1 1.8.1 2.1l4.4 1.4 1.7 5.5c.3.9 1.4 1.1 2.1.4l2.6-2.5 4.6 3.4c.8.6 2 .2 2.2-.8l3.1-15.1c.2-1-.8-1.8-1.6-1.4zM8.6 14.7l9.6-7.2-7.6 8.2-.3 3.3-1.7-4.3z"/></svg>
-      Telegram
-    </a>
-    <a class="social-banner__link social-banner__link--instagram" href="https://www.instagram.com/deals_aholic" target="_blank" rel="noopener">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
-      Instagram
-    </a>
+<div class="top-strip">Fresh deals update throughout the day. Prices may change. <a href="https://t.me/dealsaholic" target="_blank" rel="noopener">Join 7,000+ deal hunters on Telegram →</a></div>
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="logo" href="/" aria-label="Deals-aholic home">Deals-<span>aholic</span></a>
+    <nav class="main-nav" aria-label="Store navigation">
+      <a class="nav-link" data-nav="home" href="/"><span class="nav-dot"></span>Home</a>
+      <a class="nav-link nav-link--amazon" data-nav="amazon" href="/?store=amazon"><span class="nav-dot"></span>Amazon</a>
+      <a class="nav-link nav-link--walmart" data-nav="walmart" href="/?store=walmart"><span class="nav-dot"></span>Walmart</a>
+      <a class="nav-link" data-nav="promo" href="/?store=all&category=promo"><span class="nav-dot"></span>Promo Codes</a>
+      <span class="nav-link" title="Target and more stores are coming soon"><span class="nav-dot" style="background:#7c3aed"></span>More Stores +</span>
+    </nav>
+    <form class="header-search" id="global-search">
+      <input id="global-search-input" type="search" placeholder="Search all deals..." aria-label="Search all deals">
+      <button type="submit" aria-label="Search">⌕</button>
+    </form>
+    <a class="sell-link" href="/submit.html">Sell Here</a>
   </div>
-</div>
-<div class="seller-banner">
-  <h2 class="seller-banner__title">📢 Are You a Seller? Get Your Deal in Front of Thousands!</h2>
-  <p class="seller-banner__sub">Feature your deal on our site and reach real shoppers looking to save. Fast, easy, and affordable.</p>
-  <a href="/submit.html" class="seller-banner__cta">💰 Post Your Deal Now</a>
-</div>
-<section class="walmart-section" id="walmart-section" aria-labelledby="walmart-heading" hidden>
-  <div class="walmart-section__panel">
-    <div class="walmart-section__header">
+</header>
+<main class="page">
+  <div class="home-view" id="home-view">
+    <section class="home-hero">
       <div>
-        <span class="walmart-section__eyebrow">★ WALMART SAVINGS</span>
-        <h2 class="walmart-section__title" id="walmart-heading">Walmart Deals</h2>
-        <p class="walmart-section__subtitle">Fresh rollbacks, clearance prices, and special buys available from Walmart.</p>
+        <span class="eyebrow">Curated savings · Updated hourly</span>
+        <h1>Better deals,<br>less searching.</h1>
+        <p>Browse today’s strongest Amazon and Walmart finds, organized by store and category so shoppers get to the right offer quickly.</p>
       </div>
-      <span class="walmart-section__count" id="walmart-count"></span>
-    </div>
-    <div class="deals-feed__grid" id="walmart-grid"></div>
-  </div>
-</section>
-<div class="hero">
-  <h1 class="hero__title">Today's Best Deals</h1>
-  <p class="hero__subtitle">Real prices and discounts, refreshed automatically throughout the day. Filter by category, search a product, and shop the savings.</p>
-</div>
-<div class="filters">
-  <input type="text" class="filters__search" id="filter-search" placeholder="Search products...">
-  <select id="filter-category">
-    <option value="">All categories</option>
-    <option value="electronics">📱 Electronics</option>
-    <option value="fashion">👗 Fashion</option>
-    <option value="home">🏠 Home & Kitchen</option>
-    <option value="bedroom">🛏️ Bedroom & Bedding</option>
-    <option value="bathroom">🚿 Bathroom</option>
-    <option value="furniture">🪑 Furniture</option>
-    <option value="kitchen">🍳 Kitchen Appliances</option>
-    <option value="decor">🕯️ Home Decor</option>
-    <option value="beauty">🧴 Beauty</option>
-    <option value="toys">🧸 Toys & Games</option>
-    <option value="books">📚 Books</option>
-    <option value="sports">🏋️ Sports & Outdoors</option>
-    <option value="pets">🐾 Pet Supplies</option>
-    <option value="household">🧹 Household</option>
-    <option value="promo">🏷️ Promo Codes</option>
-  </select>
-  <select id="filter-sort">
-    <option value="newest">Newest first</option>
-    <option value="discount">Biggest discount</option>
-    <option value="price-low">Price: low to high</option>
-    <option value="price-high">Price: high to low</option>
-  </select>
-  <span class="filters__updated" id="deals-updated"></span>
-</div>
-<div class="deals-feed">
-  <div class="deals-feed__grid" id="deals-grid">
-    <div class="deals-feed__empty">Loading today's deals…</div>
-  </div>
-</div>
-<p class="site-footer">
-  Prices and availability are accurate as of the time shown above and are subject to change.
-  <br><br>
-  <a href="/about.html" style="color:inherit;margin:0 8px;">About</a> ·
-  <a href="/privacy.html" style="color:inherit;margin:0 8px;">Privacy Policy</a> ·
-  <a href="/submit.html" style="color:inherit;margin:0 8px;">Sell Here</a>
-  <br><br>
-  © 2025 Deals-aholic. All rights reserved.
-</p>
-<script>
-  const DEALS_JSON_URL = '/api/deals';
-  let allDeals = [];
-  let renderVersion = 0;
+      <div class="hero-actions">
+        <a class="store-button store-button--amazon" href="/?store=amazon"><i></i>Shop Amazon Deals</a>
+        <a class="store-button store-button--walmart" href="/?store=walmart"><i></i>Shop Walmart Deals</a>
+      </div>
+    </section>
 
-  function buildDealUrl(deal) {
-    const originalUrl = deal.url || deal.productUrl || '';
-    // Only treat as ASIN if it's exactly 10 alphanumeric chars — never an internal ID
-    const VALID_ASIN = /^[A-Z0-9]{10}$/i;
-    const rawAsin = deal.asin
-      || originalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]
-      || originalUrl.match(/\/gp\/product\/([A-Z0-9]{10})/i)?.[1];
-    const asin = rawAsin && VALID_ASIN.test(rawAsin) ? rawAsin : null;
-    const shortId = deal.id || asin;
-    if (shortId && /^[A-Z0-9_-]{1,80}$/i.test(shortId)) {
-      return '/d/' + encodeURIComponent(shortId) + '?preview=2';
-    }
-    const params = new URLSearchParams();
-    if (asin) params.set('asin', asin);
-    else if (originalUrl) params.set('url', originalUrl);
-    if (deal.title) params.set('title', deal.title);
-    if (deal.price) params.set('price', deal.price);
-    if (deal.originalPrice) params.set('original', deal.originalPrice);
-    if (deal.discountPercent) params.set('discount', deal.discountPercent);
-    if (deal.image) params.set('image', deal.image);
-    if (deal.discountCode) params.set('code', deal.discountCode);
-    if (deal.storeType) params.set('store', deal.storeType);
-    // Meta caches link cards by URL for a long time. Increment this value when
-    // social preview metadata changes so newly copied links get a fresh scrape.
-    params.set('preview', '2');
-    return '/deal.html?' + params.toString();
-  }
-
-  function updateURL() {
-    const search = document.getElementById('filter-search').value.trim();
-    const category = document.getElementById('filter-category').value;
-    const sort = document.getElementById('filter-sort').value;
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    if (category) params.set('category', category);
-    if (sort && sort !== 'newest') params.set('sort', sort);
-    const newUrl = params.toString() ? '?' + params.toString() : window.location.pathname;
-    window.history.replaceState({}, '', newUrl);
-  }
-
-  function loadFromURL() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('search')) document.getElementById('filter-search').value = params.get('search');
-    if (params.get('category')) document.getElementById('filter-category').value = params.get('category');
-    if (params.get('sort')) document.getElementById('filter-sort').value = params.get('sort');
-  }
-
-  function isPromo(deal) {
-    const hasCode = deal.discountCode && deal.discountCode.trim() !== '' && deal.discountCode.toLowerCase() !== 'none';
-    return hasCode
-      || deal.source === 'email'
-      || deal.source === 'submission'
-      || deal.sponsored === true;
-  }
-
-  function isWalmartDeal(deal) {
-    const store = String(deal.storeType || deal.store || '').toLowerCase();
-    const url = String(deal.url || deal.productUrl || '').toLowerCase();
-    return store === 'walmart' || url.includes('walmart.com') || url.includes('goto.walmart.com');
-  }
-
-  function detectCategory(title) {
-    const t = (title || '').toLowerCase();
-    if (/headphone|earbud|speaker|tv |laptop|tablet|phone|camera|monitor|keyboard|mouse|charger|cable|battery|bluetooth|wireless|gaming|console|playstation|xbox|nintendo|drone|smart watch|smartwatch|airpod|ipad|iphone|android|pixel|samsung|apple mac|computer|printer|router|projector|alexa|echo|fire stick|earphone|usb|hdmi/.test(t)) return 'electronics';
-    if (/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|tank top|tshirt|t-shirt|clothing|fashion|outfit|apparel|womens|mens|ladies|girls|boys|vest|cardigan|romper|jumpsuit|lounge set|two piece set|matching set|palazzo|linen pant/.test(t)) return 'fashion';
-    if (/comforter|bedding|bed sheet|pillowcase|pillow sham|duvet|mattress|blanket|quilt|bed set|bed in a bag|satin pillow|microfiber sheet/.test(t)) return 'bedroom';
-    if (/bath rug|bath mat|shower caddy|bathroom organizer|bathroom accessories|bathroom set|toilet brush|soap dispenser|qtip holder|cotton swab|towel rack|shower shelf|bathroom storage/.test(t)) return 'bathroom';
-    if (/sofa|couch|sectional|recliner|armchair|ottoman|coffee table|dining table|nightstand|dresser|wardrobe|bookcase|bookshelf|bed frame|headboard|floor lamp|end table|side table|floating shelf|corner shelf|coat rack|tv stand|display shelf|storage tower|chest of drawer/.test(t)) return 'furniture';
-    if (/air fryer|instant pot|coffee maker|blender|toaster oven|microwave|stand mixer|food processor|electric kettle|rice cooker|slow cooker|pressure cooker|ninja kitchen|cookware|pots and pans|nonstick|cutting board|food storage container|vegetable chopper|mandoline|mixing bowl/.test(t)) return 'kitchen';
-    if (/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|nail|eyeliner|bronzer|highlighter|toner|cleanser|face wash|vitamin c|retinol|curling|flat iron|hair dryer/.test(t)) return 'beauty';
-    if (/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed animal|plush|remote control|rc car|craft|coloring|educational|learning|blocks|fidget|squishy|archery|bow and arrow/.test(t)) return 'toys';
-    if (/book|novel|hardcover|paperback|kindle|audiobook|memoir|biography|fiction|nonfiction|thriller|mystery|romance|fantasy|science fiction|history|cookbook|guide|workbook/.test(t)) return 'books';
-    if (/yoga|gym|dumbbell|weight|protein|supplement|hiking|camping|tent|backpack|fishing|hunting|golf|tennis|basketball|football|soccer|cycling|bike|treadmill|resistance band|jump rope|sports|outdoor|fitness|workout|exercise|weighted vest|sunglasses sport/.test(t)) return 'sports';
-    if (/dog|cat|pet|puppy|kitten|bird|fish|aquarium|collar|leash|food bowl|litter|treat|chew|pet bed|crate|cage|grooming|pee pad|dog food|cat food/.test(t)) return 'pets';
-    if (/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|household|tissue|aluminum foil|zip lock|storage bag|mop|broom|wipes|fabuloso|lysol|clorox/.test(t)) return 'household';
-    if (/candle|wall art|picture frame|vase|figurine|wreath|decorative|faux plant|artificial tree|olive tree|floor mirror|wall mirror|artwork|tapestry|home decor|wall decor/.test(t)) return 'decor';
-    if (/kitchen|cookware|pan|pot|knife|lamp|curtain|rug|storage|organizer|mirror|shelf|drawer|vacuum|closet|under cabinet|over door/.test(t)) return 'home';
-    return 'other';
-  }
-
-  function formatUpdated(iso) {
-    try {
-      const d = new Date(iso);
-      return 'Updated ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-        ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    } catch { return ''; }
-  }
-
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
-
-  function priceToNumber(priceStr) {
-    if (!priceStr) return null;
-    const n = parseFloat(String(priceStr).replace(/[^0-9.]/g, ''));
-    return isNaN(n) ? null : n;
-  }
-
-  function originalPrice(deal) {
-    if (deal.originalPrice && deal.originalPrice !== '' && deal.originalPrice !== '0') {
-      const op = String(deal.originalPrice).trim();
-      return op.startsWith('$') ? op : '$' + op;
-    }
-    const price = priceToNumber(deal.price);
-    if (price === null || !deal.discountPercent) return null;
-    const original = price / (1 - deal.discountPercent / 100);
-    return '$' + original.toFixed(2);
-  }
-
-  function copyCode(e, code) {
-    e.preventDefault();
-    e.stopPropagation();
-    navigator.clipboard.writeText(code).then(() => {
-      const btn = e.currentTarget;
-      const orig = btn.innerHTML;
-      btn.innerHTML = '✅ Copied!';
-      btn.style.background = '#E8F5E9';
-      btn.style.borderColor = '#1C8C5A';
-      setTimeout(() => {
-        btn.innerHTML = orig;
-        btn.style.background = '';
-        btn.style.borderColor = '';
-      }, 2000);
-    });
-  }
-
-  function reportExpired(e, dealId, dealSource, code, productUrl) {
-    e.preventDefault();
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Checking...';
-    fetch('/api/flag-deal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dealId, dealSource, code, productUrl }),
-    }).then(res => res.json()).then(data => {
-      if (data.action === 'ignored') {
-        btn.innerHTML = '✅ Code still valid!';
-        btn.style.color = '#1C8C5A';
-      } else if (data.action === 'flagged') {
-        btn.innerHTML = '⚠️ Reported for review';
-        btn.style.color = '#E1432D';
-      } else {
-        btn.innerHTML = '⚠️ Report Expired Code';
-        btn.disabled = false;
-      }
-    }).catch(() => {
-      btn.innerHTML = '⚠️ Report Expired Code';
-      btn.disabled = false;
-    });
-  }
-
-  function renderCard(deal) {
-    const original = originalPrice(deal);
-    const hasCode = deal.discountCode && deal.discountCode.trim() !== '' && deal.discountCode.toLowerCase() !== 'none';
-    const dealSource = (deal.source === 'email' || deal.sponsored) ? 'submission' : 'amazon';
-    const dealId = deal.id || deal.asin || '';
-    const productUrl = deal.url || deal.productUrl || '';
-    const dealUrl = buildDealUrl(deal);
-    const walmartDeal = isWalmartDeal(deal);
-    const storeLabel = deal.sponsored ? 'View Deal' : walmartDeal ? 'Go to Walmart' : deal.storeType === 'target' ? 'Go to Target' : deal.storeType === 'temu' ? 'Go to Temu' : deal.storeType === 'other' ? 'View Deal' : 'Go to Amazon';
-    const showPromoTag = isPromo(deal);
-    return `
-      <a class="deal-card${walmartDeal ? ' deal-card--walmart' : ''}" href="${dealUrl}">
-        <div class="deal-card__image-wrap">
-          ${deal.sponsored ? `<div class="deal-card__badge" style="background:#6B6459;">SPONSORED</div>` : (deal.discountPercent ? `<div class="deal-card__badge">${deal.discountPercent}% OFF</div>` : '')}
-          ${deal.image ? `<img class="deal-card__image" src="${deal.image}" alt="${escapeHtml(deal.title)}" loading="lazy">` : ''}
-        </div>
-        <div class="deal-card__body">
-          ${walmartDeal ? `<span class="deal-card__store-tag">★ WALMART</span>` : ''}
-          ${showPromoTag ? `<span class="deal-card__promo-tag">🏷️ PROMO CODE</span>` : ''}
-          <p class="deal-card__title">${escapeHtml(deal.title)}</p>
-          <div class="deal-card__price-row">
-            <span class="deal-card__price">${deal.price || ''}</span>
-            ${original ? `<span class="deal-card__price-original">${original}</span>` : ''}
-          </div>
-          <div class="deal-card__meta-row">
-            ${deal.rating ? `<span class="deal-card__rating">★ ${deal.rating}${deal.reviewCount ? ` (${deal.reviewCount})` : ''}</span>` : '<span></span>'}
-          </div>
-          ${hasCode ? `<button class="deal-card__code-btn" onclick="copyCode(event, '${escapeHtml(deal.discountCode)}')">📋 Copy Code: <strong>${escapeHtml(deal.discountCode)}</strong></button>` : ''}
-          <span class="deal-card__cta">${storeLabel}</span>
-          ${hasCode && dealId ? `<button class="deal-card__report-btn" onclick="reportExpired(event, '${dealId}', '${dealSource}', '${escapeHtml(deal.discountCode)}', '${productUrl}')">⚠️ Report Expired Code</button>` : ''}
-        </div>
+    <section class="feature-grid" aria-label="Featured deal collections">
+      <a class="feature-card feature-card--main" href="/?store=all&category=electronics">
+        <div class="feature-copy"><span class="feature-kicker">Featured collection</span><h2>Tech deals worth the click.</h2><p>Fresh electronics, smart-home finds, and accessories at standout prices.</p><span class="feature-cta">Explore Tech →</span></div>
+        <div class="feature-products" id="feature-main-products"></div><span class="feature-orb"></span>
       </a>
-    `;
-  }
+      <a class="feature-card feature-card--amazon" href="/?store=amazon">
+        <div class="feature-copy"><span class="feature-kicker">Amazon</span><h2>Top picks today</h2><p>Price drops and promo codes.</p><span class="feature-cta">Shop Amazon →</span></div>
+        <div class="feature-products" id="feature-amazon-products"></div><span class="feature-orb"></span>
+      </a>
+      <a class="feature-card feature-card--walmart" href="/?store=walmart">
+        <div class="feature-copy"><span class="feature-kicker">Walmart</span><h2>Rollbacks & finds</h2><p>Current Walmart savings.</p><span class="feature-cta">Shop Walmart →</span></div>
+        <div class="feature-products" id="feature-walmart-products"></div><span class="feature-orb"></span>
+      </a>
+      <a class="feature-card feature-card--promo" href="/?store=all&category=promo">
+        <div class="feature-copy"><span class="feature-kicker">Extra savings</span><h2>Promo codes</h2><p>Copy, shop, save.</p><span class="feature-cta">Reveal Codes →</span></div><span class="feature-orb"></span>
+      </a>
+      <a class="feature-card feature-card--category" href="/?store=all&category=home">
+        <div class="feature-copy"><span class="feature-kicker">Home refresh</span><h2>Make home better</h2><p>Kitchen, décor, furniture, and more.</p><span class="feature-cta">Shop Home →</span></div><span class="feature-orb"></span>
+      </a>
+    </section>
 
-  function renderCardsProgressively(grid, deals) {
-    const version = ++renderVersion;
-    const chunkSize = 120;
-    let index = chunkSize;
-    grid.innerHTML = deals.slice(0, chunkSize).map(renderCard).join('');
+    <section class="collections">
+      <div class="section-head"><div><h2>Shop by category</h2><p>Fast paths to the deals shoppers look for most.</p></div><a class="section-link" href="/?store=all">Explore all →</a></div>
+      <div class="collection-grid" id="collection-grid"></div>
+    </section>
 
-    function appendNextChunk() {
-      if (version !== renderVersion || index >= deals.length) return;
-      grid.insertAdjacentHTML('beforeend', deals.slice(index, index + chunkSize).map(renderCard).join(''));
-      index += chunkSize;
-      if (index < deals.length) scheduleNextChunk();
-    }
+    <section class="deal-section">
+      <div class="section-head"><div><h2>Today’s top deals</h2><p>Our strongest current discounts across stores.</p></div><a class="section-link" href="/?store=all&sort=discount">View all →</a></div>
+      <div class="deal-row" id="top-deals-row"></div>
+    </section>
 
-    function scheduleNextChunk() {
-      if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(appendNextChunk, { timeout: 250 });
-      } else {
-        window.setTimeout(appendNextChunk, 16);
-      }
-    }
+    <section class="deal-section">
+      <div class="section-head"><div><h2>Amazon spotlight</h2><p>Fresh Amazon price drops and promo-code deals.</p></div><a class="section-link" href="/?store=amazon">All Amazon deals →</a></div>
+      <div class="deal-row" id="amazon-deals-row"></div>
+    </section>
 
-    if (index < deals.length) scheduleNextChunk();
-  }
+    <section class="deal-section">
+      <div class="section-head"><div><h2>Walmart spotlight</h2><p>Rollbacks, special buys, and current Walmart finds.</p></div><a class="section-link" href="/?store=walmart">All Walmart deals →</a></div>
+      <div class="deal-row" id="walmart-deals-row"></div>
+    </section>
 
-  function applyFilters() {
-    const search = document.getElementById('filter-search').value.trim().toLowerCase();
-    const category = document.getElementById('filter-category').value;
-    const sort = document.getElementById('filter-sort').value;
-    let filtered = allDeals.filter(d => {
-      if (isWalmartDeal(d)) return false;
-      const matchSearch = !search || (d.title || '').toLowerCase().includes(search);
-      const matchCategory = !category
-        || (category === 'promo' ? isPromo(d) : detectCategory(d.title) === category);
-      return matchSearch && matchCategory;
-    });
-    if (sort === 'price-low') {
-      filtered.sort((a, b) => (priceToNumber(a.price) ?? Infinity) - (priceToNumber(b.price) ?? Infinity));
-    } else if (sort === 'price-high') {
-      filtered.sort((a, b) => (priceToNumber(b.price) ?? 0) - (priceToNumber(a.price) ?? 0));
-    } else if (sort === 'discount') {
-      filtered.sort((a, b) => (b.discountPercent || 0) - (a.discountPercent || 0));
-    } else {
-      filtered.sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
-    }
-    const grid = document.getElementById('deals-grid');
-    if (filtered.length === 0) {
-      renderVersion++;
-      grid.innerHTML = '<div class="deals-feed__empty">No deals match your search — try a different term.</div>';
-      return;
-    }
-    renderCardsProgressively(grid, filtered);
-  }
+    <section class="deal-section">
+      <div class="section-head"><div><h2>Promo codes</h2><p>Apply an extra code at checkout for deeper savings.</p></div><a class="section-link" href="/?store=all&category=promo">View all codes →</a></div>
+      <div class="deal-row" id="promo-deals-row"></div>
+    </section>
+  </div>
 
-  function renderWalmartDeals() {
-    const walmartDeals = allDeals
-      .filter(isWalmartDeal)
-      .sort((a, b) => new Date(b.createdAt || b.fetchedAt || 0) - new Date(a.createdAt || a.fetchedAt || 0));
-    const section = document.getElementById('walmart-section');
-    if (walmartDeals.length === 0) {
-      section.hidden = true;
-      return;
-    }
-    document.getElementById('walmart-count').textContent = walmartDeals.length + (walmartDeals.length === 1 ? ' deal' : ' deals');
-    document.getElementById('walmart-grid').innerHTML = walmartDeals.map(renderCard).join('');
-    section.hidden = false;
-  }
+  <section class="store-page" id="store-page" hidden>
+    <div class="store-hero" id="store-hero">
+      <span class="feature-kicker" id="store-kicker">Store deals</span>
+      <h1 id="store-title">Browse Deals</h1>
+      <p id="store-subtitle">Search and filter current offers.</p>
+      <span class="store-count" id="store-count"></span>
+    </div>
+    <div class="browse-tools">
+      <div class="tool-row">
+        <input type="search" id="browse-search" placeholder="Search products..." aria-label="Search store products">
+        <select id="browse-sort" aria-label="Sort deals">
+          <option value="newest">Newest first</option>
+          <option value="discount">Biggest discount</option>
+          <option value="price-low">Price: low to high</option>
+          <option value="price-high">Price: high to low</option>
+        </select>
+      </div>
+      <div class="category-chips" id="category-chips" aria-label="Product categories"></div>
+    </div>
+    <div class="browse-meta"><span id="browse-result-count"></span><span id="deals-updated"></span></div>
+    <div class="deal-grid" id="browse-grid"><div class="empty">Loading deals…</div></div>
+  </section>
+</main>
+<footer class="footer">
+  <div class="footer__inner">
+    <div><a class="logo" href="/">Deals-<span>aholic</span></a><p>Deal discovery made simpler. We organize current offers by store and category, then send shoppers directly to the retailer.</p><div class="social-links"><a href="https://t.me/dealsaholic" target="_blank" rel="noopener">Telegram</a><a href="https://www.instagram.com/deals_aholic" target="_blank" rel="noopener">Instagram</a></div></div>
+    <div><h3>Shop</h3><a href="/?store=amazon">Amazon Deals</a><a href="/?store=walmart">Walmart Deals</a><a href="/?store=all&category=promo">Promo Codes</a></div>
+    <div><h3>Categories</h3><a href="/?store=all&category=electronics">Electronics</a><a href="/?store=all&category=home">Home & Kitchen</a><a href="/?store=all&category=fashion">Fashion</a><a href="/?store=all&category=beauty">Beauty</a></div>
+    <div><h3>Deals-aholic</h3><a href="/about.html">About</a><a href="/submit.html">Sell Here</a><a href="/privacy.html">Privacy Policy</a></div>
+  </div>
+  <div class="footer__bottom">Prices and availability can change. Deals-aholic may earn commissions from qualifying purchases. © 2026 Deals-aholic.</div>
+</footer>
+<script>
+const DEALS_JSON_URL='/api/deals';
+const CATEGORIES=[
+  {id:'all',label:'All deals',icon:'✦'},
+  {id:'electronics',label:'Electronics',icon:'⌁'},
+  {id:'fashion',label:'Fashion',icon:'◐'},
+  {id:'home',label:'Home & Kitchen',icon:'⌂'},
+  {id:'beauty',label:'Beauty',icon:'✿'},
+  {id:'toys',label:'Toys & Games',icon:'◆'},
+  {id:'sports',label:'Sports & Outdoors',icon:'◒'},
+  {id:'pets',label:'Pet Supplies',icon:'♢'},
+  {id:'household',label:'Household',icon:'▦'},
+  {id:'promo',label:'Promo Codes',icon:'%'}
+];
+let allDeals=[];
+let currentStore='home';
+let currentCategory='all';
+let renderVersion=0;
 
-  function renderDeals(data) {
-    const updated = document.getElementById('deals-updated');
-    updated.textContent = data.generatedAt ? formatUpdated(data.generatedAt) : '';
-    allDeals = data.deals || [];
-    if (allDeals.length === 0) {
-      document.getElementById('deals-grid').innerHTML = '<div class="deals-feed__empty">No deals meet today\'s discount threshold yet — check back soon.</div>';
-      return;
-    }
-    loadFromURL();
-    renderWalmartDeals();
-    applyFilters();
-  }
-
-  document.getElementById('filter-search').addEventListener('input', () => { updateURL(); applyFilters(); });
-  document.getElementById('filter-category').addEventListener('change', () => { updateURL(); applyFilters(); });
-  document.getElementById('filter-sort').addEventListener('change', () => { updateURL(); applyFilters(); });
-
-  fetch(DEALS_JSON_URL)
-    .then(res => {
-      if (!res.ok) throw new Error('Could not load deals (' + res.status + ')');
-      return res.json();
-    })
-    .then(renderDeals)
-    .catch(err => {
-      document.getElementById('deals-grid').innerHTML = '<div class="deals-feed__empty">Deals are loading — please refresh in a moment.</div>';
-      console.error(err);
-    });
+function escapeHtml(value){const div=document.createElement('div');div.textContent=value||'';return div.innerHTML;}
+function priceNumber(value){const n=parseFloat(String(value||'').replace(/[^0-9.]/g,''));return Number.isFinite(n)?n:null;}
+function originalPrice(deal){if(deal.originalPrice&&deal.originalPrice!== '0'){const text=String(deal.originalPrice).trim();return text.startsWith('$')?text:'$'+text;}const price=priceNumber(deal.price);if(price===null||!deal.discountPercent||deal.discountPercent>=100)return null;return '$'+(price/(1-deal.discountPercent/100)).toFixed(2);}
+function isPromo(deal){const code=String(deal.discountCode||'').trim().toLowerCase();return (!!code&&code!=='none')||deal.source==='email'||deal.source==='submission'||deal.sponsored===true;}
+function storeOf(deal){const store=String(deal.storeType||deal.store||'').toLowerCase();const url=String(deal.url||deal.productUrl||'').toLowerCase();if(store==='walmart'||url.includes('walmart.com')||url.includes('goto.walmart.com'))return 'walmart';if(store==='target')return 'target';if(store==='temu')return 'temu';if(store&&store!=='other')return store;return 'amazon';}
+function detectCategory(title){const t=String(title||'').toLowerCase();if(/headphone|earbud|speaker|\btv\b|laptop|tablet|phone|camera|monitor|keyboard|mouse|charger|cable|battery|bluetooth|wireless|gaming|console|playstation|xbox|nintendo|drone|smart ?watch|airpod|ipad|iphone|android|pixel|samsung|computer|printer|router|projector|alexa|echo|usb|hdmi/.test(t))return 'electronics';if(/dress|shirt|blouse|pants|jeans|skirt|jacket|coat|sweater|hoodie|legging|shorts|swimsuit|bikini|sneaker|shoe|boot|sandal|heel|sock|underwear|bra|clothing|fashion|outfit|apparel|women|men|girls|boys|vest|cardigan|romper|jumpsuit/.test(t))return 'fashion';if(/skincare|moisturizer|serum|foundation|mascara|lipstick|eyeshadow|concealer|blush|primer|shampoo|conditioner|hair|perfume|cologne|lotion|sunscreen|makeup|nail|cleanser|retinol/.test(t))return 'beauty';if(/toy|lego|doll|action figure|board game|puzzle|playset|kids|children|baby|infant|toddler|stuffed|plush|remote control|rc car|craft|fidget|squishy/.test(t))return 'toys';if(/yoga|gym|dumbbell|weight|protein|hiking|camping|tent|backpack|fishing|hunting|golf|tennis|basketball|football|soccer|cycling|bike|treadmill|fitness|workout|exercise|outdoor/.test(t))return 'sports';if(/dog|cat|pet|puppy|kitten|bird|fish|aquarium|collar|leash|litter|treat|chew|pet bed|crate|grooming/.test(t))return 'pets';if(/toilet paper|paper towel|laundry|detergent|dish soap|cleaning|trash bag|garbage bag|sponge|bleach|disinfect|tissue|foil|storage bag|mop|broom|wipes|lysol|clorox/.test(t))return 'household';if(/comforter|bedding|pillow|duvet|mattress|blanket|quilt|sofa|couch|recliner|table|nightstand|dresser|bookcase|bed frame|lamp|mirror|candle|decor|air fryer|coffee maker|blender|toaster|kitchen|cookware|pan|pot|knife|curtain|rug|storage|organizer|vacuum|shelf/.test(t))return 'home';return 'other';}
+function dealUrl(deal){const raw=deal.url||deal.productUrl||'';const rawAsin=deal.asin||(raw.match(/\/dp\/([A-Z0-9]{10})/i)||[])[1]||(raw.match(/\/gp\/product\/([A-Z0-9]{10})/i)||[])[1];const asin=rawAsin&&/^[A-Z0-9]{10}$/i.test(rawAsin)?rawAsin:null;const shortId=deal.id||asin;if(shortId&&/^[A-Z0-9_-]{1,80}$/i.test(shortId))return '/d/'+encodeURIComponent(shortId)+'?preview=2';const p=new URLSearchParams();if(asin)p.set('asin',asin);else if(raw)p.set('url',raw);if(deal.title)p.set('title',deal.title);if(deal.price)p.set('price',deal.price);if(deal.originalPrice)p.set('original',deal.originalPrice);if(deal.discountPercent)p.set('discount',deal.discountPercent);if(deal.image)p.set('image',deal.image);if(deal.discountCode)p.set('code',deal.discountCode);p.set('store',storeOf(deal));p.set('preview','2');return '/deal.html?'+p.toString();}
+function renderCard(deal){const store=storeOf(deal);const original=originalPrice(deal);const code=String(deal.discountCode||'').trim();const storeLabel=store==='walmart'?'Walmart':store==='amazon'?'Amazon':store.charAt(0).toUpperCase()+store.slice(1);const cta=store==='walmart'?'Go to Walmart':store==='amazon'?'Go to Amazon':'View deal';return '<a class="deal-card deal-card--'+escapeHtml(store)+'" href="'+dealUrl(deal)+'">'+
+  '<div class="deal-card__media">'+(deal.discountPercent?'<span class="deal-card__badge">'+deal.discountPercent+'% OFF</span>':'')+(deal.image?'<img src="'+escapeHtml(deal.image)+'" alt="'+escapeHtml(deal.title)+'" loading="lazy">':'')+'</div>'+
+  '<div class="deal-card__body"><span class="store-pill store-pill--'+escapeHtml(store)+'"><i></i>'+escapeHtml(storeLabel)+'</span><h3>'+escapeHtml(deal.title)+'</h3><div class="price-row"><span class="price">'+escapeHtml(deal.price||'Check price')+'</span>'+(original?'<span class="original">'+escapeHtml(original)+'</span>':'')+'</div>'+(code&&code.toLowerCase()!=='none'?'<div class="promo-code">Code: '+escapeHtml(code)+'</div>':'')+'<span class="deal-card__cta">'+cta+' →</span></div></a>';}
+function renderRow(id,deals,message){const el=document.getElementById(id);if(!el)return;el.innerHTML=deals.length?deals.map(renderCard).join(''):'<div class="empty">'+message+'</div>';}
+function dealTime(deal){const n=new Date(deal.createdAt||deal.fetchedAt||0).getTime();return Number.isFinite(n)?n:0;}
+function newest(deals){return deals.slice().sort(function(a,b){return dealTime(b)-dealTime(a);});}
+function best(deals){return deals.slice().sort(function(a,b){return (Number(b.discountPercent)||0)-(Number(a.discountPercent)||0)||dealTime(b)-dealTime(a);});}
+function imageMarkup(deals,max){return deals.filter(function(d){return d.image;}).slice(0,max).map(function(d){return '<img src="'+escapeHtml(d.image)+'" alt="" loading="eager">';}).join('');}
+function renderCollections(){const source=CATEGORIES.filter(function(c){return !['all','promo'].includes(c.id);}).slice(0,6);document.getElementById('collection-grid').innerHTML=source.map(function(c){const count=allDeals.filter(function(d){return detectCategory(d.title)===c.id;}).length;return '<a class="collection-card" href="/?store=all&category='+c.id+'"><strong>'+c.label+'</strong><span>'+count+' current deals</span><b>'+c.icon+'</b></a>';}).join('');}
+function renderHome(){const amazon=newest(allDeals.filter(function(d){return storeOf(d)==='amazon';}));const walmart=newest(allDeals.filter(function(d){return storeOf(d)==='walmart';}));const promo=best(allDeals.filter(isPromo));const tech=best(allDeals.filter(function(d){return detectCategory(d.title)==='electronics';}));document.getElementById('feature-main-products').innerHTML=imageMarkup(tech.length?tech:best(allDeals),3);document.getElementById('feature-amazon-products').innerHTML=imageMarkup(amazon,1);document.getElementById('feature-walmart-products').innerHTML=imageMarkup(walmart,1);renderCollections();renderRow('top-deals-row',best(allDeals).slice(0,5),'More deals are loading.');renderRow('amazon-deals-row',amazon.slice(0,5),'Amazon deals are loading.');renderRow('walmart-deals-row',walmart.slice(0,5),'Walmart deals are loading.');renderRow('promo-deals-row',promo.slice(0,5),'New promo codes are coming soon.');}
+function categoryLabel(id){const c=CATEGORIES.find(function(item){return item.id===id;});return c?c.label:'All deals';}
+function renderChips(){document.getElementById('category-chips').innerHTML=CATEGORIES.map(function(c){return '<button class="category-chip'+(currentCategory===c.id?' is-active':'')+'" data-category="'+c.id+'">'+c.icon+' '+c.label+'</button>';}).join('');document.querySelectorAll('.category-chip').forEach(function(btn){btn.addEventListener('click',function(){currentCategory=btn.dataset.category;renderChips();updateBrowseUrl();renderBrowse();});});}
+function updateBrowseUrl(){const p=new URLSearchParams();if(currentStore!=='home')p.set('store',currentStore);if(currentCategory!=='all')p.set('category',currentCategory);const search=document.getElementById('browse-search').value.trim();const sort=document.getElementById('browse-sort').value;if(search)p.set('search',search);if(sort!=='newest')p.set('sort',sort);history.replaceState({},'',p.toString()?'/?'+p.toString():'/');}
+function renderBrowse(){const search=document.getElementById('browse-search').value.trim().toLowerCase();const sort=document.getElementById('browse-sort').value;let list=allDeals.filter(function(d){return currentStore==='all'||storeOf(d)===currentStore;}).filter(function(d){return !search||String(d.title||'').toLowerCase().includes(search);}).filter(function(d){return currentCategory==='all'||(currentCategory==='promo'?isPromo(d):detectCategory(d.title)===currentCategory);});if(sort==='discount')list.sort(function(a,b){return (Number(b.discountPercent)||0)-(Number(a.discountPercent)||0);});else if(sort==='price-low')list.sort(function(a,b){return (priceNumber(a.price)??Infinity)-(priceNumber(b.price)??Infinity);});else if(sort==='price-high')list.sort(function(a,b){return (priceNumber(b.price)??0)-(priceNumber(a.price)??0);});else list.sort(function(a,b){return dealTime(b)-dealTime(a);});document.getElementById('browse-result-count').textContent=list.length+' '+(list.length===1?'deal':'deals')+(currentCategory!=='all'?' in '+categoryLabel(currentCategory):'');const grid=document.getElementById('browse-grid');if(!list.length){grid.innerHTML='<div class="empty">No deals match these filters yet. Try another category or search.</div>';return;}const version=++renderVersion;const chunk=80;let index=chunk;grid.innerHTML=list.slice(0,chunk).map(renderCard).join('');function next(){if(version!==renderVersion||index>=list.length)return;grid.insertAdjacentHTML('beforeend',list.slice(index,index+chunk).map(renderCard).join(''));index+=chunk;if(index<list.length)setTimeout(next,16);}if(index<list.length)setTimeout(next,16);}
+function configureView(){const p=new URLSearchParams(location.search);currentStore=p.get('store')||'home';if(!['home','amazon','walmart','all'].includes(currentStore))currentStore='all';currentCategory=p.get('category')||'all';if(!CATEGORIES.some(function(c){return c.id===currentCategory;}))currentCategory='all';document.querySelectorAll('[data-nav]').forEach(function(link){const nav=link.dataset.nav;link.classList.toggle('is-active',(currentStore==='home'&&nav==='home')||(currentStore===nav)||(nav==='promo'&&currentCategory==='promo'));});const home=currentStore==='home';document.getElementById('home-view').hidden=!home;document.getElementById('store-page').hidden=home;if(home){renderHome();return;}const hero=document.getElementById('store-hero');const title=currentStore==='amazon'?'Amazon Deals':currentStore==='walmart'?'Walmart Deals':'Explore All Deals';const subtitle=currentStore==='amazon'?'Browse Amazon price drops, promo codes, and today’s newest finds.':currentStore==='walmart'?'Shop current Walmart rollbacks, special buys, and seasonal savings.':'Search every current deal across participating stores.';hero.className='store-hero store-hero--'+currentStore;document.getElementById('store-kicker').textContent=currentStore==='all'?'All stores':currentStore+' savings';document.getElementById('store-title').textContent=title;document.getElementById('store-subtitle').textContent=subtitle;const count=allDeals.filter(function(d){return currentStore==='all'||storeOf(d)===currentStore;}).length;document.getElementById('store-count').textContent=count+' current deals';document.getElementById('browse-search').value=p.get('search')||'';document.getElementById('browse-sort').value=p.get('sort')||'newest';renderChips();renderBrowse();}
+function formatUpdated(iso){try{const d=new Date(iso);return 'Updated '+d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' · '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});}catch(e){return '';}}
+document.getElementById('global-search').addEventListener('submit',function(e){e.preventDefault();const q=document.getElementById('global-search-input').value.trim();location.href='/?store=all'+(q?'&search='+encodeURIComponent(q):'');});
+document.getElementById('browse-search').addEventListener('input',function(){updateBrowseUrl();renderBrowse();});document.getElementById('browse-sort').addEventListener('change',function(){updateBrowseUrl();renderBrowse();});
+fetch(DEALS_JSON_URL).then(function(res){if(!res.ok)throw new Error('Could not load deals');return res.json();}).then(function(data){allDeals=data.deals||[];document.getElementById('deals-updated').textContent=data.generatedAt?formatUpdated(data.generatedAt):'';configureView();}).catch(function(err){document.getElementById('home-view').innerHTML='<div class="empty" style="margin-top:50px">Deals are loading. Please refresh in a moment.</div>';document.getElementById('store-page').innerHTML='<div class="empty">Deals are loading. Please refresh in a moment.</div>';console.error(err);});
 </script>
 </body>
 </html>
