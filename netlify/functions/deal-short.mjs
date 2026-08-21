@@ -24,7 +24,11 @@ export default async (req, context) => {
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) return new Response('Deal not found', { status: 404 });
 
   let deal = null;
-  if (id.startsWith('sub_') || id.startsWith('email-')) {
+  if (
+    id.startsWith('sub_')
+    || id.startsWith('email-')
+    || id.startsWith('walmart-')
+  ) {
     const record = await getStore('submissions').get(id, { type: 'json' }).catch(() => null);
     deal = publicDeal(record, id);
   } else {
