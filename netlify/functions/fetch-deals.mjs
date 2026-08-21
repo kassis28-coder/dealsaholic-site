@@ -130,6 +130,19 @@ function normalizeAsin(value) {
   return /^[A-Z0-9]{10}$/.test(asin) ? asin : "";
 }
 
+function categoryForSearch(searchTerm) {
+  const term = String(searchTerm || "").toLowerCase();
+  if (/electronic|phone|computer|laptop|tablet|tv|audio|camera|gaming/.test(term)) return "electronics";
+  if (/beauty|skin|hair|perfume|makeup|personal care/.test(term)) return "beauty";
+  if (/fashion|clothing|shoe|boot|jacket|sneaker|swimwear/.test(term)) return "fashion";
+  if (/toy|board game|baby gear/.test(term)) return "toys";
+  if (/sport|fitness|workout|yoga|camping/.test(term)) return "sports";
+  if (/pet/.test(term)) return "pets";
+  if (/toilet paper|paper towel|detergent|dish soap|cleaning|trash bag|household/.test(term)) return "household";
+  if (/home|kitchen|appliance|furniture|decor|storage|bedding|pillow|curtain|improvement/.test(term)) return "home";
+  return null;
+}
+
 async function getAccessToken() {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -228,7 +241,7 @@ function computeDiscountPercent(item) {
   return null;
 }
 
-function normalizeDeal(item) {
+function normalizeDeal(item, searchTerm = "") {
   const listing = item.offersV2?.listings?.[0];
   const apiPrice = listing?.price?.money?.amount;
   const apiDisplayPrice = listing?.price?.money?.displayAmount;
@@ -258,8 +271,13 @@ function normalizeDeal(item) {
     discountPercent,
     rating: item.customerReviews?.starRating?.value || null,
     reviewCount: item.customerReviews?.count || null,
+    brand: item.byLineInfo?.brand?.displayValue || item.itemInfo?.byLineInfo?.brand?.displayValue || null,
+    category: categoryForSearch(searchTerm),
     url: item.detailPageURL || `https://www.amazon.com/dp/${item.asin}?tag=${PARTNER_TAG}`,
     fetchedAt: new Date().toISOString(),
+    // Preserve the searches that returned this product so the home page can
+    // prioritize time-sensitive Amazon searches without guessing from titles.
+    searchTerms: searchTerm ? [searchTerm] : [],
     // Auto-flag suspicious deals
     needsReview: discountPercent !== null && discountPercent >= SUSPICIOUS_DISCOUNT,
     flagReason: discountPercent !== null && discountPercent >= SUSPICIOUS_DISCOUNT 
@@ -341,7 +359,7 @@ async function fetchAndStoreDeals() {
   const newItems = [];
   for (const category of batch) {
     const items = await searchItems(accessToken, category);
-    newItems.push(...items);
+    newItems.push(...items.map((item) => ({ item, searchTerm: category })));
     await new Promise((r) => setTimeout(r, 2500));
   }
 
@@ -349,8 +367,8 @@ async function fetchAndStoreDeals() {
 
   const normalizedByAsin = new Map();
   const missingImageByAsin = new Map();
-  for (const item of newItems) {
-    const deal = normalizeDeal(item);
+  for (const { item, searchTerm } of newItems) {
+    const deal = normalizeDeal(item, searchTerm);
     if (!deal.asin || deal.discountPercent === null || deal.discountPercent < MIN_DISCOUNT) continue;
 
     // Never publish a blank card. A qualifying product that still has no
@@ -441,7 +459,14 @@ async function fetchAndStoreDeals() {
   for (const deal of normalizedNew) {
     const idx = merged.findIndex((d) => normalizeAsin(d.asin) === deal.asin);
     if (idx >= 0) {
-      merged[idx] = { ...merged[idx], ...deal };
+      merged[idx] = {
+        ...merged[idx],
+        ...deal,
+        searchTerms: Array.from(new Set([
+          ...(Array.isArray(merged[idx].searchTerms) ? merged[idx].searchTerms : []),
+          ...(Array.isArray(deal.searchTerms) ? deal.searchTerms : []),
+        ])),
+      };
     } else {
       merged.push(deal);
     }
