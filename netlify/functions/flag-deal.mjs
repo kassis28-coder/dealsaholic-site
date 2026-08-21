@@ -1,6 +1,7 @@
 import { getStore } from "@netlify/blobs";
 
 function flagReasonFor(issueType) {
+  if (issueType === "expired-deal") return "expired-deal-reported-by-shopper";
   if (issueType === "missing-price") return "missing-price";
   if (issueType === "missing-image") return "missing-image";
   if (issueType === "missing-price-image") return "missing-price-and-image";
@@ -18,6 +19,13 @@ async function flagSubmission(dealId, flagReason) {
   record.flagReason = flagReason;
 
   await store.setJSON(dealId, record);
+
+  // Seller and Walmart deals are part of the public feed too. Clear the
+  // durable cache so a shopper report removes the card on the next request.
+  await getStore("public-deals-cache")
+    .delete("latest-deduped-v5")
+    .catch(() => {});
+
   return true;
 }
 
@@ -127,7 +135,7 @@ async function flagAmazonDeal(
    * deal is removed on the next request.
    */
   await getStore("public-deals-cache")
-    .delete("latest-deduped-v3")
+    .delete("latest-deduped-v5")
     .catch(() => {});
 
   return true;

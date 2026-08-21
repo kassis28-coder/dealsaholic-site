@@ -27,6 +27,42 @@ function calcDiscount(price, originalPrice) {
   return Math.round(((originalPrice - price) / originalPrice) * 100);
 }
 
+function hasUsableImage(image) {
+  return typeof image === "string" && image.trim().length > 0;
+}
+
+function reviewStatusForImage(image) {
+  return hasUsableImage(image) ? "approved" : "pending";
+}
+
+function firstImageUrl(...candidates) {
+  const values = [...candidates];
+  while (values.length) {
+    const value = values.shift();
+    if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) {
+      return value.trim();
+    }
+    if (Array.isArray(value)) {
+      values.push(...value);
+    } else if (value && typeof value === "object") {
+      values.push(
+        value.url,
+        value.src,
+        value.href,
+        value.ImageUrl,
+        value.imageUrl,
+        value.ThumbnailUrl,
+        value.thumbnailUrl,
+        value.large,
+        value.medium,
+        value.images,
+        value.allImages
+      );
+    }
+  }
+  return null;
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -76,7 +112,16 @@ function normalizeImpactItem(raw) {
   const discountPercent = calculatedDiscount ?? (suppliedDiscount > 0 ? Math.round(suppliedDiscount) : null);
   const hasPromotion = Array.isArray(raw.Promotions) && raw.Promotions.length > 0;
   if ((discountPercent === null || discountPercent < MIN_DISCOUNT) && !hasPromotion) return null;
-  const image = raw.ImageUrl || raw.ThumbnailUrl || raw.Image || null;
+  const image = firstImageUrl(
+    raw.ImageUrl,
+    raw.ImageURL,
+    raw.ThumbnailUrl,
+    raw.ThumbnailURL,
+    raw.Image,
+    raw.Images,
+    raw.AdditionalImages,
+    raw.AdditionalImageUrls
+  );
   const rawUrl = raw.DirectLink || raw.TrackingLink || raw.Url || raw.URL || raw.MobileUrl || raw.Link;
   return {
     id: `walmart-${id}`, title,
@@ -84,7 +129,8 @@ function normalizeImpactItem(raw) {
     originalPrice: originalPrice > 0 ? `$${originalPrice.toFixed(2)}` : null,
     discountPercent,
     url: addAffiliateTag(rawUrl || `https://www.walmart.com/ip/${id}`),
-    image, store: "walmart", status: "approved", sponsored: false, source: "impact-catalog",
+    image, store: "walmart", status: reviewStatusForImage(image), sponsored: false, source: "impact-catalog",
+    reviewReason: hasUsableImage(image) ? null : "missing image",
     createdAt: new Date().toISOString(),
     expiresOn: new Date(Date.now() + MAX_AGE_HOURS * 60 * 60 * 1000).toISOString(),
   };
@@ -151,13 +197,22 @@ function normalizeWalmartItem(raw) {
   const isRollback = (title || "").toLowerCase().includes("rollback");
   if (discountPercent !== null && discountPercent < MIN_DISCOUNT && !isRollback) return null;
   const canonicalUrl = raw.canonicalUrl ? `https://www.walmart.com${raw.canonicalUrl}` : `https://www.walmart.com/ip/${id}`;
+  const image = firstImageUrl(
+    raw.imageInfo?.thumbnailUrl,
+    raw.imageInfo?.thumbnail,
+    raw.imageInfo?.allImages,
+    raw.imageInfo?.images,
+    raw.imageUrl,
+    raw.images
+  );
   return {
     id: `walmart-${id}`, title,
     price: `$${price.toFixed(2)}`,
     originalPrice: originalPrice > 0 ? `$${originalPrice.toFixed(2)}` : null,
     discountPercent, url: addAffiliateTag(canonicalUrl),
-    image: raw.imageInfo?.thumbnailUrl || null,
-    store: "walmart", status: "approved", sponsored: false, source: "walmart-web",
+    image,
+    store: "walmart", status: reviewStatusForImage(image), sponsored: false, source: "walmart-web",
+    reviewReason: hasUsableImage(image) ? null : "missing image",
     createdAt: new Date().toISOString(),
     expiresOn: new Date(Date.now() + MAX_AGE_HOURS * 60 * 60 * 1000).toISOString(),
   };
@@ -234,7 +289,10 @@ function normalizeSlickdealsItem(item) {
   const originalMatch = combined.match(/(?:reg(?:ular)?\.?|was|orig(?:inal)?(?: price)?)\s*[:$]?\s*\$?\s*(\d{1,5}(?:\.\d{1,2})?)/i);
   const originalPrice = originalMatch ? Number(originalMatch[1]) : null;
   const discountPercent = calcDiscount(price, originalPrice);
-  const image = content.match(/<img[^>]+src=["']([^"']+)/i)?.[1] || null;
+  const image = firstImageUrl(
+    content.match(/<img[^>]+(?:src|data-src)=["']([^"']+)/i)?.[1],
+    content.match(/<img[^>]+srcset=["']([^"'\s,]+)/i)?.[1]
+  );
   const publishedAt = xmlTag(item, "pubDate");
   const createdAt = publishedAt && !Number.isNaN(Date.parse(publishedAt))
     ? new Date(publishedAt).toISOString()
@@ -249,7 +307,8 @@ function normalizeSlickdealsItem(item) {
     url: addAffiliateTag(walmartUrlFromFeed(combined, title)),
     image,
     store: "walmart",
-    status: "approved",
+    status: reviewStatusForImage(image),
+    reviewReason: hasUsableImage(image) ? null : "missing image",
     sponsored: false,
     source: "slickdeals-walmart",
     createdAt,
@@ -306,6 +365,15 @@ async function saveDeals(deals) {
         await store.delete(blob.key);
         existingKeys.delete(blob.key);
         index = index.filter((i) => i !== blob.key);
+      } else if (
+        deal.status === "approved" &&
+        !hasUsableImage(deal.image || deal.photoUrl || deal.imageUrl)
+      ) {
+        // Legacy imports without an image were published before image review
+        // existed. Move them to Pending on the next scheduled import.
+        deal.status = "pending";
+        deal.reviewReason = "missing image";
+        await store.setJSON(blob.key, deal);
       }
     } catch {}
   }
@@ -326,6 +394,23 @@ async function run() {
   if (deals.length === 0) { console.log("Walmart web returned 0. Trying RSS fallback..."); deals = await fetchViaSlickdeals(); }
   if (deals.length === 0) return { success: true, added: 0, total: 0, note: "No Walmart deals found from any configured source" };
   const result = await saveDeals(deals);
+
+  // Impact can keep returning the same catalog snapshot. When that happens,
+  // check the lightweight Walmart RSS feed for fresh deals instead of leaving
+  // the public site unchanged for another hour.
+  if (result.added === 0 && !deals.some((deal) => deal.source === "slickdeals-walmart")) {
+    console.log("No new catalog deals added. Checking the Walmart RSS fallback for fresh deals...");
+    const rssDeals = await fetchViaSlickdeals();
+    if (rssDeals.length) {
+      const rssResult = await saveDeals(rssDeals);
+      return {
+        success: true,
+        added: result.added + rssResult.added,
+        total: deals.length + rssDeals.length,
+        fallbackAdded: rssResult.added,
+      };
+    }
+  }
   return { success: true, ...result };
 }
 
@@ -347,7 +432,12 @@ export default async function handler(req) {
       });
     }
   }
-  try { await run(); } catch (err) { console.error("Scheduled error:", err.message); }
+  // Let Netlify mark scheduled failures as failures. Swallowing these errors
+  // makes a broken importer look like a successful hourly run in the dashboard.
+  return run().then((result) => {
+    console.log("Scheduled Walmart import:", JSON.stringify(result));
+    return result;
+  });
 }
 
 export const config = { schedule: "15 * * * *" };

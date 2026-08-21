@@ -162,6 +162,10 @@ async function searchItems(accessToken, keywords) {
       marketplace: MARKETPLACE,
       resources: [
         "images.primary.large",
+        "images.primary.medium",
+        "images.primary.small",
+        "images.variants.large",
+        "images.variants.medium",
         "itemInfo.title",
         "offersV2.listings.price",
         "customerReviews.starRating",
@@ -232,10 +236,22 @@ function normalizeDeal(item) {
   const originalPriceAmount = apiPrice && savingsAmount ? apiPrice + savingsAmount : null;
   const discountPercent = computeDiscountPercent(item);
 
+  const primaryImage = item.images?.primary || {};
+  const variantImages = Array.isArray(item.images?.variants)
+    ? item.images.variants
+    : [];
+  const image =
+    primaryImage.large?.url ||
+    primaryImage.medium?.url ||
+    primaryImage.small?.url ||
+    variantImages.find(variant => variant?.large?.url)?.large?.url ||
+    variantImages.find(variant => variant?.medium?.url)?.medium?.url ||
+    null;
+
   return {
     asin: normalizeAsin(item.asin),
     title: item.itemInfo?.title?.displayValue || "Untitled product",
-    image: item.images?.primary?.large?.url || null,
+    image,
     price: apiDisplayPrice || null,
     apiPrice: apiPrice || null,
     originalPrice: originalPriceAmount ? `$${originalPriceAmount.toFixed(2)}` : null,
@@ -250,6 +266,57 @@ function normalizeDeal(item) {
       ? `High discount (${discountPercent}%) - may be a price glitch` 
       : null,
   };
+}
+
+async function queueMissingImageDeals(deals) {
+  if (!deals.length) return;
+
+  const store = getStore("submissions");
+  const index = await store
+    .get("index", { type: "json" })
+    .catch(() => []);
+  const nextIndex = Array.isArray(index) ? index : [];
+
+  for (const deal of deals) {
+    const id = `amazon-missing-image-${deal.asin}`;
+    const existing = await store
+      .get(id, { type: "json" })
+      .catch(() => null);
+
+    // Do not overwrite a shopper's later report with an import warning.
+    if (existing?.status === "needs-review" && existing.flaggedAt) {
+      continue;
+    }
+
+    await store.setJSON(id, {
+      ...existing,
+      id,
+      asin: deal.asin,
+      title: deal.title,
+      productTitle: deal.title,
+      price: deal.price,
+      originalPrice: deal.originalPrice,
+      discountPercent: deal.discountPercent,
+      productUrl: deal.url,
+      url: deal.url,
+      image: null,
+      imageUrl: null,
+      photoUrl: null,
+      store: "amazon",
+      source: "amazon-catalog",
+      status: "pending",
+      autoApproved: false,
+      reviewReason: "missing image from Amazon catalog",
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      expiresOn: new Date(
+        Date.now() + MAX_AGE_HOURS * 60 * 60 * 1000
+      ).toISOString(),
+    });
+
+    if (!nextIndex.includes(id)) nextIndex.unshift(id);
+  }
+
+  await store.setJSON("index", nextIndex);
 }
 
 async function fetchAndStoreDeals() {
@@ -281,15 +348,27 @@ async function fetchAndStoreDeals() {
   console.error(`Batch ${batchIndex + 1} fetched ${newItems.length} raw items.`);
 
   const normalizedByAsin = new Map();
+  const missingImageByAsin = new Map();
   for (const item of newItems) {
     const deal = normalizeDeal(item);
     if (!deal.asin || deal.discountPercent === null || deal.discountPercent < MIN_DISCOUNT) continue;
+
+    // Never publish a blank card. A qualifying product that still has no
+    // usable image is placed in Admin > Pending for manual review.
+    if (!deal.image) {
+      missingImageByAsin.set(deal.asin, deal);
+      continue;
+    }
+
     const current = normalizedByAsin.get(deal.asin);
     if (!current || (deal.discountPercent || 0) > (current.discountPercent || 0)) {
       normalizedByAsin.set(deal.asin, deal);
     }
   }
   const normalizedNew = Array.from(normalizedByAsin.values());
+  await queueMissingImageDeals(
+    Array.from(missingImageByAsin.values())
+  );
 
   console.error(`Batch ${batchIndex + 1} produced ${normalizedNew.length} qualifying deals.`);
 
@@ -341,13 +420,21 @@ async function fetchAndStoreDeals() {
   const now = Date.now();
   const maxAgeCutoff = now - MAX_AGE_HOURS * 60 * 60 * 1000;
 
- const freshExisting = existingDeals.filter((d) => {
+  const freshExisting = existingDeals.filter((d) => {
     // Remove if expiry date passed
     if (d.expiresOn && new Date(d.expiresOn).getTime() < now) return false;
     // Remove if older than 7 days
     if (d.fetchedAt && new Date(d.fetchedAt).getTime() < maxAgeCutoff) return false;
    return true;
   });
+
+  // Move legacy Amazon catalog entries that were saved without an image into
+  // Pending on the next importer run. get-deals already keeps them out of the
+  // public feed immediately after deployment.
+  const legacyMissingImageDeals = freshExisting.filter(
+    deal => deal.asin && !String(deal.image || "").trim()
+  );
+  await queueMissingImageDeals(legacyMissingImageDeals);
 
   // Merge: update existing deals with fresh prices
   const merged = [...freshExisting];

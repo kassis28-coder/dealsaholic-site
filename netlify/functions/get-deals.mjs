@@ -7,7 +7,7 @@ const PUBLIC_FEED_CACHE_TTL_MS = 30 * 60 * 1000;
 // Bump this whenever the rules that decide whether an approved deal is public
 // change, so the first request after deployment rebuilds instead of serving
 // the old decision from a durable cache.
-const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v3";
+const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v5";
 
 // Keep Amazon search inventory fresh; seller deals still use their own expiry dates.
 const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -319,6 +319,21 @@ async function getApprovedSellerDeals() {
           continue;
         }
 
+        const recordImage =
+          record.image ||
+          record.photoUrl ||
+          record.imageUrl ||
+          "";
+
+        // No approved submission can become a blank public card. Importers
+        // put missing-image Amazon and Walmart deals in Pending; this guard
+        // also protects manually approved legacy records.
+        if (
+          !String(recordImage).trim()
+        ) {
+          continue;
+        }
+
         if (isGarbageSubmission(record))
           continue;
 
@@ -359,10 +374,7 @@ async function getApprovedSellerDeals() {
             record.productTitle ||
             record.title,
           image:
-            record.image ||
-            record.photoUrl ||
-            record.imageUrl ||
-            null,
+            recordImage || null,
           price: record.price,
           originalPrice:
             record.originalPrice ||
@@ -441,6 +453,13 @@ async function rebuildPublicFeed(
       .filter(
         deal =>
           !deal.needsReview
+      )
+
+      // Existing catalog records from an earlier import can lack artwork.
+      // Keep them out of the public feed rather than rendering blank cards.
+      .filter(
+        deal =>
+          String(deal.image || "").trim()
       )
 
       .filter(deal => {
