@@ -27,9 +27,12 @@ export default async (req, context) => {
   if (id.startsWith('sub_') || id.startsWith('email-')) {
     const record = await getStore('submissions').get(id, { type: 'json' }).catch(() => null);
     deal = publicDeal(record, id);
-  } else if (/^[A-Z0-9]{10}$/i.test(id)) {
+  } else {
     const latest = await getStore('deals').get('latest', { type: 'json' }).catch(() => null);
-    deal = (latest?.deals || []).find(item => String(item.asin || '').toUpperCase() === id.toUpperCase()) || null;
+    deal = (latest?.deals || []).find(item =>
+      String(item.id || '') === id
+      || String(item.asin || '').toUpperCase() === id.toUpperCase()
+    ) || null;
   }
 
   if (!deal) return new Response('Deal not found', { status: 404 });
@@ -44,7 +47,7 @@ export default async (req, context) => {
     discount: deal.discountPercent,
     image: deal.image,
     code: deal.discountCode,
-    store: deal.storeType,
+    store: deal.storeType || deal.store,
     url: deal.url || deal.productUrl,
     canonical: `https://deals-aholic.com/d/${encodeURIComponent(id)}${source.search}`,
   };
