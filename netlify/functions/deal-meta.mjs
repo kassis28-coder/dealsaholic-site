@@ -129,7 +129,7 @@ export default async (req) => {
   </div>` : ''}
   <button id="deal-cta" class="cta-btn">${esc(storeLabel)}</button>
   <a href="/" class="back-link">← Back to all deals</a>
-  <p class="disclaimer">As an Amazon Associate, Deals-aholic earns from qualifying purchases. Prices and availability are subject to change.</p>
+  <p class="disclaimer">Deals-aholic may earn a commission from qualifying purchases. Prices and availability are subject to change.</p>
 </div>
 <script>
   const affiliateUrl = ${JSON.stringify(affiliateUrl)};
