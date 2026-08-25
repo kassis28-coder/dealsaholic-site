@@ -1,6 +1,8 @@
 import { getStore } from "@netlify/blobs";
 
 const LOCK_STALE_MS = 5 * 60 * 1000;
+const MAX_SCAN_PER_RUN = 250;
+const TELEGRAM_SCAN_CURSOR_KEY = "_telegram-scan-cursor";
 
 
 async function getJoyLinkUrl(amazonUrl, asin) {
@@ -119,8 +121,21 @@ export default async (_req, _context) => {
 
   let targetDeal = null;
   let targetId   = null;
+  let cursor = 0;
 
-  for (const id of index) {
+  try {
+    const savedCursor = await store.get(TELEGRAM_SCAN_CURSOR_KEY, { type: "json" });
+    if (Number.isInteger(savedCursor?.position)) cursor = savedCursor.position;
+  } catch {}
+
+  cursor = ((cursor % index.length) + index.length) % index.length;
+  const scanLimit = Math.min(MAX_SCAN_PER_RUN, index.length);
+  let scanned = 0;
+
+  for (let offset = 0; offset < scanLimit; offset += 1) {
+    const id = index[(cursor + offset) % index.length];
+    scanned += 1;
+
     let deal = null;
     try { deal = await store.get(id, { type: "json" }); } catch { continue; }
     if (!deal) continue;
@@ -130,16 +145,27 @@ export default async (_req, _context) => {
       const startedAt = new Date(deal.telegramProcessingStarted || 0).getTime();
       const ageMs = Date.now() - startedAt;
       if (ageMs < LOCK_STALE_MS) {
-        console.log(`${TAG} Deal ${id} skipped — locked ${Math.round(ageMs / 1000)}s ago`);
+        console.log(TAG + " Deal " + id + " skipped — locked " + Math.round(ageMs / 1000) + "s ago");
         continue;
       }
-      console.warn(`${TAG} Deal ${id} — stale lock (${Math.round(ageMs / 60000)} min). Clearing.`);
+      console.warn(TAG + " Deal " + id + " — stale lock (" + Math.round(ageMs / 60000) + " min). Clearing.");
     }
     if (!deal.url) continue;
     targetDeal = deal;
     targetId   = id;
     break;
   }
+
+  const nextCursor = (cursor + scanned) % index.length;
+  try {
+    await store.setJSON(TELEGRAM_SCAN_CURSOR_KEY, {
+      position: nextCursor,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(TAG + " Could not save scan cursor: " + err.message);
+  }
+  console.log(TAG + " Scanned " + scanned + " of " + index.length + " deals (starting at " + cursor + ").");
 
   if (!targetDeal) {
     console.log(`${TAG} No unposted deals available.`);
