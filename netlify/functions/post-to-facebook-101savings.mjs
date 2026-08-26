@@ -228,16 +228,20 @@ export async function postPendingDeals(limit = 5) {
     const { key, deal } = records[index];
     const nextPosition = (start + index + 1) % keys.length;
     if (!deal || deal.status !== "approved") continue;
-      // Never publish incomplete/review-only deals. The scheduled Page feed is
-      // intentionally image-first, matching the existing Facebook workflow.
-    if (!deal.title || !deal.url || !deal.image) continue;
+    // Public site records use more than one historical image field. Normalize
+    // them here so the 101 Savings scheduler can scan the full approved site
+    // collection without changing any importer or Deals Aholic posting logic.
+    const image = deal.image || deal.imageUrl || deal.photoUrl || "";
+    // Never publish incomplete deals. The scheduled Page feed stays image-first.
+    if (!deal.title || !deal.url || !image) continue;
       // Independent posted-flag from the deals-aholic Page, so a deal can be
       // posted to one Page, both, or neither without the two functions
       // interfering with each other.
     if (deal.postedTo101Savings) continue;
 
     try {
-      if (await isAlreadyPostedOn101Savings(deal)) {
+      const postableDeal = { ...deal, image };
+      if (await isAlreadyPostedOn101Savings(postableDeal)) {
         deal.postedTo101Savings = true;
         deal.duplicateSkipped101Savings = true;
         deal.postedAt101Savings = new Date().toISOString();
@@ -247,7 +251,7 @@ export async function postPendingDeals(limit = 5) {
         return { posted, results };
       }
 
-      const result = await postDealToFacebook(deal);
+      const result = await postDealToFacebook(postableDeal);
       deal.postedTo101Savings = true;
       deal.facebookPostId101Savings = result.id;
       deal.postedAt101Savings = new Date().toISOString();
