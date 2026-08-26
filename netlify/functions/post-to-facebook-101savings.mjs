@@ -125,6 +125,9 @@ function buildCaption(deal) {
   lines.push(``);
   lines.push(`🛒 Shop now: ${deal.url}`);
   lines.push(``);
+  lines.push(`🔎 Find more deals at https://deals-aholic.com/`);
+  lines.push(`⚠️ Prices and promotions can change at any time.`);
+  lines.push(``);
   lines.push(`#ad #deals #101savings #sale #shopping`);
   return lines.join("\n");
 }
@@ -254,7 +257,11 @@ export async function postPendingDeals(limit = 5) {
         return { posted, results };
       }
 
-      const result = await postDealToFacebook(postableDeal);
+      const joyLinkUrl = await getJoyLinkUrl(postableDeal.url, postableDeal.asin || null);
+      const result = await postDealToFacebook({
+        ...postableDeal,
+        url: joyLinkUrl || postableDeal.url,
+      });
       deal.postedTo101Savings = true;
       deal.facebookPostId101Savings = result.id;
       deal.postedAt101Savings = new Date().toISOString();
@@ -306,7 +313,11 @@ export default async function handler(req) {
           });
         }
         const deal = JSON.parse(raw);
-        const fbResult = await postDealToFacebook(deal);
+        const joyLinkUrl = await getJoyLinkUrl(deal.url, deal.asin || null);
+        const fbResult = await postDealToFacebook({
+          ...deal,
+          url: joyLinkUrl || deal.url,
+        });
         deal.postedTo101Savings = true;
         deal.facebookPostId101Savings = fbResult.id;
         deal.postedAt101Savings = new Date().toISOString();
