@@ -195,7 +195,10 @@ export async function postPendingDeals(limit = 5) {
   const stateStore = getStore("automation-state");
   const results = [];
   let posted = 0;
-  const scanLimit = 25;
+  // Match the site's established approved-deal read batch. This lets the
+  // scheduler find an eligible site deal without waiting through dozens of
+  // ten-minute runs when the newest records are pending or incomplete.
+  const scanLimit = 400;
 
   // The submissions index is already newest-first. Read it in parallel,
   // bounded batches and stop as soon as the requested number is posted. The
