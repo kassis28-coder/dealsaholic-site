@@ -2,8 +2,8 @@ import { getStore } from "@netlify/blobs";
 
 // Rebuilding this feed requires reading more than 2,000 reviewed submissions.
 // Keep the already-built feed warm long enough that normal visitors never pay
-// that cold-build cost. New approvals still appear on the next refresh.
-const PUBLIC_FEED_CACHE_TTL_MS = 30 * 60 * 1000;
+// that cold-build cost. New Amazon and Walmart results become visible within a few minutes.
+const PUBLIC_FEED_CACHE_TTL_MS = 5 * 60 * 1000;
 // Bump this whenever the rules that decide whether an approved deal is public
 // change, so the first request after deployment rebuilds instead of serving
 // the old decision from a durable cache.
@@ -17,13 +17,13 @@ const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "public, max-age=30",
   "Netlify-CDN-Cache-Control":
-    "public, durable, max-age=1800, stale-while-revalidate=86400",
+    "public, durable, max-age=60, stale-while-revalidate=300",
 };
 
 const STALE_RESPONSE_HEADERS = {
   ...RESPONSE_HEADERS,
   "Netlify-CDN-Cache-Control":
-    "public, durable, max-age=60, stale-while-revalidate=86400",
+    "public, durable, max-age=30, stale-while-revalidate=300",
 };
 
 // Titles that come from email auto-replies, bounces, or failed parsing.
