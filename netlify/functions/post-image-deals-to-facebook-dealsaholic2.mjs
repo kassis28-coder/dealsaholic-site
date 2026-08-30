@@ -24,7 +24,6 @@ const PAGE_ID = process.env.FB_PAGE_ID_DEALSAHOLIC2;
 const PAGE_TOKEN = process.env.FB_PAGE_TOKEN_DEALSAHOLIC2;
 const POSTING_ENABLED = process.env.FB_POSTING_ENABLED_DEALSAHOLIC2 === "true";
 const DRY_RUN = process.env.FB_DRY_RUN_DEALSAHOLIC2 !== "false"; // safe default: true
-const POST_INTERVAL_MIN = parseInt(process.env.FB_POST_INTERVAL_DEALSAHOLIC2 || "60", 10) || 60;
 
 const STORE_NAME = "facebook-image-posts-dealsaholic2";
 const FB_GRAPH_VERSION = "v19.0";
@@ -578,17 +577,6 @@ export default async function handler() {
 
   const store = getStore(STORE_NAME);
 
-  if (!DRY_RUN) {
-    const lastPost = await store.get("last-post", { type: "json" }).catch(() => null);
-    if (lastPost) {
-      const elapsedMin = (Date.now() - new Date(lastPost.postedAt).getTime()) / 60000;
-      if (elapsedMin < POST_INTERVAL_MIN) {
-        log(`Throttled — last post ${elapsedMin.toFixed(1)}min ago, interval is ${POST_INTERVAL_MIN}min.`);
-        return jsonResponse({ ok: true, reason: "throttled" });
-      }
-    }
-  }
-
   const locked = await acquireLock(store);
   if (!locked) {
     log("Another run holds the lock — skipping.");
@@ -751,5 +739,7 @@ export default async function handler() {
 }
 
 export const config = {
-  schedule: "*/5 * * * *",
+  // Match the 101 Savings cadence: one eligible deal every ten minutes,
+  // capped at six posts per hour by the scheduler itself.
+  schedule: "*/10 * * * *",
 };
