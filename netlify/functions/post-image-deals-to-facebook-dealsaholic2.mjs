@@ -171,7 +171,20 @@ function resolveDealFields(deal) {
     discountRaw: deal.discount ?? deal.discountPercent ?? null,
     price: deal.price,
     originalPrice: deal.originalPrice,
+    promoCode:
+      deal.discountCode ||
+      deal.promoCode ||
+      deal.couponCode ||
+      deal.coupon_code ||
+      deal.promo_code ||
+      null,
   };
+}
+
+function normalizePromoCode(value) {
+  const code = String(value || "").trim();
+  if (!code || /^(none|null|n\/a|no code)$/i.test(code)) return null;
+  return code.slice(0, 32);
 }
 
 function computePricing(fields) {
@@ -282,7 +295,7 @@ async function getJoyLinkUrl(amazonUrl, asin) {
 // Deterministic compositing only (sharp/SVG). Never redraws, alters, or
 // regenerates the product photo itself — only places the exact downloaded
 // image into the template alongside verified text.
-async function composeDealImage({ productBuf, title, pricing, benefits }) {
+async function composeDealImage({ productBuf, title, pricing, benefits, promoCode }) {
   await ensureEmbeddedFonts();
 
   const W = 1080, H = 1350;
@@ -358,6 +371,9 @@ async function composeDealImage({ productBuf, title, pricing, benefits }) {
 
   const priceFontSize = fitFontSize(pricing.priceDisplay, sidebarW - 44, 118);
   const priceLineY = priceTop + 95 + priceFontSize * 0.62;
+  const code = normalizePromoCode(promoCode);
+  const codeBoxY = Math.min(watermarkY - 126, priceLineY + (pricing.savingsDisplay ? 150 : pricing.originalPriceDisplay ? 92 : 68));
+  const codeFontSize = code ? fitFontSize(code, sidebarW - 66, 39) : 0;
 
   const starCx = leftX + 66, starCy = mainTop + 66;
   const starburstBadge = pricing.discountPct
@@ -426,6 +442,13 @@ ${pricing.savingsDisplay
   <text x="${priceCX}" y="${priceLineY + 108}" font-family="Poppins" font-weight="700" font-size="23" fill="#d81336" text-anchor="middle">SAVE ${esc(pricing.savingsDisplay)}</text>
 `
   : ""}
+${code
+  ? `
+  <text x="${priceCX}" y="${codeBoxY - 12}" font-family="Poppins" font-weight="700" font-size="22" fill="#3a2a26" text-anchor="middle" letter-spacing="1">USE PROMO CODE</text>
+  <rect x="${sidebarX + 18}" y="${codeBoxY}" width="${sidebarW - 36}" height="72" rx="14" fill="#ffffff" stroke="#d81336" stroke-width="3" stroke-dasharray="9 6"/>
+  <text x="${priceCX}" y="${codeBoxY + 49}" font-family="Poppins" font-weight="800" font-size="${codeFontSize}" fill="#d81336" text-anchor="middle" letter-spacing="1">${esc(code.toUpperCase())}</text>
+`
+  : ""}
 <path d="M ${sidebarX + sidebarW - 10} ${watermarkY + watermarkH - 20}
   C ${sidebarX + sidebarW - 40} ${watermarkY + 4}, ${sidebarX + 40} ${watermarkY}, ${sidebarX + 12} ${watermarkY + watermarkH - 26}
   C ${sidebarX + 40} ${watermarkY + watermarkH + 8}, ${sidebarX + sidebarW - 36} ${watermarkY + watermarkH + 12}, ${sidebarX + sidebarW - 10} ${watermarkY + watermarkH - 20} Z"
@@ -473,10 +496,14 @@ function buildCaption(fields, pricing, benefits, postUrl) {
         ? `Save ${pricing.savingsDisplay} today.`
         : "Grab it while it's live.";
 
+  const promoCode = normalizePromoCode(fields.promoCode);
+
   return [
     `🔥 ${title} — ${priceLine}`,
+    ...(promoCode ? [`🏷️ USE PROMO CODE: ${promoCode.toUpperCase()}`] : []),
     benefitSentence,
     postUrl || fields.url,
+    "For more deals, check out our website: https://deals-aholic.com/",
     "Prices and availability may change.",
     "As an Amazon Associate we earn from qualifying purchases.",
     buildHashtags(fields.title),
@@ -665,7 +692,13 @@ export default async function handler() {
 
       let imageBuffer;
       try {
-        imageBuffer = await composeDealImage({ productBuf: imgResult.buf, title: fields.title, pricing, benefits });
+        imageBuffer = await composeDealImage({
+          productBuf: imgResult.buf,
+          title: fields.title,
+          pricing,
+          benefits,
+          promoCode: fields.promoCode,
+        });
       } catch (e) {
         const count = (failRec?.count || 0) + 1;
         await store.setJSON(`fail:${dedupKey}`, { count, lastError: `compose failed: ${e.message}`, lastAttempt: new Date().toISOString() });
