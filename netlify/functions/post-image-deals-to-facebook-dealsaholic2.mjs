@@ -371,7 +371,9 @@ async function composeDealImage({ productBuf, title, pricing, benefits, promoCod
   const priceFontSize = fitFontSize(pricing.priceDisplay, sidebarW - 44, 118);
   const priceLineY = priceTop + 95 + priceFontSize * 0.62;
   const code = normalizePromoCode(promoCode);
-  const codeBoxY = Math.min(watermarkY - 126, priceLineY + (pricing.savingsDisplay ? 150 : pricing.originalPriceDisplay ? 92 : 68));
+  // Leave enough breathing room below the SAVE pill before the promo label.
+  // The previous 150px offset placed the label directly over the pill.
+  const codeBoxY = Math.min(watermarkY - 126, priceLineY + (pricing.savingsDisplay ? 190 : pricing.originalPriceDisplay ? 112 : 88));
   const codeFontSize = code ? fitFontSize(code, sidebarW - 66, 39) : 0;
 
   const starCx = leftX + 66, starCy = mainTop + 66;
