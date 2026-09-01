@@ -106,8 +106,14 @@ function dealCard(deal) {
 
 function landingFromRequest(req) {
   const url = new URL(req.url);
-  const landing = url.searchParams.get("landing");
-  const category = url.searchParams.get("category");
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  const landing = url.searchParams.get("landing")
+    || (pathname.endsWith("/amazon-deals") ? "amazon" : null)
+    || (pathname.endsWith("/walmart-deals") ? "walmart" : null)
+    || (pathname.endsWith("/promo-codes") ? "promo" : null);
+  const category = url.searchParams.get("category")
+    || pathname.match(/\/deals\/([a-z-]+)$/i)?.[1]?.toLowerCase()
+    || null;
   if (LANDINGS[landing]) return LANDINGS[landing];
   if (CATEGORIES[category]) {
     const label = CATEGORY_LABELS[category];
