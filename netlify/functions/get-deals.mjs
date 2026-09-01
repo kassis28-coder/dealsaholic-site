@@ -11,7 +11,7 @@ const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v5";
 
 // Keep Amazon search inventory fresh; seller deals still use their own expiry dates.
 const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
-const MAX_PUBLIC_AMAZON_DEALS = 120;
+const MAX_PUBLIC_AMAZON_DEALS = 250;
 
 // The homepage only renders a handful of cards. Sending the complete public
 // catalog (currently thousands of seller submissions) delays first paint on
