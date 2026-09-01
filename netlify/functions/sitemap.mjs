@@ -36,6 +36,7 @@ export default async function handler(req, context) {
     { loc: `${BASE_URL}/amazon-deals`, priority: "0.9", changefreq: "hourly", lastmod: today },
     { loc: `${BASE_URL}/walmart-deals`, priority: "0.9", changefreq: "hourly", lastmod: today },
     { loc: `${BASE_URL}/promo-codes`, priority: "0.9", changefreq: "hourly", lastmod: today },
+    { loc: `${BASE_URL}/telegram-deals`, priority: "0.7", changefreq: "daily", lastmod: today },
     ...CATEGORY_SLUGS.map(slug => ({ loc: `${BASE_URL}/deals/${slug}`, priority: "0.8", changefreq: "hourly", lastmod: today })),
     { loc: `${BASE_URL}/about.html`, priority: "0.5", changefreq: "monthly" },
     { loc: `${BASE_URL}/submit.html`, priority: "0.4", changefreq: "monthly" },

@@ -53,6 +53,11 @@
   status = 200
 
 [[redirects]]
+  from = "/telegram-deals"
+  to = "/.netlify/functions/seo-landing?landing=telegram"
+  status = 200
+
+[[redirects]]
   from = "/deals/:category"
   to = "/.netlify/functions/seo-landing?category=:category"
   status = 200
