@@ -13,6 +13,12 @@ const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v5";
 const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_PUBLIC_AMAZON_DEALS = 120;
 
+// The homepage only renders a handful of cards. Sending the complete public
+// catalog (currently thousands of seller submissions) delays first paint on
+// slower connections, so serve a compact, purpose-built payload there.
+const HOME_STORE_DEALS_PER_STORE = 35;
+const HOME_PROMO_DEALS = 35;
+
 const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "public, max-age=30",
@@ -187,6 +193,27 @@ function dealTimestamp(deal) {
   return Number.isFinite(timestamp)
     ? timestamp
     : 0;
+}
+
+function publicStoreOf(deal) {
+  const store = String(deal.storeType || deal.store || "").toLowerCase();
+  const url = String(deal.url || deal.productUrl || "").toLowerCase();
+  if (store === "walmart" || url.includes("walmart.com") || url.includes("goto.walmart.com")) return "walmart";
+  return store && store !== "other" ? store : "amazon";
+}
+
+function isPublicPromo(deal) {
+  const code = String(deal.discountCode || "").trim().toLowerCase();
+  return ((!!code && code !== "none") || deal.source === "email" || deal.source === "submission" || deal.sponsored === true);
+}
+
+function compactHomepagePayload(payload) {
+  const deals = payload.deals || [];
+  const newestFirst = items => [...items].sort((a, b) => dealTimestamp(b) - dealTimestamp(a));
+  const amazon = newestFirst(deals.filter(deal => publicStoreOf(deal) === "amazon" && !["email", "seller", "submission"].includes(String(deal.source || "").toLowerCase()))).slice(0, HOME_STORE_DEALS_PER_STORE);
+  const walmart = newestFirst(deals.filter(deal => publicStoreOf(deal) === "walmart")).slice(0, HOME_STORE_DEALS_PER_STORE);
+  const promos = newestFirst(deals.filter(isPublicPromo)).slice(0, HOME_PROMO_DEALS);
+  return {...payload, deals: deduplicateDeals([...amazon, ...walmart, ...promos]), totalDeals: deals.length};
 }
 
 function deduplicateDeals(candidates) {
@@ -556,9 +583,10 @@ async function rebuildPublicFeed(
 }
 
 export default async (
-  _req,
+  req,
   context
 ) => {
+  const homepageOnly = new URL(req.url).searchParams.get("view") === "home";
   const publicCache =
     getStore(
       "public-deals-cache"
@@ -599,9 +627,10 @@ export default async (
         );
       }
 
+      const responsePayload = homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload;
       return new Response(
         JSON.stringify(
-          cachedFeed.payload
+          responsePayload
         ),
         {
           headers:
@@ -619,7 +648,7 @@ export default async (
       );
 
     return new Response(
-      JSON.stringify(combined),
+      JSON.stringify(homepageOnly ? compactHomepagePayload(combined) : combined),
       {
         headers:
           RESPONSE_HEADERS,
@@ -629,9 +658,7 @@ export default async (
   } catch (err) {
     if (cachedFeed?.payload) {
       return new Response(
-        JSON.stringify(
-          cachedFeed.payload
-        ),
+        JSON.stringify(homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload),
         {
           headers:
             RESPONSE_HEADERS,
