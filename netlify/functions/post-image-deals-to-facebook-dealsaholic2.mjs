@@ -1,6 +1,10 @@
 import { getStore } from "@netlify/blobs";
 import { mkdir, writeFile } from "node:fs/promises";
 import sharp from "sharp";
+import {
+  forwardSuccessfulFacebookPost,
+  telegramDestinationsFromEnv,
+} from "./lib/dealsaholic2-telegram-forwarding.mjs";
 
 // =============================================================================
 // Deals-Aholic Image Posts — Facebook automation for facebook.com/Dealsaholic2
@@ -24,6 +28,7 @@ const PAGE_ID = process.env.FB_PAGE_ID_DEALSAHOLIC2;
 const PAGE_TOKEN = process.env.FB_PAGE_TOKEN_DEALSAHOLIC2;
 const POSTING_ENABLED = process.env.FB_POSTING_ENABLED_DEALSAHOLIC2 === "true";
 const DRY_RUN = process.env.FB_DRY_RUN_DEALSAHOLIC2 !== "false"; // safe default: true
+const TELEGRAM_FORWARDING_ENABLED = process.env.TELEGRAM_FORWARDING_ENABLED_DEALSAHOLIC2 === "true";
 
 const STORE_NAME = "facebook-image-posts-dealsaholic2";
 const FB_GRAPH_VERSION = "v19.0";
@@ -713,15 +718,50 @@ export default async function handler() {
 
       try {
         const fbResult = await publishPhoto(imageBuffer, caption);
+        const facebookPostId = fbResult.post_id || fbResult.id;
         await store.setJSON(`posted:${dedupKey}`, {
           postedAt: new Date().toISOString(),
-          facebookPostId: fbResult.post_id || fbResult.id,
+          facebookPostId,
           title: fields.title,
         });
         await store.setJSON("last-post", { postedAt: new Date().toISOString() });
         await store.setJSON("cursor", { position: (idx + 1) % keys.length });
-        log(`Posted ${dedupKey} -> ${fbResult.post_id || fbResult.id}`);
-        result = { ok: true, dealTitle: fields.title, dedupKey, facebookPostId: fbResult.post_id || fbResult.id };
+        log(`Facebook post successful | ${dedupKey} -> ${facebookPostId}`);
+
+        let telegram = { ok: false, reason: "disabled" };
+        if (TELEGRAM_FORWARDING_ENABLED) {
+          const botToken = process.env.TELEGRAM_BOT_TOKEN;
+          const destinations = telegramDestinationsFromEnv();
+          if (!botToken || destinations.length === 0) {
+            log("Telegram destination failed | error=missing Telegram configuration");
+            telegram = { ok: false, reason: "missing_configuration" };
+          } else {
+            try {
+              telegram = await forwardSuccessfulFacebookPost({
+                store,
+                facebookPostId,
+                dealId: dedupKey,
+                deal: {
+                  title: fields.title,
+                  price: pricing.priceDisplay,
+                  originalPrice: pricing.originalPriceDisplay,
+                  discountPercentage: pricing.discountPct,
+                  promoCode: normalizePromoCode(fields.promoCode),
+                  affiliateUrl: postUrl,
+                },
+                imageBuffer,
+                botToken,
+                destinations,
+                log,
+              });
+            } catch (telegramError) {
+              log(`Telegram destination failed | facebookPostId=${facebookPostId} | error=${telegramError.message}`);
+              telegram = { ok: false, reason: "forwarding_exception", error: telegramError.message };
+            }
+          }
+        }
+
+        result = { ok: true, dealTitle: fields.title, dedupKey, facebookPostId, telegram };
       } catch (e) {
         const count = (failRec?.count || 0) + 1;
         await store.setJSON(`fail:${dedupKey}`, { count, lastError: e.message, lastAttempt: new Date().toISOString() });
