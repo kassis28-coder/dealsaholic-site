@@ -47,6 +47,33 @@ export default async (req) => {
 
   const canonicalUrl = rawCanonical || `https://deals-aholic.com/deal?${p.toString()}`;
 
+  const numericPrice = Number.parseFloat(String(price).replace(/[^0-9.]/g, ''));
+  const productSchema = title && image && Number.isFinite(numericPrice) && numericPrice > 0
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: title,
+        image: [image],
+        description,
+        ...(asin ? { sku: asin, productID: asin } : {}),
+        ...(code ? {
+          additionalProperty: [{
+            '@type': 'PropertyValue',
+            name: 'Promo code',
+            value: code,
+          }],
+        } : {}),
+        offers: {
+          '@type': 'Offer',
+          url: canonicalUrl,
+          priceCurrency: 'USD',
+          price: numericPrice.toFixed(2),
+          availability: 'https://schema.org/InStock',
+          itemCondition: 'https://schema.org/NewCondition',
+        },
+      }
+    : null;
+
   let affiliateUrl = '';
   if (asin) {
     affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=daholic-20&linkCode=ll1&language=en_US`;
@@ -81,6 +108,7 @@ export default async (req) => {
 <meta name="twitter:title" content="${esc(title || 'Deal — Deals-aholic')}">
 <meta name="twitter:description" content="${esc(description)}">
 <meta name="twitter:image" content="${esc(previewImage)}">
+${productSchema ? `<script type="application/ld+json">${JSON.stringify(productSchema).replace(/</g, '\\u003c')}</script>` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>

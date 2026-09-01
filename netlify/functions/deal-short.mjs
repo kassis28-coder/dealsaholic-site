@@ -53,7 +53,8 @@ export default async (req, context) => {
     code: deal.discountCode,
     store: deal.storeType || deal.store,
     url: deal.url || deal.productUrl,
-    canonical: `https://deals-aholic.com/d/${encodeURIComponent(id)}${source.search}`,
+    // Tracking/preview parameters must never fragment the canonical URL.
+    canonical: `https://deals-aholic.com/d/${encodeURIComponent(id)}`,
   };
   for (const [key, value] of Object.entries(fields)) {
     if (value !== null && value !== undefined && value !== '') renderUrl.searchParams.set(key, value);

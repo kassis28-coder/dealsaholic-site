@@ -35,6 +35,28 @@
   to = "/.netlify/functions/post-to-facebook"
   status = 200
 
+# Permanent, server-rendered store and category pages for search engines and
+# visitors. The homepage keeps the same visual layout and links into these URLs.
+[[redirects]]
+  from = "/amazon-deals"
+  to = "/.netlify/functions/seo-landing?landing=amazon"
+  status = 200
+
+[[redirects]]
+  from = "/walmart-deals"
+  to = "/.netlify/functions/seo-landing?landing=walmart"
+  status = 200
+
+[[redirects]]
+  from = "/promo-codes"
+  to = "/.netlify/functions/seo-landing?landing=promo"
+  status = 200
+
+[[redirects]]
+  from = "/deals/:category"
+  to = "/.netlify/functions/seo-landing?category=:category"
+  status = 200
+
 # Render deal pages server-side so Facebook and other sharing services receive
 # the product image, while the page keeps the original working deal behavior.
 [[redirects]]

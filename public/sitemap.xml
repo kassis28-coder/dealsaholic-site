@@ -3,10 +3,22 @@
 
 <url>
 <loc>https://deals-aholic.com/</loc>
-<lastmod>2026-07-31</lastmod>
+<lastmod>2026-09-01</lastmod>
 <changefreq>hourly</changefreq>
 <priority>1.0</priority>
 </url>
+
+<url><loc>https://deals-aholic.com/amazon-deals</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.9</priority></url>
+<url><loc>https://deals-aholic.com/walmart-deals</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.9</priority></url>
+<url><loc>https://deals-aholic.com/promo-codes</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.9</priority></url>
+<url><loc>https://deals-aholic.com/deals/electronics</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/fashion</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/home</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/beauty</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/toys</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/sports</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/pets</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
+<url><loc>https://deals-aholic.com/deals/household</loc><lastmod>2026-09-01</lastmod><changefreq>hourly</changefreq><priority>0.8</priority></url>
 
 <url>
 <loc>https://deals-aholic.com/submit.html</loc>
