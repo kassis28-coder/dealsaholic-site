@@ -46,9 +46,15 @@ function buildCaption(deal) {
   if (deal.discount)      lines.push(`🔥 Save ${deal.discount}%`);
   lines.push(`🎟️ Promo Code: ${deal.discountCode || 'None'}`);
   lines.push(`🔗 ${deal.url}`);
-  lines.push("\n#ad");
+  lines.push("#ad");
+
+  // Keep the website CTA in every post, even when a seller title is very long.
+  const cta = "\n\n🌐 Find more live deals: https://deals-aholic.com";
   const text = lines.join("\n");
-  return text.length > 1024 ? text.substring(0, 1021) + "..." : text;
+  const maxBodyLength = 1024 - cta.length;
+  return text.length > maxBodyLength
+    ? text.substring(0, maxBodyLength - 3) + "..." + cta
+    : text + cta;
 }
 
 function validateDeal(deal) {
