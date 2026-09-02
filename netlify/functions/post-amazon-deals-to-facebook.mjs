@@ -80,16 +80,21 @@ function buildCaption(deal, style = 0) {
     "⭐ Don't miss today's deals:",
   ];
 
-  lines.push("");
-  lines.push(siteCTAs[Math.floor(Date.now() / 3600000) % siteCTAs.length]);
-  lines.push("https://deals-aholic.com");
-  lines.push("");
-  lines.push("⚠️ Price valid at the time posted but may change at any time.");
-  lines.push("#ad");
+  const footer = [
+    "",
+    siteCTAs[Math.floor(Date.now() / 3600000) % siteCTAs.length],
+    "https://deals-aholic.com",
+    "",
+    "⚠️ Price valid at the time posted but may change at any time.",
+    "#ad",
+  ].join("\n");
 
   const text = lines.join("\n");
-  // Telegram caption limit is 1024 chars
-  return text.length > 1024 ? text.substring(0, 1021) + "..." : text;
+  // Keep the CTA and disclaimer in Telegram's 1024-character caption limit.
+  const maxBodyLength = 1024 - footer.length;
+  return text.length > maxBodyLength
+    ? text.substring(0, maxBodyLength - 3) + "..." + footer
+    : text + footer;
 }
 
 function validateDeal(deal) {
