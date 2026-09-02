@@ -23,13 +23,13 @@ const RESPONSE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "public, max-age=30",
   "Netlify-CDN-Cache-Control":
-    "public, durable, max-age=60, stale-while-revalidate=300",
+    "public, durable, max-age=300, stale-while-revalidate=1800",
 };
 
 const STALE_RESPONSE_HEADERS = {
   ...RESPONSE_HEADERS,
   "Netlify-CDN-Cache-Control":
-    "public, durable, max-age=30, stale-while-revalidate=300",
+    "public, durable, max-age=60, stale-while-revalidate=1800",
 };
 
 // Titles that come from email auto-replies, bounces, or failed parsing.
