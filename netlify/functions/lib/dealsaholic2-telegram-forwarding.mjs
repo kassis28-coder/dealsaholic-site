@@ -55,10 +55,14 @@ export function buildTelegramCaption(deal) {
   if (deal.discountPercentage) lines.push(`📉 Discount: ${deal.discountPercentage}% off`);
   if (deal.promoCode) lines.push(`🎟️ Promo code: ${deal.promoCode}`);
   lines.push(`🔗 ${deal.affiliateUrl}`);
-  lines.push("", "#ad");
+  lines.push("#ad");
 
+  const cta = "\n\n🌐 Find more live deals: https://deals-aholic.com";
   const caption = lines.join("\n");
-  return caption.length <= 1024 ? caption : `${caption.slice(0, 1021)}...`;
+  const maxBodyLength = 1024 - cta.length;
+  return caption.length <= maxBodyLength
+    ? caption + cta
+    : `${caption.slice(0, maxBodyLength - 3)}...${cta}`;
 }
 
 async function sendPhoto({ botToken, chatId, imageBuffer, caption, fetchImpl }) {
