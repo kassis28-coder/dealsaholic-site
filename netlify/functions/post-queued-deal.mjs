@@ -174,7 +174,11 @@ async function postToTelegram(deal) {
     '📦 ' + (deal.title || storeName + ' Deal') + '\n\n' +
     '💰 ' + (deal.price || 'Check link') + discountLine + codeLine + '\n\n' +
     '👉 ' + deal.url;
-  const safeCaption = caption.length > 1024 ? caption.substring(0, 1021) + '...' : caption;
+  const cta = '\n\n🌐 Find more live deals: https://deals-aholic.com';
+  const maxBodyLength = 1024 - cta.length;
+  const safeCaption = caption.length > maxBodyLength
+    ? caption.substring(0, maxBodyLength - 3) + '...' + cta
+    : caption + cta;
 
   try {
     if (deal.imageUrl) {
