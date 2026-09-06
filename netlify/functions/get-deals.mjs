@@ -443,7 +443,7 @@ async function getApprovedSellerDeals() {
   }
 }
 
-async function rebuildPublicFeed(
+export async function rebuildPublicFeed(
   publicCache
 ) {
   const store =
@@ -609,23 +609,6 @@ export default async (
       const cacheAge =
         Date.now() -
         cachedFeed.cachedAt;
-
-      if (
-        cacheAge >=
-          PUBLIC_FEED_CACHE_TTL_MS &&
-        context?.waitUntil
-      ) {
-        context.waitUntil(
-          rebuildPublicFeed(
-            publicCache
-          ).catch(err =>
-            console.log(
-              "Background public feed refresh failed:",
-              err.message
-            )
-          )
-        );
-      }
 
       const responsePayload = homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload;
       return new Response(
