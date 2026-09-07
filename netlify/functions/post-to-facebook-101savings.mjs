@@ -1,4 +1,5 @@
 import { getStore } from "@netlify/blobs";
+import sharp from "sharp";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
@@ -31,23 +32,51 @@ async function downloadDealImage(imageUrl) {
     throw new Error(`Deal image returned ${contentType || "an unknown content type"}`);
   }
 
-  const bytes = await res.arrayBuffer();
-  if (bytes.byteLength === 0) throw new Error("Deal image download was empty");
-  if (bytes.byteLength > MAX_FACEBOOK_IMAGE_BYTES) {
-    throw new Error(`Deal image is too large (${bytes.byteLength} bytes)`);
+  const sourceBytes = Buffer.from(await res.arrayBuffer());
+  if (sourceBytes.byteLength === 0) throw new Error("Deal image download was empty");
+  if (sourceBytes.byteLength > MAX_FACEBOOK_IMAGE_BYTES) {
+    throw new Error(`Deal image is too large (${sourceBytes.byteLength} bytes)`);
   }
 
-  const extension = contentType === "image/png"
-    ? "png"
-    : contentType === "image/webp"
-      ? "webp"
-      : "jpg";
+  // Facebook can acknowledge a photo upload before it finishes processing the
+  // asset. Amazon/CDN responses are sometimes WebP/AVIF or contain unusual
+  // color profiles; those uploads can consequently appear as blank posts even
+  // though Graph returned a photo ID. Decode every source and upload one known,
+  // Facebook-safe JPEG instead.
+  let metadata;
+  let normalizedBytes;
+  try {
+    const pipeline = sharp(sourceBytes, { failOn: "error" }).rotate();
+    metadata = await pipeline.metadata();
+    if (!metadata.width || !metadata.height) {
+      throw new Error("image dimensions are unavailable");
+    }
+    normalizedBytes = await pipeline
+      .flatten({ background: "#ffffff" })
+      .resize({
+        width: 1600,
+        height: 1600,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 90, chromaSubsampling: "4:2:0" })
+      .toBuffer();
+  } catch (err) {
+    throw new Error(`Deal image could not be normalized: ${err.message}`);
+  }
+
+  if (!normalizedBytes.byteLength) {
+    throw new Error("Normalized deal image was empty");
+  }
 
   return {
-    blob: new Blob([bytes], { type: contentType }),
-    filename: `deal.${extension}`,
-    contentType,
-    byteLength: bytes.byteLength,
+    blob: new Blob([normalizedBytes], { type: "image/jpeg" }),
+    filename: "deal.jpg",
+    contentType: "image/jpeg",
+    byteLength: normalizedBytes.byteLength,
+    sourceContentType: contentType,
+    width: metadata.width,
+    height: metadata.height,
   };
 }
 
@@ -111,7 +140,10 @@ async function postDealToFacebook(deal) {
     );
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error?.message || "FB photo post failed");
-    console.log(`[101-savings] Uploaded image bytes: ${image.byteLength} (${image.contentType})`);
+    console.log(
+      `[101-savings] Uploaded normalized image: ${image.byteLength} bytes ` +
+      `(${image.width}x${image.height}, ${image.sourceContentType} -> ${image.contentType})`
+    );
     return { type: "photo", id: data.id, post_id: data.post_id };
   }
 
