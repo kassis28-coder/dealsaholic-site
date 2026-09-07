@@ -49,8 +49,11 @@
 
 [[redirects]]
   from = "/promo-codes"
-  to = "/.netlify/functions/seo-landing?landing=promo"
-  status = 200
+  # Send shoppers to the interactive catalog. It includes every public,
+  # approved email submission (including approved deals without a code),
+  # provides search/filter controls, and retains the report-for-review buttons.
+  to = "/?store=all&category=promo"
+  status = 302
 
 [[redirects]]
   from = "/telegram-deals"
