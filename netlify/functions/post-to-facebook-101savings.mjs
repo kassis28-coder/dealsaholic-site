@@ -10,7 +10,46 @@ const FB_PAGE_ID =
   process.env.FACEBOOK_101SAVINGS_PAGE_ID;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const FB_REQUEST_TIMEOUT_MS = 12_000;
+const IMAGE_REQUEST_TIMEOUT_MS = 12_000;
+const MAX_FACEBOOK_IMAGE_BYTES = 12 * 1024 * 1024;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+
+async function downloadDealImage(imageUrl) {
+  const absoluteUrl = new URL(imageUrl, "https://deals-aholic.com").href;
+  const res = await fetch(absoluteUrl, {
+    signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+    headers: {
+      Accept: "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+      "User-Agent": "DealsAholic-Facebook-Publisher/1.0",
+    },
+  });
+
+  if (!res.ok) throw new Error(`Deal image download failed (${res.status})`);
+
+  const contentType = (res.headers.get("content-type") || "").split(";")[0].toLowerCase();
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`Deal image returned ${contentType || "an unknown content type"}`);
+  }
+
+  const bytes = await res.arrayBuffer();
+  if (bytes.byteLength === 0) throw new Error("Deal image download was empty");
+  if (bytes.byteLength > MAX_FACEBOOK_IMAGE_BYTES) {
+    throw new Error(`Deal image is too large (${bytes.byteLength} bytes)`);
+  }
+
+  const extension = contentType === "image/png"
+    ? "png"
+    : contentType === "image/webp"
+      ? "webp"
+      : "jpg";
+
+  return {
+    blob: new Blob([bytes], { type: contentType }),
+    filename: `deal.${extension}`,
+    contentType,
+    byteLength: bytes.byteLength,
+  };
+}
 
 async function getJoyLinkUrl(amazonUrl, asin) {
   const apiKey = process.env.JOYLINK_API_KEY;
@@ -52,21 +91,27 @@ async function postDealToFacebook(deal) {
   const caption = buildCaption(deal);
 
   if (deal.image) {
+    // Upload the actual image bytes. Passing Amazon/CDN URLs to Facebook made
+    // Facebook fetch the asset itself; that intermittently produced an empty
+    // image area even though Graph returned a successful photo post ID.
+    const image = await downloadDealImage(deal.image);
+    const form = new FormData();
+    form.append("source", image.blob, image.filename);
+    form.append("caption", caption);
+    form.append("access_token", FB_PAGE_TOKEN);
+    form.append("published", "true");
+
     const res = await fetch(
       `https://graph.facebook.com/v19.0/${FB_PAGE_ID}/photos`,
       {
         method: "POST",
-        signal: AbortSignal.timeout(FB_REQUEST_TIMEOUT_MS),
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: deal.image,
-          caption,
-          access_token: FB_PAGE_TOKEN,
-        }),
+        signal: AbortSignal.timeout(FB_REQUEST_TIMEOUT_MS + IMAGE_REQUEST_TIMEOUT_MS),
+        body: form,
       }
     );
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error?.message || "FB photo post failed");
+    console.log(`[101-savings] Uploaded image bytes: ${image.byteLength} (${image.contentType})`);
     return { type: "photo", id: data.id, post_id: data.post_id };
   }
 
