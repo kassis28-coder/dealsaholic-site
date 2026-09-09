@@ -13,7 +13,26 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const FB_REQUEST_TIMEOUT_MS = 12_000;
 const IMAGE_REQUEST_TIMEOUT_MS = 12_000;
 const MAX_FACEBOOK_IMAGE_BYTES = 12 * 1024 * 1024;
+const MIN_FACEBOOK_IMAGE_DIMENSION = 100;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+
+export function isMalformedDealTitle(title) {
+  const value = String(title || "").trim();
+  return (
+    !value ||
+    /^[{[]\s*["']?(?:htmlBody|textBody|subject)["']?\s*:/i.test(value) ||
+    /<(?:html|body|head)(?:\s|>)/i.test(value)
+  );
+}
+
+export function hasUsableFacebookDimensions(width, height) {
+  return (
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    width >= MIN_FACEBOOK_IMAGE_DIMENSION &&
+    height >= MIN_FACEBOOK_IMAGE_DIMENSION
+  );
+}
 
 async function downloadDealImage(imageUrl) {
   const absoluteUrl = new URL(imageUrl, "https://deals-aholic.com").href;
@@ -48,8 +67,11 @@ async function downloadDealImage(imageUrl) {
   try {
     const pipeline = sharp(sourceBytes, { failOn: "error" }).rotate();
     metadata = await pipeline.metadata();
-    if (!metadata.width || !metadata.height) {
-      throw new Error("image dimensions are unavailable");
+    if (!hasUsableFacebookDimensions(metadata.width, metadata.height)) {
+      throw new Error(
+        `image is too small (${metadata.width || 0}x${metadata.height || 0}); ` +
+        `likely a tracking pixel`
+      );
     }
     normalizedBytes = await pipeline
       .flatten({ background: "#ffffff" })
@@ -115,6 +137,10 @@ async function getJoyLinkUrl(amazonUrl, asin) {
 async function postDealToFacebook(deal) {
   if (!FB_PAGE_TOKEN || !FB_PAGE_ID) {
     throw new Error("Missing FB_PAGE_TOKEN_101SAVINGS or FB_PAGE_ID_101SAVINGS env vars");
+  }
+
+  if (isMalformedDealTitle(deal.title)) {
+    throw new Error("Deal title contains raw email or JSON content");
   }
 
   const caption = buildCaption(deal);
@@ -240,7 +266,7 @@ export async function postSiteDealsTo101Savings(limit = 1) {
       if (results.length >= limit) break;
       if (
         deal.needsReview ||
-        !deal.title ||
+        isMalformedDealTitle(deal.title) ||
         !deal.url ||
         !deal.image ||
         Number(deal.discountPercent) < 20
@@ -316,7 +342,7 @@ export async function postPendingDeals(limit = 5) {
     // collection without changing any importer or Deals Aholic posting logic.
     const image = deal.image || deal.imageUrl || deal.photoUrl || "";
     // Never publish incomplete deals. The scheduled Page feed stays image-first.
-    if (!deal.title || !deal.url || !image) continue;
+    if (isMalformedDealTitle(deal.title) || !deal.url || !image) continue;
       // Independent posted-flag from the deals-aholic Page, so a deal can be
       // posted to one Page, both, or neither without the two functions
       // interfering with each other.
