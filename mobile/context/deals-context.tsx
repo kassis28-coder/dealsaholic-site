@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { fetchDeals } from '@/services/deals';
 import { Deal, dealKey } from '@/types/deal';
 
@@ -16,6 +17,7 @@ type DealsContextValue = {
 };
 
 const FAVORITES_KEY = 'deals-aholic:favorites';
+const HOURLY_REFRESH_MS = 60 * 60 * 1000;
 const DealsContext = createContext<DealsContextValue | null>(null);
 
 export function DealsProvider({ children }: PropsWithChildren) {
@@ -24,26 +26,41 @@ export function DealsProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestInFlight = useRef(false);
+  const lastLoadedAt = useRef(0);
 
-  const load = useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
-    else setLoading(true);
+  const load = useCallback(async (mode: 'initial' | 'manual' | 'background' = 'initial') => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
+    if (mode === 'manual') setRefreshing(true);
+    if (mode === 'initial') setLoading(true);
     try {
       setDeals(await fetchDeals());
+      lastLoadedAt.current = Date.now();
       setError(null);
     } catch {
       setError('Deals could not be loaded. Pull down to try again.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      requestInFlight.current = false;
+      if (mode === 'initial') setLoading(false);
+      if (mode === 'manual') setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    load('initial');
     AsyncStorage.getItem(FAVORITES_KEY).then((stored) => {
       if (stored) setFavorites(new Set(JSON.parse(stored)));
     }).catch(() => undefined);
+
+    const interval = setInterval(() => load('background'), HOURLY_REFRESH_MS);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && Date.now() - lastLoadedAt.current >= HOURLY_REFRESH_MS) load('background');
+    });
+    return () => {
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
   }, [load]);
 
   const toggleFavorite = useCallback((deal: Deal) => {
@@ -63,7 +80,7 @@ export function DealsProvider({ children }: PropsWithChildren) {
     refreshing,
     error,
     favorites,
-    refresh: () => load(true),
+    refresh: () => load('manual'),
     toggleFavorite,
     isFavorite: (deal) => favorites.has(dealKey(deal)),
     findDeal: (id) => deals.find((deal) => dealKey(deal) === id),

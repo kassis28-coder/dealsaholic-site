@@ -6,30 +6,30 @@ import { colors } from '@/constants/colors';
 import { useDeals } from '@/context/deals-context';
 import { Deal, dealKey, retailerName, shareUrl } from '@/types/deal';
 
-export function DealCard({ deal }: { deal: Deal }) {
+export function DealCard({ deal, compact = false, shelf = false }: { deal: Deal; compact?: boolean; shelf?: boolean }) {
   const { isFavorite, toggleFavorite } = useDeals();
   const favorite = isFavorite(deal);
   const retailer = retailerName(deal);
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.card, compact && styles.cardCompact, shelf && styles.cardShelf, pressed && styles.pressed]}
       onPress={() => router.push({ pathname: '/deal/[id]', params: { id: dealKey(deal) } })}>
-      <View style={styles.imageWrap}>
+      <View style={[styles.imageWrap, compact && styles.imageWrapCompact]}>
         {deal.image ? <Image source={{ uri: deal.image }} style={styles.image} contentFit="contain" transition={150} /> : <Ionicons name="image-outline" size={42} color={colors.line} />}
         {!!deal.discountPercent && <Text style={styles.discount}>{deal.discountPercent}% OFF</Text>}
       </View>
-      <View style={styles.body}>
+      <View style={[styles.body, compact && styles.bodyCompact]}>
         <View style={styles.eyebrowRow}>
           <Text style={styles.retailer}>{retailer}</Text>
           {!!deal.discountCode && <Text style={styles.codeBadge}>PROMO CODE</Text>}
         </View>
-        <Text style={styles.title} numberOfLines={3}>{deal.title}</Text>
+        <Text style={[styles.title, compact && styles.titleCompact]} numberOfLines={compact ? 3 : 3}>{deal.title}</Text>
         <View style={styles.priceRow}>
-          <Text style={styles.price}>{String(deal.price || 'See price')}</Text>
-          {!!deal.originalPrice && <Text style={styles.original}>{String(deal.originalPrice)}</Text>}
+          <Text style={[styles.price, compact && styles.priceCompact]}>{String(deal.price || 'See price')}</Text>
+          {!!deal.originalPrice && <Text style={[styles.original, compact && styles.originalCompact]}>{String(deal.originalPrice)}</Text>}
         </View>
-        <View style={styles.actions}>
+        <View style={[styles.actions, compact && styles.actionsCompact]}>
           <Pressable hitSlop={10} onPress={(event) => { event.stopPropagation(); toggleFavorite(deal); }}>
             <Ionicons name={favorite ? 'heart' : 'heart-outline'} size={24} color={favorite ? colors.red : colors.muted} />
           </Pressable>
@@ -44,17 +44,25 @@ export function DealCard({ deal }: { deal: Deal }) {
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.line, marginBottom: 14 },
+  cardCompact: { flexBasis: '48%', flexGrow: 0, borderRadius: 14, marginBottom: 12 },
+  cardShelf: { width: 205, flexBasis: 'auto', marginRight: 12 },
   pressed: { opacity: 0.82 },
   imageWrap: { height: 210, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', position: 'relative' },
+  imageWrapCompact: { height: 158 },
   image: { width: '100%', height: '100%' },
   discount: { position: 'absolute', top: 12, right: 12, overflow: 'hidden', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.green, color: '#fff', fontSize: 12, fontWeight: '800' },
   body: { padding: 15 },
+  bodyCompact: { padding: 10, minHeight: 172 },
   eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 7 },
   retailer: { color: colors.orangeDark, fontWeight: '800', fontSize: 12, textTransform: 'uppercase' },
   codeBadge: { color: colors.purple, backgroundColor: '#F0EBFF', borderRadius: 10, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 3, fontSize: 10, fontWeight: '800' },
   title: { color: colors.ink, fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  titleCompact: { fontSize: 13, lineHeight: 18 },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 9, marginTop: 12 },
   price: { color: colors.ink, fontSize: 22, fontWeight: '900' },
+  priceCompact: { fontSize: 18 },
   original: { color: colors.muted, textDecorationLine: 'line-through', fontSize: 14 },
+  originalCompact: { fontSize: 11 },
   actions: { position: 'absolute', bottom: 17, right: 15, flexDirection: 'row', gap: 15 },
+  actionsCompact: { position: 'relative', bottom: undefined, right: undefined, justifyContent: 'flex-end', marginTop: 12 },
 });

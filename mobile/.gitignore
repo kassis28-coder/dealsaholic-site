@@ -20,3 +20,5 @@ expo-env.d.ts
 .DS_Store
 .env*.local
 *.tsbuildinfo
+.cache/
+.local-bin/

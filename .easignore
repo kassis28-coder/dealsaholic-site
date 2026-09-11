@@ -1,0 +1,12 @@
+.git/
+node_modules/
+mobile/node_modules/
+mobile/.expo/
+mobile/.cache/
+mobile/.local-bin/
+mobile/dist/
+mobile/web-build/
+work/
+outputs/
+*.log
+.DS_Store

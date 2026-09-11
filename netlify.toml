@@ -6,9 +6,19 @@
   node_bundler = "esbuild"
 
 [[redirects]]
-  from = "/api/deals"
-  to = "/.netlify/functions/get-deals"
-  status = 200
+from = "/api/deals"
+to = "/.netlify/functions/get-deals"
+status = 200
+
+[[redirects]]
+from = "/api/community"
+to = "/.netlify/functions/community"
+status = 200
+
+[[redirects]]
+from = "/api/deal-alerts"
+to = "/.netlify/functions/deal-alerts"
+status = 200
 
 [[redirects]]
   from = "/api/fetch-walmart-deals"
