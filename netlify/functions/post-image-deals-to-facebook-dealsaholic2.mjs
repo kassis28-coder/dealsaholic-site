@@ -5,6 +5,7 @@ import {
   forwardSuccessfulFacebookPost,
   telegramDestinationsFromEnv,
 } from "./lib/dealsaholic2-telegram-forwarding.mjs";
+import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
 
 // =============================================================================
 // Deals-Aholic Image Posts — Facebook automation for facebook.com/Dealsaholic2
@@ -629,7 +630,9 @@ export default async function handler() {
         store.get(`fail:${dedupKey}`, { type: "json" }).catch(() => null),
       ]);
       if (posted || skipped) continue;
-      if (failRec && failRec.count >= MAX_ATTEMPTS) {
+      const priorFailureWasImageOnly = /^(?:invalid image url|image host not authorized|image fetch failed|image fetch status|unexpected content-type|image too large|missing image)/i
+        .test(String(failRec?.lastError || ""));
+      if (failRec && failRec.count >= MAX_ATTEMPTS && !priorFailureWasImageOnly) {
         await store.setJSON(`skip:${dedupKey}`, { reason: "max retries exceeded", skippedAt: new Date().toISOString() });
         continue;
       }
@@ -638,10 +641,6 @@ export default async function handler() {
       const pricing = computePricing(fields);
       if (!pricing) {
         await store.setJSON(`skip:${dedupKey}`, { reason: "missing or unverified price", skippedAt: new Date().toISOString() });
-        continue;
-      }
-      if (!fields.imageUrl) {
-        await store.setJSON(`skip:${dedupKey}`, { reason: "missing image", skippedAt: new Date().toISOString() });
         continue;
       }
       if (!fields.url) {
@@ -665,11 +664,17 @@ export default async function handler() {
         }
       }
 
-      const imgResult = await downloadAuthorizedImage(fields.imageUrl);
+      const imgResult = fields.imageUrl
+        ? await downloadAuthorizedImage(fields.imageUrl)
+        : { error: "missing image" };
+      let productBuffer = imgResult.buf;
+      let usedFallbackImage = false;
       if (imgResult.error) {
-        const count = (failRec?.count || 0) + 1;
-        await store.setJSON(`fail:${dedupKey}`, { count, lastError: imgResult.error, lastAttempt: new Date().toISOString() });
-        continue;
+        // Do not fabricate a product photo. Use a neutral branded card so a
+        // blocked/missing retailer asset cannot starve the whole posting queue.
+        productBuffer = await createFacebookFallbackImage(fields.title);
+        usedFallbackImage = true;
+        log(`Using fallback image | ${dedupKey} | ${imgResult.error}`);
       }
 
       const benefits = Array.isArray(deal.benefits)
@@ -688,7 +693,7 @@ export default async function handler() {
       let imageBuffer;
       try {
         imageBuffer = await composeDealImage({
-          productBuf: imgResult.buf,
+          productBuf: productBuffer,
           title: fields.title,
           pricing,
           benefits,
@@ -723,6 +728,7 @@ export default async function handler() {
           postedAt: new Date().toISOString(),
           facebookPostId,
           title: fields.title,
+          usedFallbackImage,
         });
         await store.setJSON("last-post", { postedAt: new Date().toISOString() });
         await store.setJSON("cursor", { position: (idx + 1) % keys.length });

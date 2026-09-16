@@ -1,5 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import sharp from "sharp";
+import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
@@ -149,7 +150,24 @@ async function postDealToFacebook(deal) {
     // Upload the actual image bytes. Passing Amazon/CDN URLs to Facebook made
     // Facebook fetch the asset itself; that intermittently produced an empty
     // image area even though Graph returned a successful photo post ID.
-    const image = await downloadDealImage(deal.image);
+    let image;
+    try {
+      image = await downloadDealImage(deal.image);
+    } catch (error) {
+      console.warn(`[101-savings] Using fallback image: ${error.message}`);
+      const fallbackBytes = await createFacebookFallbackImage(deal.title, {
+        brand: "101 SAVINGS",
+      });
+      image = {
+        blob: new Blob([fallbackBytes], { type: "image/jpeg" }),
+        filename: "deal-fallback.jpg",
+        contentType: "image/jpeg",
+        byteLength: fallbackBytes.byteLength,
+        sourceContentType: "fallback",
+        width: 1080,
+        height: 1080,
+      };
+    }
     const form = new FormData();
     form.append("source", image.blob, image.filename);
     form.append("caption", caption);
@@ -342,7 +360,7 @@ export async function postPendingDeals(limit = 5) {
     // collection without changing any importer or Deals Aholic posting logic.
     const image = deal.image || deal.imageUrl || deal.photoUrl || "";
     // Never publish incomplete deals. The scheduled Page feed stays image-first.
-    if (isMalformedDealTitle(deal.title) || !deal.url || !image) continue;
+    if (isMalformedDealTitle(deal.title) || !deal.url) continue;
       // Independent posted-flag from the deals-aholic Page, so a deal can be
       // posted to one Page, both, or neither without the two functions
       // interfering with each other.
@@ -375,7 +393,10 @@ export async function postPendingDeals(limit = 5) {
     } catch (err) {
       results.push({ title: deal.title?.slice(0, 50), error: err.message });
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-      return { posted, results };
+      // A single expired link, rejected photo, or malformed retailer response
+      // must not consume the entire scheduled run. Keep scanning for the next
+      // approved deal and preserve the error for Netlify diagnostics.
+      continue;
     }
   }
 
