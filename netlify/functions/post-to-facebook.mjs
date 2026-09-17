@@ -149,11 +149,14 @@ export default async (_req, _context) => {
     });
   }
 
-  // ── Step 2 & 3: Find first deal that is unposted and not locked ──────────
+  // ── Step 2 & 3: Find a valid, unposted, unlocked deal ────────────────────
   let targetDeal = null;
   let targetId   = null;
 
-  for (const id of index) {
+  // New deals are appended to the index. Search the newest records first and
+  // cap each invocation so old malformed imports cannot exhaust the function.
+  const candidateIds = index.slice(-400).reverse();
+  for (const id of candidateIds) {
     let deal = null;
     try { deal = await store.get(id, { type: 'json' }); } catch { continue; }
     if (!deal) continue;
@@ -175,6 +178,23 @@ export default async (_req, _context) => {
     }
 
     if (!deal.url) continue;
+
+    // Do not let one incomplete record terminate the entire scheduled run.
+    // Mark it as skipped and continue scanning for a publishable site deal.
+    const validationErrors = validateDeal(deal);
+    if (validationErrors.length > 0) {
+      console.warn(`${TAG} Deal ${id} skipped during scan: ${validationErrors.join(', ')}`);
+      await store.setJSON(id, {
+        ...deal,
+        facebookPosted: true,
+        facebookProcessing: false,
+        facebookSkipped: true,
+        facebookSkipReason: validationErrors.join(', '),
+        facebookPostedAt: new Date().toISOString(),
+      });
+      continue;
+    }
+
     targetDeal = deal;
     targetId   = id;
     break;
@@ -224,23 +244,6 @@ export default async (_req, _context) => {
       facebookReconciled: true,
     });
     return new Response(JSON.stringify({ success: true, reconciled: true, dealId: targetId }), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  // ── Validate required fields ─────────────────────────────────────────────
-  const errors = validateDeal(targetDeal);
-  if (errors.length > 0) {
-    console.error(`${TAG} Validation failed for deal ${targetId}: ${errors.join(', ')} — skipping permanently.`);
-    await store.setJSON(targetId, {
-      ...targetDeal,
-      facebookPosted: true,
-      facebookProcessing: false,
-      facebookSkipped: true,
-      facebookSkipReason: errors.join(', '),
-      facebookPostedAt: new Date().toISOString(),
-    });
-    return new Response(JSON.stringify({ success: false, skipped: true, reason: errors.join(', ') }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   }
