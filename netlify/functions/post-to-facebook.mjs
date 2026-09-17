@@ -295,5 +295,7 @@ export default async (_req, _context) => {
   );
 };
 export const config = {
-  schedule: "0 */3 * * *"
+  // Keep the original Deals-aholic Page aligned with the other Page feeds.
+  // Each invocation publishes at most one eligible website deal.
+  schedule: "*/10 * * * *"
 };
