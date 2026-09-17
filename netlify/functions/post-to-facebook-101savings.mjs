@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
 import { facebookCandidatePositions } from "./lib/facebook-candidate-order.mjs";
 import { resolve101SavingsDeal } from "./lib/facebook-101-deal-fields.mjs";
+import { isJoyLinkRateLimit, joyLinkRetryDelayMs } from "./lib/joylink-rate-limit.mjs";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
@@ -18,6 +19,7 @@ const IMAGE_REQUEST_TIMEOUT_MS = 12_000;
 const MAX_FACEBOOK_IMAGE_BYTES = 12 * 1024 * 1024;
 const MIN_FACEBOOK_IMAGE_DIMENSION = 100;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+let joyLinkCooldownUntil = 0;
 
 export function isMalformedDealTitle(title) {
   const value = String(title || "").trim();
@@ -108,6 +110,9 @@ async function downloadDealImage(imageUrl) {
 async function getJoyLinkUrl(amazonUrl, asin) {
   const apiKey = process.env.JOYLINK_API_KEY;
   if (!apiKey || !amazonUrl) return null;
+  // JoyLink is optional. During a rate-limit window, use the deal's existing
+  // affiliate URL immediately instead of wasting the Facebook run on retries.
+  if (Date.now() < joyLinkCooldownUntil) return null;
 
   const cache = getStore("joylink-cache");
   const trackingId = process.env.AMAZON_PARTNER_TAG || "daholic-20";
@@ -128,6 +133,12 @@ async function getJoyLinkUrl(amazonUrl, asin) {
     if (res.ok && data.url) {
       await cache.setJSON(cacheKey, { url: data.url, createdAt: new Date().toISOString() }).catch(() => {});
       return data.url;
+    }
+    if (isJoyLinkRateLimit(res, data)) {
+      const delayMs = joyLinkRetryDelayMs(res, data);
+      joyLinkCooldownUntil = Date.now() + delayMs;
+      console.warn(`[101-savings] JoyLink rate limited; using original affiliate URLs for ${Math.ceil(delayMs / 1000)}s`);
+      return null;
     }
     console.error("[101-savings] JoyLink API error:", JSON.stringify(data));
   } catch (err) {
