@@ -1,6 +1,7 @@
 import { getStore } from "@netlify/blobs";
 import sharp from "sharp";
 import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
+import { facebookCandidatePositions } from "./lib/facebook-candidate-order.mjs";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
@@ -342,18 +343,19 @@ export async function postPendingDeals(limit = 5) {
   const start = Number.isInteger(savedCursor?.position)
     ? savedCursor.position % keys.length
     : 0;
-  const batchKeys = Array.from(
-    { length: Math.min(scanLimit, keys.length) },
-    (_, index) => keys[(start + index) % keys.length]
-  );
-  const records = await Promise.all(batchKeys.map(async key => ({
-    key,
-    deal: await store.get(key, { type: "json" }).catch(() => null),
+  const candidatePositions = facebookCandidatePositions(keys.length, start, scanLimit);
+  const records = await Promise.all(candidatePositions.map(async position => ({
+    key: keys[position],
+    position,
+    deal: await store.get(keys[position], { type: "json" }).catch(() => null),
   })));
 
+  /* Site submissions are newest-first. The candidate order above guarantees
+   * that newly approved website deals are examined on every run even while the
+   * saved cursor continues rotating through older inventory. */
   for (let index = 0; index < records.length && posted < limit; index += 1) {
-    const { key, deal } = records[index];
-    const nextPosition = (start + index + 1) % keys.length;
+    const { key, deal, position } = records[index];
+    const nextPosition = (position + 1) % keys.length;
     if (!deal || deal.status !== "approved") continue;
     // Public site records use more than one historical image field. Normalize
     // them here so the 101 Savings scheduler can scan the full approved site
@@ -361,9 +363,9 @@ export async function postPendingDeals(limit = 5) {
     const image = deal.image || deal.imageUrl || deal.photoUrl || "";
     // Never publish incomplete deals. The scheduled Page feed stays image-first.
     if (isMalformedDealTitle(deal.title) || !deal.url) continue;
-      // Independent posted-flag from the deals-aholic Page, so a deal can be
-      // posted to one Page, both, or neither without the two functions
-      // interfering with each other.
+    // Independent posted-flag from the deals-aholic Page, so a deal can be
+    // posted to one Page, both, or neither without the two functions
+    // interfering with each other.
     if (deal.postedTo101Savings) continue;
 
     try {
@@ -401,7 +403,9 @@ export async function postPendingDeals(limit = 5) {
   }
 
   await stateStore.setJSON("facebook-101-cursor", {
-    position: (start + records.length) % keys.length,
+    position: candidatePositions.length > 0
+      ? (candidatePositions[candidatePositions.length - 1] + 1) % keys.length
+      : start,
   });
 
   return {
