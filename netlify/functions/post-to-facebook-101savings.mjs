@@ -2,6 +2,7 @@ import { getStore } from "@netlify/blobs";
 import sharp from "sharp";
 import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
 import { facebookCandidatePositions } from "./lib/facebook-candidate-order.mjs";
+import { resolve101SavingsDeal } from "./lib/facebook-101-deal-fields.mjs";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
@@ -357,26 +358,24 @@ export async function postPendingDeals(limit = 5) {
     const { key, deal, position } = records[index];
     const nextPosition = (position + 1) % keys.length;
     if (!deal || deal.status !== "approved") continue;
-    // Public site records use more than one historical image field. Normalize
-    // them here so the 101 Savings scheduler can scan the full approved site
-    // collection without changing any importer or Deals Aholic posting logic.
-    const image = deal.image || deal.imageUrl || deal.photoUrl || "";
+    // The website has both admin-created and email-imported records. Normalize
+    // both shapes so 101 Savings sees the same approved catalog as Deals Aholic.
+    const postableDeal = resolve101SavingsDeal(deal);
     // Never publish incomplete deals. The scheduled Page feed stays image-first.
-    if (isMalformedDealTitle(deal.title) || !deal.url) continue;
+    if (isMalformedDealTitle(postableDeal.title) || !postableDeal.url) continue;
     // Independent posted-flag from the deals-aholic Page, so a deal can be
     // posted to one Page, both, or neither without the two functions
     // interfering with each other.
     if (deal.postedTo101Savings) continue;
 
     try {
-      const postableDeal = { ...deal, image };
       if (await isAlreadyPostedOn101Savings(postableDeal)) {
         deal.postedTo101Savings = true;
         deal.duplicateSkipped101Savings = true;
         deal.postedAt101Savings = new Date().toISOString();
         await store.setJSON(key, deal);
         await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-        results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
+        results.push({ title: postableDeal.title.slice(0, 50), duplicateSkipped: true });
         return { posted, results };
       }
 
@@ -390,10 +389,10 @@ export async function postPendingDeals(limit = 5) {
       deal.postedAt101Savings = new Date().toISOString();
       await store.setJSON(key, deal);
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-      results.push({ title: deal.title.slice(0, 50), ...result });
+      results.push({ title: postableDeal.title.slice(0, 50), ...result });
       posted += 1;
     } catch (err) {
-      results.push({ title: deal.title?.slice(0, 50), error: err.message });
+      results.push({ title: postableDeal.title?.slice(0, 50), error: err.message });
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
       // A single expired link, rejected photo, or malformed retailer response
       // must not consume the entire scheduled run. Keep scanning for the next
