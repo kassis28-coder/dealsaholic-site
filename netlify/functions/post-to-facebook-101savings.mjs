@@ -19,6 +19,8 @@ const IMAGE_REQUEST_TIMEOUT_MS = 12_000;
 const MAX_FACEBOOK_IMAGE_BYTES = 12 * 1024 * 1024;
 const MIN_FACEBOOK_IMAGE_DIMENSION = 100;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+const FAILED_DEAL_COOLDOWN_MS = 30 * 60 * 1000;
+const MAX_DEAL_FAILURES = 3;
 let joyLinkCooldownUntil = 0;
 
 export function isMalformedDealTitle(title) {
@@ -378,18 +380,16 @@ export async function postPendingDeals(limit = 5) {
     // posted to one Page, both, or neither without the two functions
     // interfering with each other.
     if (deal.postedTo101Savings) continue;
+    const lastFailureAt = new Date(deal.facebook101LastFailureAt || 0).getTime();
+    if (
+      Number(deal.facebook101FailureCount || 0) >= MAX_DEAL_FAILURES ||
+      (Number.isFinite(lastFailureAt) && Date.now() - lastFailureAt < FAILED_DEAL_COOLDOWN_MS)
+    ) continue;
 
     try {
-      if (await isAlreadyPostedOn101Savings(postableDeal)) {
-        deal.postedTo101Savings = true;
-        deal.duplicateSkipped101Savings = true;
-        deal.postedAt101Savings = new Date().toISOString();
-        await store.setJSON(key, deal);
-        await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-        results.push({ title: postableDeal.title.slice(0, 50), duplicateSkipped: true });
-        return { posted, results };
-      }
-
+      // `postedTo101Savings` is the authoritative page-specific dedup marker.
+      // A live Graph API scan for every candidate took up to 12 seconds each
+      // and caused the scheduled function to hit Netlify's 60-second limit.
       const joyLinkUrl = await getJoyLinkUrl(postableDeal.url, postableDeal.asin || null);
       const result = await postDealToFacebook({
         ...postableDeal,
@@ -398,17 +398,23 @@ export async function postPendingDeals(limit = 5) {
       deal.postedTo101Savings = true;
       deal.facebookPostId101Savings = result.id;
       deal.postedAt101Savings = new Date().toISOString();
+      delete deal.facebook101FailureCount;
+      delete deal.facebook101LastFailureAt;
+      delete deal.facebook101LastFailure;
       await store.setJSON(key, deal);
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
       results.push({ title: postableDeal.title.slice(0, 50), ...result });
       posted += 1;
     } catch (err) {
       results.push({ title: postableDeal.title?.slice(0, 50), error: err.message });
+      deal.facebook101FailureCount = Number(deal.facebook101FailureCount || 0) + 1;
+      deal.facebook101LastFailureAt = new Date().toISOString();
+      deal.facebook101LastFailure = err.message;
+      await store.setJSON(key, deal).catch(() => {});
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-      // A single expired link, rejected photo, or malformed retailer response
-      // must not consume the entire scheduled run. Keep scanning for the next
-      // approved deal and preserve the error for Netlify diagnostics.
-      continue;
+      // End this invocation promptly. The failed deal is cooled down, so the
+      // next scheduled run will choose another approved website deal.
+      return { posted, results };
     }
   }
 
