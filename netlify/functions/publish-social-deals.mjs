@@ -5,7 +5,7 @@ const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
 const SLOTS = new Set(["09", "14", "19"]);
 const PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
-const INSTAGRAM_ACCOUNT_ID = process.env.DEALS_AHOLIC_INSTAGRAM_ID || "";
+const INSTAGRAM_PAGE_ID = process.env.DEALS_AHOLIC_FACEBOOK_PAGE_ID || "107936901106725";
 
 function currentEasternSlot() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -88,8 +88,17 @@ async function waitForMedia(containerId, token) {
   throw new Error("Instagram media processing timed out");
 }
 
-async function publishInstagram(cardUrl, postCaption, token) {
-  const container = await graph(`${INSTAGRAM_ACCOUNT_ID}/media`, {
+async function resolveInstagramAccountId(token) {
+  const response = await fetch(`${GRAPH_API}/${INSTAGRAM_PAGE_ID}?fields=instagram_business_account&access_token=${encodeURIComponent(token)}`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) throw new Error(data.error?.message || "Could not read the Instagram account linked to Deals Aholic");
+  return data.instagram_business_account?.id || "";
+}
+
+async function publishInstagram(instagramAccountId, cardUrl, postCaption, token) {
+  const container = await graph(`${instagramAccountId}/media`, {
     image_url: cardUrl,
     caption: postCaption,
     access_token: token,
@@ -134,11 +143,12 @@ export default async function handler() {
 
   try { result.facebook = await publishFacebook(cardUrl, postCaption, token); }
   catch (error) { result.errors.push({ platform: "facebook", message: error.message }); }
-  if (INSTAGRAM_ACCOUNT_ID) {
-    try { result.instagram = await publishInstagram(cardUrl, postCaption, token); }
-    catch (error) { result.errors.push({ platform: "instagram", message: error.message }); }
-  } else {
-    result.errors.push({ platform: "instagram", message: "DEALS_AHOLIC_INSTAGRAM_ID is not configured" });
+  try {
+    const instagramAccountId = await resolveInstagramAccountId(token);
+    if (!instagramAccountId) throw new Error("No Instagram professional account is linked to the Deals Aholic Facebook Page");
+    result.instagram = await publishInstagram(instagramAccountId, cardUrl, postCaption, token);
+  } catch (error) {
+    result.errors.push({ platform: "instagram", message: error.message });
   }
 
   // Always consume a time slot once attempted, which prevents retry storms or
