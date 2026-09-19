@@ -5,7 +5,9 @@ const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
 const SLOTS = new Set(["09", "14", "19"]);
 const PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
-const INSTAGRAM_PAGE_ID = process.env.DEALS_AHOLIC_FACEBOOK_PAGE_ID || "107936901106725";
+// This is the Deals-aholic Page owned by the active Online deals & codes
+// portfolio. Its linked Instagram professional account is resolved at runtime.
+const INSTAGRAM_PAGE_ID = process.env.DEALS_AHOLIC_FACEBOOK_PAGE_ID || "160279081349416";
 
 function currentEasternSlot() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -105,7 +107,7 @@ async function publishInstagram(instagramAccountId, cardUrl, postCaption, token)
   });
   if (!container.id) throw new Error("Instagram did not return a media container");
   await waitForMedia(container.id, token);
-  return graph(`${INSTAGRAM_ACCOUNT_ID}/media_publish`, { creation_id: container.id, access_token: token });
+  return graph(`${instagramAccountId}/media_publish`, { creation_id: container.id, access_token: token });
 }
 
 async function selectDeal(used) {
