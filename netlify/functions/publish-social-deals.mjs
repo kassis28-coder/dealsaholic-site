@@ -8,6 +8,7 @@ const PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
 // This is the Deals-aholic Page owned by the active Online deals & codes
 // portfolio. Its linked Instagram professional account is resolved at runtime.
 const INSTAGRAM_PAGE_ID = process.env.DEALS_AHOLIC_FACEBOOK_PAGE_ID || "160279081349416";
+const INSTAGRAM_ACCOUNT_ID = process.env.INSTAGRAM_ACCOUNT_ID || "17841401019609727";
 
 function currentEasternSlot() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -91,6 +92,9 @@ async function waitForMedia(containerId, token) {
 }
 
 async function resolveInstagramAccountId(token) {
+  // The Instagram account ID is configured directly so a Facebook-only token
+  // does not need pages_read_engagement just to look up the linked account.
+  if (INSTAGRAM_ACCOUNT_ID) return INSTAGRAM_ACCOUNT_ID;
   const response = await fetch(`${GRAPH_API}/${INSTAGRAM_PAGE_ID}?fields=instagram_business_account&access_token=${encodeURIComponent(token)}`, {
     signal: AbortSignal.timeout(15_000),
   });
