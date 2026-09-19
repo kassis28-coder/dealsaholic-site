@@ -1,6 +1,9 @@
 import { getStore } from "@netlify/blobs";
 import sharp from "sharp";
 import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
+import { facebookCandidatePositions } from "./lib/facebook-candidate-order.mjs";
+import { resolve101SavingsDeal } from "./lib/facebook-101-deal-fields.mjs";
+import { isJoyLinkRateLimit, joyLinkRetryDelayMs } from "./lib/joylink-rate-limit.mjs";
 
 // Separate Page credentials for "101 Savings" — does not touch or share
 // any state with post-to-facebook.mjs (the existing deals-aholic Page function).
@@ -16,6 +19,9 @@ const IMAGE_REQUEST_TIMEOUT_MS = 12_000;
 const MAX_FACEBOOK_IMAGE_BYTES = 12 * 1024 * 1024;
 const MIN_FACEBOOK_IMAGE_DIMENSION = 100;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+const FAILED_DEAL_COOLDOWN_MS = 30 * 60 * 1000;
+const MAX_DEAL_FAILURES = 3;
+let joyLinkCooldownUntil = 0;
 
 export function isMalformedDealTitle(title) {
   const value = String(title || "").trim();
@@ -106,6 +112,9 @@ async function downloadDealImage(imageUrl) {
 async function getJoyLinkUrl(amazonUrl, asin) {
   const apiKey = process.env.JOYLINK_API_KEY;
   if (!apiKey || !amazonUrl) return null;
+  // JoyLink is optional. During a rate-limit window, use the deal's existing
+  // affiliate URL immediately instead of wasting the Facebook run on retries.
+  if (Date.now() < joyLinkCooldownUntil) return null;
 
   const cache = getStore("joylink-cache");
   const trackingId = process.env.AMAZON_PARTNER_TAG || "daholic-20";
@@ -126,6 +135,12 @@ async function getJoyLinkUrl(amazonUrl, asin) {
     if (res.ok && data.url) {
       await cache.setJSON(cacheKey, { url: data.url, createdAt: new Date().toISOString() }).catch(() => {});
       return data.url;
+    }
+    if (isJoyLinkRateLimit(res, data)) {
+      const delayMs = joyLinkRetryDelayMs(res, data);
+      joyLinkCooldownUntil = Date.now() + delayMs;
+      console.warn(`[101-savings] JoyLink rate limited; using original affiliate URLs for ${Math.ceil(delayMs / 1000)}s`);
+      return null;
     }
     console.error("[101-savings] JoyLink API error:", JSON.stringify(data));
   } catch (err) {
@@ -342,42 +357,39 @@ export async function postPendingDeals(limit = 5) {
   const start = Number.isInteger(savedCursor?.position)
     ? savedCursor.position % keys.length
     : 0;
-  const batchKeys = Array.from(
-    { length: Math.min(scanLimit, keys.length) },
-    (_, index) => keys[(start + index) % keys.length]
-  );
-  const records = await Promise.all(batchKeys.map(async key => ({
-    key,
-    deal: await store.get(key, { type: "json" }).catch(() => null),
+  const candidatePositions = facebookCandidatePositions(keys.length, start, scanLimit);
+  const records = await Promise.all(candidatePositions.map(async position => ({
+    key: keys[position],
+    position,
+    deal: await store.get(keys[position], { type: "json" }).catch(() => null),
   })));
 
+  /* Site submissions are newest-first. The candidate order above guarantees
+   * that newly approved website deals are examined on every run even while the
+   * saved cursor continues rotating through older inventory. */
   for (let index = 0; index < records.length && posted < limit; index += 1) {
-    const { key, deal } = records[index];
-    const nextPosition = (start + index + 1) % keys.length;
+    const { key, deal, position } = records[index];
+    const nextPosition = (position + 1) % keys.length;
     if (!deal || deal.status !== "approved") continue;
-    // Public site records use more than one historical image field. Normalize
-    // them here so the 101 Savings scheduler can scan the full approved site
-    // collection without changing any importer or Deals Aholic posting logic.
-    const image = deal.image || deal.imageUrl || deal.photoUrl || "";
+    // The website has both admin-created and email-imported records. Normalize
+    // both shapes so 101 Savings sees the same approved catalog as Deals Aholic.
+    const postableDeal = resolve101SavingsDeal(deal);
     // Never publish incomplete deals. The scheduled Page feed stays image-first.
-    if (isMalformedDealTitle(deal.title) || !deal.url) continue;
-      // Independent posted-flag from the deals-aholic Page, so a deal can be
-      // posted to one Page, both, or neither without the two functions
-      // interfering with each other.
+    if (isMalformedDealTitle(postableDeal.title) || !postableDeal.url) continue;
+    // Independent posted-flag from the deals-aholic Page, so a deal can be
+    // posted to one Page, both, or neither without the two functions
+    // interfering with each other.
     if (deal.postedTo101Savings) continue;
+    const lastFailureAt = new Date(deal.facebook101LastFailureAt || 0).getTime();
+    if (
+      Number(deal.facebook101FailureCount || 0) >= MAX_DEAL_FAILURES ||
+      (Number.isFinite(lastFailureAt) && Date.now() - lastFailureAt < FAILED_DEAL_COOLDOWN_MS)
+    ) continue;
 
     try {
-      const postableDeal = { ...deal, image };
-      if (await isAlreadyPostedOn101Savings(postableDeal)) {
-        deal.postedTo101Savings = true;
-        deal.duplicateSkipped101Savings = true;
-        deal.postedAt101Savings = new Date().toISOString();
-        await store.setJSON(key, deal);
-        await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-        results.push({ title: deal.title.slice(0, 50), duplicateSkipped: true });
-        return { posted, results };
-      }
-
+      // `postedTo101Savings` is the authoritative page-specific dedup marker.
+      // A live Graph API scan for every candidate took up to 12 seconds each
+      // and caused the scheduled function to hit Netlify's 60-second limit.
       const joyLinkUrl = await getJoyLinkUrl(postableDeal.url, postableDeal.asin || null);
       const result = await postDealToFacebook({
         ...postableDeal,
@@ -386,22 +398,30 @@ export async function postPendingDeals(limit = 5) {
       deal.postedTo101Savings = true;
       deal.facebookPostId101Savings = result.id;
       deal.postedAt101Savings = new Date().toISOString();
+      delete deal.facebook101FailureCount;
+      delete deal.facebook101LastFailureAt;
+      delete deal.facebook101LastFailure;
       await store.setJSON(key, deal);
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-      results.push({ title: deal.title.slice(0, 50), ...result });
+      results.push({ title: postableDeal.title.slice(0, 50), ...result });
       posted += 1;
     } catch (err) {
-      results.push({ title: deal.title?.slice(0, 50), error: err.message });
+      results.push({ title: postableDeal.title?.slice(0, 50), error: err.message });
+      deal.facebook101FailureCount = Number(deal.facebook101FailureCount || 0) + 1;
+      deal.facebook101LastFailureAt = new Date().toISOString();
+      deal.facebook101LastFailure = err.message;
+      await store.setJSON(key, deal).catch(() => {});
       await stateStore.setJSON("facebook-101-cursor", { position: nextPosition });
-      // A single expired link, rejected photo, or malformed retailer response
-      // must not consume the entire scheduled run. Keep scanning for the next
-      // approved deal and preserve the error for Netlify diagnostics.
-      continue;
+      // End this invocation promptly. The failed deal is cooled down, so the
+      // next scheduled run will choose another approved website deal.
+      return { posted, results };
     }
   }
 
   await stateStore.setJSON("facebook-101-cursor", {
-    position: (start + records.length) % keys.length,
+    position: candidatePositions.length > 0
+      ? (candidatePositions[candidatePositions.length - 1] + 1) % keys.length
+      : start,
   });
 
   return {

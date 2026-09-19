@@ -6,6 +6,7 @@ import {
   telegramDestinationsFromEnv,
 } from "./lib/dealsaholic2-telegram-forwarding.mjs";
 import { createFacebookFallbackImage } from "./lib/facebook-fallback-image.mjs";
+import { facebookCandidatePositions } from "./lib/facebook-candidate-order.mjs";
 
 // =============================================================================
 // Deals-Aholic Image Posts — Facebook automation for facebook.com/Dealsaholic2
@@ -611,10 +612,11 @@ export default async function handler() {
     let scanned = 0;
     let result = null;
     const limit = Math.min(SCAN_LIMIT, keys.length);
+    const candidatePositions = facebookCandidatePositions(keys.length, position, limit);
 
     while (scanned < limit) {
-      const idx = (position + scanned) % keys.length;
-      scanned++;
+      const idx = candidatePositions[scanned];
+      scanned += 1;
       const key = keys[idx];
       if (key === "index") continue;
 
@@ -778,6 +780,11 @@ export default async function handler() {
     }
 
     if (!result) {
+      if (candidatePositions.length > 0) {
+        await store.setJSON("cursor", {
+          position: (candidatePositions[candidatePositions.length - 1] + 1) % keys.length,
+        });
+      }
       result = { ok: true, reason: "no_eligible_deal_found", scanned };
     }
     return jsonResponse(result);
