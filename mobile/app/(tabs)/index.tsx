@@ -30,6 +30,16 @@ const FEATURED_CATEGORIES = [
   { value: 'sports', title: 'Sports & Outdoors', subtitle: 'Move more, spend less', emoji: '🏋️', color: '#149B83' },
 ] as const;
 
+function matchesSearchTerm(searchText: string, term: string) {
+  if (['men', 'man', 'mens'].includes(term)) {
+    return /\b(men|man|mens|men's)\b/.test(searchText) && !/\b(women|woman|womens|women's)\b/.test(searchText);
+  }
+  if (['women', 'woman', 'womens'].includes(term)) {
+    return /\b(women|woman|womens|women's|ladies|female)\b/.test(searchText);
+  }
+  return searchText.includes(term);
+}
+
 export default function DealsScreen() {
   const { deals, loading, refreshing, refresh, error } = useDeals();
   const [query, setQuery] = useState('');
@@ -42,7 +52,7 @@ export default function DealsScreen() {
     const categoryMatch = category === 'all' || (retailer === 'Amazon' && dealCategory(deal) === category);
     const searchText = `${deal.title} ${retailer} ${dealCategory(deal)} ${deal.discountCode || ''}`.toLowerCase();
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const textMatch = !terms.length || terms.every((term) => searchText.includes(term));
+    const textMatch = !terms.length || terms.every((term) => matchesSearchTerm(searchText, term));
     return retailerMatch && categoryMatch && textMatch;
   }), [category, deals, filter, query]);
 
