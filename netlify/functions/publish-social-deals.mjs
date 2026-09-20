@@ -5,10 +5,6 @@ const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
 const SLOTS = new Set(["09", "14", "19"]);
 const PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
-// This is the Deals-aholic Page owned by the active Online deals & codes
-// portfolio. Its linked Instagram professional account is resolved at runtime.
-const INSTAGRAM_PAGE_ID = process.env.DEALS_AHOLIC_FACEBOOK_PAGE_ID || "160279081349416";
-const INSTAGRAM_ACCOUNT_ID = process.env.INSTAGRAM_ACCOUNT_ID || "17841401019609727";
 
 function currentEasternSlot() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -78,42 +74,6 @@ async function publishFacebook(cardUrl, postCaption, token) {
   return graph(`${PAGE_ID}/photos`, { url: cardUrl, caption: postCaption, published: "true", access_token: token });
 }
 
-async function waitForMedia(containerId, token) {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const response = await fetch(`${GRAPH_API}/${containerId}?fields=status_code&access_token=${encodeURIComponent(token)}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (data.status_code === "FINISHED") return;
-    if (data.status_code === "ERROR" || data.error) throw new Error(data.error?.message || "Instagram media processing failed");
-    await new Promise((resolve) => setTimeout(resolve, 1800));
-  }
-  throw new Error("Instagram media processing timed out");
-}
-
-async function resolveInstagramAccountId(token) {
-  // The Instagram account ID is configured directly so a Facebook-only token
-  // does not need pages_read_engagement just to look up the linked account.
-  if (INSTAGRAM_ACCOUNT_ID) return INSTAGRAM_ACCOUNT_ID;
-  const response = await fetch(`${GRAPH_API}/${INSTAGRAM_PAGE_ID}?fields=instagram_business_account&access_token=${encodeURIComponent(token)}`, {
-    signal: AbortSignal.timeout(15_000),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.error) throw new Error(data.error?.message || "Could not read the Instagram account linked to Deals Aholic");
-  return data.instagram_business_account?.id || "";
-}
-
-async function publishInstagram(instagramAccountId, cardUrl, postCaption, token) {
-  const container = await graph(`${instagramAccountId}/media`, {
-    image_url: cardUrl,
-    caption: postCaption,
-    access_token: token,
-  });
-  if (!container.id) throw new Error("Instagram did not return a media container");
-  await waitForMedia(container.id, token);
-  return graph(`${instagramAccountId}/media_publish`, { creation_id: container.id, access_token: token });
-}
-
 async function selectDeal(used) {
   const latest = await getStore("deals").get("latest", { type: "json" }).catch(() => null);
   const deals = Array.isArray(latest?.deals) ? [...latest.deals] : [];
@@ -145,28 +105,24 @@ export default async function handler() {
   const key = keyFor(deal);
   const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(key)}`;
   const postCaption = caption(deal);
-  const result = { deal: { id: key, title: deal.title }, facebook: null, instagram: null, errors: [] };
+  // Keep this workflow isolated to the Facebook Page that already has a
+  // working publishing token. Instagram uses a separate authorization flow
+  // and is deliberately not attempted here.
+  const result = { deal: { id: key, title: deal.title }, facebook: null, errors: [] };
 
   try { result.facebook = await publishFacebook(cardUrl, postCaption, token); }
   catch (error) { result.errors.push({ platform: "facebook", message: error.message }); }
-  try {
-    const instagramAccountId = await resolveInstagramAccountId(token);
-    if (!instagramAccountId) throw new Error("No Instagram professional account is linked to the Deals Aholic Facebook Page");
-    result.instagram = await publishInstagram(instagramAccountId, cardUrl, postCaption, token);
-  } catch (error) {
-    result.errors.push({ platform: "instagram", message: error.message });
-  }
-
-  // Always consume a time slot once attempted, which prevents retry storms or
-  // duplicate posts. Errors are returned in Netlify logs for a safe manual fix.
-  state.usedDealKeys = [...new Set([...(state.usedDealKeys || []), key])].slice(-100);
-  state.slots[slot.hour] = { key, at: new Date().toISOString(), facebook: result.facebook?.id || null, instagram: result.instagram?.id || null, errors: result.errors };
-  await stateStore.setJSON(stateKey, state);
-
-  if (!result.facebook && !result.instagram) {
-    console.error("[publish-social-deals] no platform accepted post", JSON.stringify(result));
+  if (!result.facebook) {
+    console.error("[publish-social-deals] Facebook did not accept post", JSON.stringify(result));
     throw new Error(result.errors.map((item) => `${item.platform}: ${item.message}`).join(" | "));
   }
+
+  // Only consume the time slot after Facebook accepts the post. A temporary
+  // Meta/API failure can therefore retry on the next five-minute invocation,
+  // while a successful post is still protected from duplication.
+  state.usedDealKeys = [...new Set([...(state.usedDealKeys || []), key])].slice(-100);
+  state.slots[slot.hour] = { key, at: new Date().toISOString(), facebook: result.facebook.id, errors: [] };
+  await stateStore.setJSON(stateKey, state);
   console.log("[publish-social-deals]", JSON.stringify(result));
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
 }
