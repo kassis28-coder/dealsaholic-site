@@ -6,7 +6,6 @@ const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
 const SLOTS = new Set(["09", "14", "19"]);
 const SHOPFORLESS_PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
-const INSTAGRAM_ACCOUNT_ID = process.env.INSTAGRAM_ACCOUNT_ID || "17841401019609727";
 
 function currentEasternSlot() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -80,14 +79,24 @@ async function publishFacebook(cardUrl, postCaption, token) {
   });
 }
 
+async function instagramProfile(token) {
+  const response = await fetch(`${INSTAGRAM_GRAPH_API}/me?fields=id,username&access_token=${encodeURIComponent(token)}`, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error || !data.id) throw new Error(data.error?.message || "Instagram account could not be resolved");
+  return data;
+}
+
 async function publishInstagram(cardUrl, postCaption, token) {
-  const container = await postForm(INSTAGRAM_GRAPH_API, `${INSTAGRAM_ACCOUNT_ID}/media`, {
+  const profile = await instagramProfile(token);
+  const container = await postForm(INSTAGRAM_GRAPH_API, `${profile.id}/media`, {
     image_url: cardUrl,
     caption: postCaption,
     access_token: token,
   });
   if (!container.id) throw new Error("Instagram did not return a media container ID");
-  return postForm(INSTAGRAM_GRAPH_API, `${INSTAGRAM_ACCOUNT_ID}/media_publish`, {
+  return postForm(INSTAGRAM_GRAPH_API, `${profile.id}/media_publish`, {
     creation_id: container.id,
     access_token: token,
   });
