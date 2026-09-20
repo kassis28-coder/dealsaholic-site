@@ -1,10 +1,12 @@
 import { getStore } from "@netlify/blobs";
 
-const GRAPH_API = "https://graph.facebook.com/v22.0";
+const FACEBOOK_GRAPH_API = "https://graph.facebook.com/v22.0";
+const INSTAGRAM_GRAPH_API = "https://graph.instagram.com/v25.0";
 const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
 const SLOTS = new Set(["09", "14", "19"]);
-const PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
+const SHOPFORLESS_PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
+const INSTAGRAM_ACCOUNT_ID = process.env.INSTAGRAM_ACCOUNT_ID || "17841401019609727";
 
 function currentEasternSlot() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -17,8 +19,6 @@ function currentEasternSlot() {
     hourCycle: "h23",
   }).formatToParts(new Date());
   const value = Object.fromEntries(parts.filter((item) => item.type !== "literal").map((item) => [item.type, item.value]));
-  // Run only in the first five minutes of the scheduled hour. The hourly slot
-  // is remembered in Blobs, so duplicate invocations cannot double-post.
   if (!SLOTS.has(value.hour) || Number(value.minute) > 4) return null;
   return { key: `${value.year}-${value.month}-${value.day}`, hour: value.hour };
 }
@@ -58,11 +58,11 @@ function caption(deal) {
   return lines.filter((line, index) => line || index > 2).join("\n").slice(0, 2100);
 }
 
-async function graph(path, params) {
+async function postForm(apiBase, path, params) {
   const body = new URLSearchParams(params);
-  const response = await fetch(`${GRAPH_API}/${path}`, {
+  const response = await fetch(`${apiBase}/${path}`, {
     method: "POST",
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(25_000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
@@ -72,7 +72,25 @@ async function graph(path, params) {
 }
 
 async function publishFacebook(cardUrl, postCaption, token) {
-  return graph(`${PAGE_ID}/photos`, { url: cardUrl, caption: postCaption, published: "true", access_token: token });
+  return postForm(FACEBOOK_GRAPH_API, `${SHOPFORLESS_PAGE_ID}/photos`, {
+    url: cardUrl,
+    caption: postCaption,
+    published: "true",
+    access_token: token,
+  });
+}
+
+async function publishInstagram(cardUrl, postCaption, token) {
+  const container = await postForm(INSTAGRAM_GRAPH_API, `${INSTAGRAM_ACCOUNT_ID}/media`, {
+    image_url: cardUrl,
+    caption: postCaption,
+    access_token: token,
+  });
+  if (!container.id) throw new Error("Instagram did not return a media container ID");
+  return postForm(INSTAGRAM_GRAPH_API, `${INSTAGRAM_ACCOUNT_ID}/media_publish`, {
+    creation_id: container.id,
+    access_token: token,
+  });
 }
 
 async function selectDeal(used) {
@@ -88,8 +106,9 @@ export default async function handler() {
   const slot = currentEasternSlot();
   if (!slot) return new Response(JSON.stringify({ skipped: "outside scheduled social window" }), { headers: { "Content-Type": "application/json" } });
 
-  const token = process.env.META_SYSTEM_TOKEN;
-  if (!token) throw new Error("META_SYSTEM_TOKEN is not configured");
+  const instagramToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const facebookToken = process.env.SHOPFORLESS_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN || process.env.META_SYSTEM_TOKEN;
+  if (!instagramToken && !facebookToken) throw new Error("No social publishing token is configured");
 
   const stateStore = getStore("social-publishing-state");
   const stateKey = `daily-${slot.key}`;
@@ -106,23 +125,32 @@ export default async function handler() {
   const key = keyFor(deal);
   const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(key)}`;
   const postCaption = caption(deal);
-  // Keep this workflow isolated to the Facebook Page that already has a
-  // working publishing token. Instagram uses a separate authorization flow
-  // and is deliberately not attempted here.
-  const result = { deal: { id: key, title: deal.title }, facebook: null, errors: [] };
+  const result = { deal: { id: key, title: deal.title }, instagram: null, facebook: null, errors: [] };
 
-  try { result.facebook = await publishFacebook(cardUrl, postCaption, token); }
-  catch (error) { result.errors.push({ platform: "facebook", message: error.message }); }
-  if (!result.facebook) {
-    console.error("[publish-social-deals] Facebook did not accept post", JSON.stringify(result));
-    throw new Error(result.errors.map((item) => `${item.platform}: ${item.message}`).join(" | "));
+  if (instagramToken) {
+    try { result.instagram = await publishInstagram(cardUrl, postCaption, instagramToken); }
+    catch (error) { result.errors.push({ platform: "instagram", message: error.message }); }
+  }
+  if (facebookToken) {
+    try { result.facebook = await publishFacebook(cardUrl, postCaption, facebookToken); }
+    catch (error) { result.errors.push({ platform: "facebook", message: error.message }); }
   }
 
-  // Only consume the time slot after Facebook accepts the post. A temporary
-  // Meta/API failure can therefore retry on the next five-minute invocation,
-  // while a successful post is still protected from duplication.
+  if (!result.instagram && !result.facebook) {
+    console.error("[publish-social-deals] No platform accepted post", JSON.stringify(result));
+    throw new Error(result.errors.map((item) => `${item.platform}: ${item.message}`).join(" | ") || "No social platform is configured");
+  }
+
+  // A successful post to either authorized channel consumes the time slot to
+  // prevent duplicate Instagram posts when the Facebook Page token is repaired.
   state.usedDealKeys = [...new Set([...(state.usedDealKeys || []), key])].slice(-100);
-  state.slots[slot.hour] = { key, at: new Date().toISOString(), facebook: result.facebook.id, errors: [] };
+  state.slots[slot.hour] = {
+    key,
+    at: new Date().toISOString(),
+    instagram: result.instagram?.id || null,
+    facebook: result.facebook?.id || null,
+    errors: result.errors,
+  };
   await stateStore.setJSON(stateKey, state);
   console.log("[publish-social-deals]", JSON.stringify(result));
   return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
