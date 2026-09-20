@@ -88,34 +88,37 @@ export default async function handler(req) {
   const deal = await findDeal(id);
   if (!deal || deal.needsReview) return new Response("Deal not found", { status: 404 });
 
-  const titleLines = wrap(deal.title, 27, 3).map(escapeXml);
+  const titleLines = wrap(deal.title, 29, 3).map(escapeXml);
   const titleSvg = titleLines
-    .map((line, index) => `<text x="80" y="${980 + index * 58}" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#171717">${line}</text>`)
+    .map((line, index) => `<text x="90" y="${882 + index * 55}" font-family="Georgia, serif" font-size="45" font-weight="700" fill="#38262a">${line}</text>`)
     .join("");
   const price = escapeXml(deal.price || "Limited-time deal");
   const original = deal.originalPrice ? `Was ${escapeXml(deal.originalPrice)}` : "Shop before it is gone";
   const base = Buffer.from(`
     <svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff7e6"/><stop offset="1" stop-color="#ffe0a3"/></linearGradient>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffaf8"/><stop offset=".52" stop-color="#ffe3e1"/><stop offset="1" stop-color="#f4c8c8"/></linearGradient>
+        <linearGradient id="pill" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#d78a8d"/><stop offset="1" stop-color="#bf626b"/></linearGradient>
       </defs>
       <rect width="100%" height="100%" fill="url(#bg)"/>
-      <rect x="42" y="42" width="996" height="1266" rx="42" fill="#ffffff"/>
-      <rect x="80" y="80" width="250" height="54" rx="27" fill="#111111"/>
-      <text x="104" y="116" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#ffffff" letter-spacing="1">DEALS-AHOLIC</text>
-      <text x="80" y="202" font-family="Arial, sans-serif" font-size="32" font-weight="700" fill="#bf6e00" letter-spacing="2">TODAY'S FIND</text>
-      <text x="80" y="270" font-family="Arial, sans-serif" font-size="54" font-weight="800" fill="#171717">DEAL DROP</text>
-      <rect x="80" y="320" width="920" height="590" rx="30" fill="#f7f7f7"/>
+      <rect x="42" y="42" width="996" height="1266" rx="42" fill="#fffdfc" opacity=".76"/>
+      <rect x="100" y="74" width="880" height="94" rx="12" fill="#d98b8d"/>
+      <text x="540" y="135" text-anchor="middle" font-family="Georgia, serif" font-size="39" fill="#ffffff" letter-spacing="3">DEALS-AHOLIC FINDS</text>
+      <text x="540" y="242" text-anchor="middle" font-family="Georgia, serif" font-size="35" font-weight="700" fill="#38262a" letter-spacing="2">TODAY'S DEAL</text>
+      <rect x="94" y="274" width="892" height="540" rx="34" fill="#fff7f5" stroke="#efc5c4" stroke-width="3"/>
+      <rect x="312" y="754" width="456" height="115" rx="58" fill="url(#pill)"/>
+      <text x="540" y="833" text-anchor="middle" font-family="Georgia, serif" font-size="76" font-weight="700" fill="#ffffff">${price}</text>
       ${titleSvg}
-      <text x="80" y="1190" font-family="Arial, sans-serif" font-size="64" font-weight="800" fill="#d15d00">${price}</text>
-      <text x="82" y="1240" font-family="Arial, sans-serif" font-size="28" fill="#666666">${original}</text>
-      <text x="80" y="1282" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#171717">deals-aholic.com  •  #ad</text>
+      <text x="540" y="1086" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" fill="#73595c">${original}</text>
+      <line x1="146" y1="1152" x2="934" y2="1152" stroke="#dfacae" stroke-width="2"/>
+      <text x="540" y="1225" text-anchor="middle" font-family="Georgia, serif" font-size="32" fill="#38262a">Shop this deal at deals-aholic.com</text>
+      <text x="540" y="1270" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#a56a70">LIMITED TIME • #AD</text>
     </svg>
   `);
 
   const product = await productLayer(deal.image || deal.imageUrl);
   const composite = product
-    ? [{ input: product, left: 110, top: 305 }]
+    ? [{ input: product, left: 110, top: 245 }]
     : [];
   const jpeg = await sharp(base).composite(composite).jpeg({ quality: 90, chromaSubsampling: "4:2:0" }).toBuffer();
 
