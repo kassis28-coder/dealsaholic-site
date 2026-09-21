@@ -20,7 +20,11 @@ export function CommunityPanel({ dealId }: { dealId: string }) {
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => { try { setCommunity(await getCommunity(dealId)); } catch { /* Empty state is still useful offline. */ } finally { setLoading(false); } }, [dealId]);
-  useEffect(() => { load(); AsyncStorage.getItem(blockedKey).then((value) => value && setBlocked(new Set(JSON.parse(value)))).catch(() => undefined); }, [load]);
+  useEffect(() => {
+    // Start asynchronous hydration after the first paint; do not synchronously set state from an effect.
+    void Promise.resolve().then(load);
+    void AsyncStorage.getItem(blockedKey).then((value) => value && setBlocked(new Set(JSON.parse(value)))).catch(() => undefined);
+  }, [load]);
   const comments = useMemo(() => community.comments.filter((comment) => !blocked.has(comment.author.id)), [blocked, community.comments]);
   const roots = comments.filter((comment) => !comment.parentId);
   const needProfile = () => { if (!profile) { Alert.alert('Join the community', 'Create a free profile or continue as a guest to react and comment.', [{ text: 'Not now', style: 'cancel' }, { text: 'Join', onPress: () => router.push('/community-profile' as never) }]); return true; } return false; };

@@ -48,7 +48,8 @@ export function DealsProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    load('initial');
+    // Begin the initial network request after the first render.
+    void Promise.resolve().then(() => load('initial'));
     AsyncStorage.getItem(FAVORITES_KEY).then((stored) => {
       if (stored) setFavorites(new Set(JSON.parse(stored)));
     }).catch(() => undefined);

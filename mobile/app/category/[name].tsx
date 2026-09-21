@@ -20,6 +20,8 @@ export default function CategoryDealsScreen() {
     : category === 'ending'
       ? amazonDeals.filter((deal) => {
           if (!deal.expiresOn) return false;
+          // The list is refreshed from the live feed, so evaluate the deadline at render.
+          // eslint-disable-next-line react-hooks/purity
           const remaining = new Date(deal.expiresOn).getTime() - Date.now();
           return remaining > 0 && remaining <= 48 * 60 * 60 * 1000;
         }).sort((a, b) => new Date(a.expiresOn || 0).getTime() - new Date(b.expiresOn || 0).getTime())

@@ -81,6 +81,8 @@ export default function DealsScreen() {
   const promoDeals = amazonDeals.filter((deal) => Boolean(deal.discountCode?.trim()));
   const endingSoonDeals = amazonDeals.filter((deal) => {
     if (!deal.expiresOn) return false;
+    // This view is refreshed from the live feed, so evaluate the deadline at render.
+    // eslint-disable-next-line react-hooks/purity
     const remaining = new Date(deal.expiresOn).getTime() - Date.now();
     return remaining > 0 && remaining <= 48 * 60 * 60 * 1000;
   }).sort((a, b) => new Date(a.expiresOn || 0).getTime() - new Date(b.expiresOn || 0).getTime());

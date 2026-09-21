@@ -2,7 +2,7 @@
   "expo": {
     "name": "Deals-aholic",
     "slug": "deals-aholic",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Fresh online deals, promo codes, and price drops in one place.",
     "orientation": "portrait",
     "icon": "./assets/images/deals-aholic-icon-v2.png",
