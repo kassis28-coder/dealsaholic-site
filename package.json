@@ -4,6 +4,7 @@
   "description": "Automated daily Amazon deals site for dealsaholic, powered by Netlify Functions + Netlify Blobs",
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
+    "opentype.js": "1.3.4",
     "sharp": "^0.33.5"
   },
   "engines": {
