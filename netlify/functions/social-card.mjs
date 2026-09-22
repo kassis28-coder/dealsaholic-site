@@ -128,9 +128,10 @@ export default async function handler(req) {
   `);
 
   const product = await productLayer(deal.image || deal.imageUrl);
-  const composite = product
-    ? [{ input: product, left: 110, top: 248 }]
-    : [];
+  // Never let the scheduler publish a blank placeholder card. A post is only
+  // useful when the real, verified product visual is available.
+  if (!product) return new Response("Product image is unavailable", { status: 422 });
+  const composite = [{ input: product, left: 110, top: 248 }];
   const jpeg = await sharp(base).composite(composite).jpeg({ quality: 90, chromaSubsampling: "4:2:0" }).toBuffer();
 
   return new Response(jpeg, {
