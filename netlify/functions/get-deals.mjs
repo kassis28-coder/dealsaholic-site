@@ -9,9 +9,9 @@ const PUBLIC_FEED_CACHE_TTL_MS = 5 * 60 * 1000;
 // the old decision from a durable cache.
 const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v5";
 
-// Keep Amazon search inventory fresh; seller deals still use their own expiry dates.
-const AMAZON_PUBLIC_WINDOW_MS = 24 * 60 * 60 * 1000;
-const MAX_PUBLIC_AMAZON_DEALS = 250;
+// Retain the rotating Amazon inventory long enough to build a complete catalog.
+const AMAZON_PUBLIC_WINDOW_MS = Number(process.env.DEALS_PUBLIC_AMAZON_WINDOW_HOURS || 168) * 60 * 60 * 1000;
+const MAX_PUBLIC_AMAZON_DEALS = Number(process.env.DEALS_MAX_PUBLIC_AMAZON_DEALS || 3000);
 
 // The homepage only renders a handful of cards. Sending the complete public
 // catalog (currently thousands of seller submissions) delays first paint on
@@ -606,29 +606,16 @@ export default async (
         .catch(() => null);
 
     if (cachedFeed?.payload) {
-      const cacheAge =
-        Date.now() -
-        cachedFeed.cachedAt;
-
-      const responsePayload = homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload;
-      return new Response(
-        JSON.stringify(
-          responsePayload
-        ),
-        {
-          headers:
-            cacheAge >=
-            PUBLIC_FEED_CACHE_TTL_MS
-              ? STALE_RESPONSE_HEADERS
-              : RESPONSE_HEADERS,
-        }
-      );
+      const cacheAge = Date.now() - cachedFeed.cachedAt;
+      if (cacheAge < PUBLIC_FEED_CACHE_TTL_MS) {
+        const responsePayload = homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload;
+        return new Response(JSON.stringify(responsePayload), { headers: RESPONSE_HEADERS });
+      }
+      // The durable cache is stale: rebuild now so recently imported email
+      // offers and the newest Amazon rotation become visible automatically.
     }
 
-    const combined =
-      await rebuildPublicFeed(
-        publicCache
-      );
+    const combined = await rebuildPublicFeed(publicCache);
 
     return new Response(
       JSON.stringify(homepageOnly ? compactHomepagePayload(combined) : combined),

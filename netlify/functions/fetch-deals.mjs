@@ -4,10 +4,11 @@ const CLIENT_ID = process.env.AMAZON_CLIENT_ID;
 const CLIENT_SECRET = process.env.AMAZON_CLIENT_SECRET;
 const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || "daholic-20";
 const MARKETPLACE = process.env.AMAZON_MARKETPLACE || "www.amazon.com";
-const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 20);
-const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 300);
-// Amazon catalog searches often repeat top-ranking products. Keep only one day of inventory so the public catalog stays fresh.
-const MAX_AGE_HOURS = 24;
+const MIN_DISCOUNT = Number(process.env.DEALS_MIN_DISCOUNT || 10);
+const MAX_RESULTS = Number(process.env.DEALS_MAX_RESULTS || 3000);
+// Keep a rotating seven-day catalog. Every offer is refreshed by the importer
+// before its window ends, allowing the site to build a broad, current feed.
+const MAX_AGE_HOURS = Number(process.env.DEALS_MAX_AGE_HOURS || 168);
 const SUSPICIOUS_DISCOUNT = 85; // Flag deals with 80%+ discount for review
 
 const TOKEN_URL = "https://api.amazon.com/auth/o2/token";
@@ -110,10 +111,12 @@ const ALL_CATEGORIES = [
 ];
 
 const PRIORITY_CATEGORIES = [
-  "limited time deals",
   "lightning deals",
+  "limited time deals",
+  "clearance deals",
   "deal of the day",
   "today's deals",
+  "amazon coupon deals",
 ];
 const priorityCategorySet = new Set(PRIORITY_CATEGORIES.map(category => category.toLowerCase()));
 const ROTATING_CATEGORIES = ALL_CATEGORIES.filter(
@@ -146,7 +149,7 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-async function searchItems(accessToken, keywords) {
+async function searchItems(accessToken, keywords, itemPage = 1) {
   const res = await fetch(CATALOG_URL, {
     method: "POST",
     headers: {
@@ -157,6 +160,7 @@ async function searchItems(accessToken, keywords) {
     body: JSON.stringify({
       keywords,
       itemCount: 10,
+      itemPage,
       partnerTag: PARTNER_TAG,
       partnerType: "Associates",
       marketplace: MARKETPLACE,
@@ -323,24 +327,35 @@ async function fetchAndStoreDeals() {
   const store = getStore("deals");
 
   let batchIndex = 0;
+  let priorityPage = 1;
+  let batchPages = Array(BATCHES.length).fill(1);
   try {
     const stateResult = await store.get("batch-state", { type: "json" });
-    if (stateResult && typeof stateResult.nextBatchIndex === "number") {
-      batchIndex = stateResult.nextBatchIndex;
+    if (stateResult && typeof stateResult.nextBatchIndex === "number") batchIndex = stateResult.nextBatchIndex;
+    if (stateResult && Number.isInteger(stateResult.priorityPage)) priorityPage = stateResult.priorityPage;
+    if (Array.isArray(stateResult?.batchPages)) {
+      batchPages = BATCHES.map((_, index) => Number.isInteger(stateResult.batchPages[index]) ? stateResult.batchPages[index] : 1);
     }
   } catch { }
 
-  const rotatingBatch = BATCHES[batchIndex % BATCHES.length];
+  const activeBatchIndex = batchIndex % BATCHES.length;
+  const rotatingBatch = BATCHES[activeBatchIndex];
+  const rotatingPage = batchPages[activeBatchIndex] || 1;
   const batch = [...PRIORITY_CATEGORIES, ...rotatingBatch];
-  const nextBatchIndex = (batchIndex + 1) % BATCHES.length;
+  const nextBatchIndex = (activeBatchIndex + 1) % BATCHES.length;
 
-  console.error(`Running batch ${batchIndex + 1} of ${BATCHES.length}: ${JSON.stringify(batch)}`);
+  console.error(`Running batch ${activeBatchIndex + 1} of ${BATCHES.length}: priority page ${priorityPage}, rotating page ${rotatingPage}, ${JSON.stringify(batch)}`);
 
   const accessToken = await getAccessToken();
 
   const newItems = [];
-  for (const category of batch) {
-    const items = await searchItems(accessToken, category);
+  for (const category of PRIORITY_CATEGORIES) {
+    const items = await searchItems(accessToken, category, priorityPage);
+    newItems.push(...items);
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  for (const category of rotatingBatch) {
+    const items = await searchItems(accessToken, category, rotatingPage);
     newItems.push(...items);
     await new Promise((r) => setTimeout(r, 2500));
   }
@@ -466,6 +481,8 @@ async function fetchAndStoreDeals() {
       priorityCategories: PRIORITY_CATEGORIES,
       rotatingBatchCategories: rotatingBatch,
       lastBatchCategories: batch,
+      priorityPage,
+      rotatingPage,
       lastBatchRawItems: newItems.length,
       lastBatchQualifyingDeals: normalizedNew.length,
       totalAccumulatedDeals: deals.length,
@@ -474,7 +491,12 @@ async function fetchAndStoreDeals() {
   };
 
   await store.setJSON("latest", output);
-  await store.setJSON("batch-state", { nextBatchIndex });
+  batchPages[activeBatchIndex] = rotatingPage >= 10 ? 1 : rotatingPage + 1;
+  await store.setJSON("batch-state", {
+    nextBatchIndex,
+    priorityPage: priorityPage >= 10 ? 1 : priorityPage + 1,
+    batchPages,
+  });
 
   return output;
 }
