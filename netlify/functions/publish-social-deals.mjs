@@ -148,7 +148,8 @@ export default async function handler() {
   }
 
   const key = keyFor(deal);
-  const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(key)}`;
+  // New template version avoids an old CDN-cached image being reused by Meta.
+  const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(key)}&v=editorial-safe-4x5`;
   const postCaption = caption(deal, state.usedDealKeys?.length || 0);
   const result = { deal: { id: key, title: deal.title }, instagram: null, facebook: null, errors: [] };
 
