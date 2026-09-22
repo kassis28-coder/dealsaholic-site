@@ -22,6 +22,8 @@ export default async (req) => {
   const rawCode    = p.get('code') || '';
   const store      = p.get('store') || 'amazon';
   const rawUrl     = p.get('url') || '';
+  const dealId     = p.get('dealId') || '';
+  const dealSource = p.get('dealSource') || 'amazon';
   const rawCanonical = p.get('canonical') || '';
 
   // URLSearchParams already decodes query values. Decoding a second time can
@@ -112,7 +114,7 @@ ${productSchema ? `<script type="application/ld+json">${JSON.stringify(productSc
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --paper: #FAF8F4; --card: #FFFFFF; --ink: #1C1A17; --ink-soft: #6B6459; --line: #ECE6DB; --brand: #FF8A1E; --brand-dark: #D96E0C; --green: #1C8C5A; }
+  :root { --paper: #FAF8F4; --card: #FFFFFF; --ink: #1C1A17; --ink-soft: #6B6459; --line: #ECE6DB; --brand: #FF8A1E; --brand-dark: #D96E0C; --green: #1C8C5A; --danger: #B3261E; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
   .nav { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; align-items: center; }
@@ -131,6 +133,11 @@ ${productSchema ? `<script type="application/ld+json">${JSON.stringify(productSc
   .deal-code__copy { display: block; margin-top: 10px; font-size: 13px; color: var(--brand); cursor: pointer; background: none; border: none; font-family: 'Inter', sans-serif; font-weight: 600; }
   .cta-btn { display: block; width: 100%; background: var(--brand); color: #fff; font-weight: 700; font-size: 18px; text-align: center; border-radius: 12px; padding: 18px 0; text-decoration: none; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(255,138,30,0.4); cursor: pointer; border: none; font-family: 'Inter', sans-serif; }
   .cta-btn:hover { background: var(--brand-dark); }
+  .deal-report { border-top: 1px solid var(--line); margin: 6px 0 20px; padding-top: 16px; text-align: center; }
+  .deal-report__label { display: block; color: var(--ink-soft); font-size: 12px; margin-bottom: 9px; }
+  .deal-report__button { appearance: none; border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; font: 600 12px 'Inter', sans-serif; text-decoration: underline; text-underline-offset: 3px; padding: 5px 7px; }
+  .deal-report__button:hover { color: var(--danger); }
+  .deal-report__button:disabled { cursor: default; opacity: .8; text-decoration: none; }
   .back-link { display: block; text-align: center; font-size: 14px; color: var(--ink-soft); text-decoration: none; margin-bottom: 32px; }
   .disclaimer { font-size: 11px; color: var(--ink-soft); text-align: center; line-height: 1.5; }
 </style>
@@ -156,12 +163,21 @@ ${productSchema ? `<script type="application/ld+json">${JSON.stringify(productSc
     <button class="deal-code__copy" onclick="copyCode()">📋 Copy Code</button>
   </div>` : ''}
   <button id="deal-cta" class="cta-btn">${esc(storeLabel)}</button>
+  ${dealId && productUrl ? `<div class="deal-report" id="deal-report">
+    <span class="deal-report__label">Is something not right with this deal?</span>
+    ${code ? '<button type="button" class="deal-report__button" data-issue="expired-code">Report expired code</button>' : ''}
+    <button type="button" class="deal-report__button" data-issue="price-incorrect">Report incorrect price</button>
+  </div>` : ''}
   <a href="/" class="back-link">← Back to all deals</a>
   <p class="disclaimer">Deals-aholic may earn a commission from qualifying purchases. Prices and availability are subject to change.</p>
 </div>
 <script>
   const affiliateUrl = ${JSON.stringify(affiliateUrl)};
   const store = ${JSON.stringify(store)};
+  const dealId = ${JSON.stringify(dealId)};
+  const dealSource = ${JSON.stringify(dealSource)};
+  const dealCode = ${JSON.stringify(code)};
+  const productUrl = ${JSON.stringify(productUrl)};
   const ua = navigator.userAgent || navigator.vendor || window.opera;
   const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
   const isAndroid = /android/i.test(ua);
@@ -212,6 +228,35 @@ ${productSchema ? `<script type="application/ld+json">${JSON.stringify(productSc
       setTimeout(() => btn.textContent = '📋 Copy Code', 2000);
     });
   }
+
+  document.querySelectorAll('.deal-report__button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const allButtons = document.querySelectorAll('.deal-report__button');
+      const originalText = button.textContent;
+      allButtons.forEach(item => item.disabled = true);
+      button.textContent = 'Sending for review…';
+      try {
+        const response = await fetch('/api/flag-deal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dealId,
+            dealSource,
+            code: dealCode,
+            productUrl,
+            issueType: button.dataset.issue,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not send report');
+        document.getElementById('deal-report').innerHTML = '<span class="deal-report__label" style="color:#14804a;font-weight:600">✓ Thanks — this deal was sent for review.</span>';
+      } catch (error) {
+        button.textContent = 'Could not report — try again';
+        allButtons.forEach(item => item.disabled = false);
+        setTimeout(() => { button.textContent = originalText; }, 2500);
+      }
+    });
+  });
 </script>
 </body>
 </html>`;

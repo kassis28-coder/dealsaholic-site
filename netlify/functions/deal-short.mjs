@@ -28,6 +28,7 @@ export default async (req, context) => {
     id.startsWith('sub_')
     || id.startsWith('email-')
     || id.startsWith('walmart-')
+    || id.startsWith('admin-')
   ) {
     const record = await getStore('submissions').get(id, { type: 'json' }).catch(() => null);
     deal = publicDeal(record, id);
@@ -53,6 +54,8 @@ export default async (req, context) => {
     code: deal.discountCode,
     store: deal.storeType || deal.store,
     url: deal.url || deal.productUrl,
+    dealId: id,
+    dealSource: id.startsWith('sub_') || id.startsWith('email-') || id.startsWith('walmart-') || id.startsWith('admin-') ? 'submission' : 'amazon',
     // Tracking/preview parameters must never fragment the canonical URL.
     canonical: `https://deals-aholic.com/d/${encodeURIComponent(id)}`,
   };

@@ -127,7 +127,7 @@ body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; co
 <div class="form-group">
 <label>Product URL *</label>
 <input type="text" id="cp-url" placeholder="Amazon, Walmart, Target, Temu, or another retailer URL">
-<small style="color:var(--ink-soft); font-size:11px;">Amazon uses JoyInLink, Walmart uses Impact, and Target accepts a Mavely-generated link. Other stores: paste your affiliate link directly.</small>
+<small style="color:var(--ink-soft); font-size:11px;">For Amazon links, the current price, original price, discount, and image are filled automatically when available. Other stores: enter the price yourself.</small>
 </div>
 
 <div class="image-choice">
@@ -160,13 +160,13 @@ body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; co
 
 <div class="form-row">
 <div class="form-group" style="margin-bottom:0">
-<label>Current Price *</label>
-<input type="text" id="cp-price" placeholder="$5.99">
+<label>Current Price <span style="font-weight:400;text-transform:none;letter-spacing:0">(auto for Amazon)</span></label>
+<input type="text" id="cp-price" placeholder="Leave blank to fetch from Amazon">
 </div>
 
 <div class="form-group" style="margin-bottom:0">
-<label>Original Price</label>
-<input type="text" id="cp-original-price" placeholder="$14.99">
+<label>Original Price <span style="font-weight:400;text-transform:none;letter-spacing:0">(auto for Amazon)</span></label>
+<input type="text" id="cp-original-price" placeholder="Auto-filled when available">
 </div>
 </div>
 
@@ -710,9 +710,9 @@ const discount = document.getElementById('cp-discount').value.trim();
 const discountCode = document.getElementById('cp-code').value.trim();
 const expiresOn = document.getElementById('cp-expires').value.trim();
 
-if (!title || !url || !price) {
+if (!title || !url) {
 msgEl.className = 'error-msg';
-msgEl.textContent = '❌ Title, URL and price are required!';
+msgEl.textContent = '❌ Title and URL are required!';
 return;
 }
 
@@ -759,8 +759,8 @@ return;
 
 msgEl.className = '';
 msgEl.textContent = photoUrl
-? '⏳ Posting deal...'
-: '⏳ Posting and fetching image...';
+? '⏳ Posting deal and checking current price...'
+: '⏳ Posting, fetching image, and checking current price...';
 
 try {
 const res = await fetch('/api/admin-create-deal', {
@@ -786,7 +786,9 @@ throw new Error(data.error || 'Failed');
 }
 
 msgEl.className = 'success-msg';
-msgEl.textContent = '✅ Deal posted successfully!';
+msgEl.textContent = data.deal?.price
+? '✅ Deal posted successfully — price: ' + data.deal.price
+: '✅ Deal posted successfully!';
 
 [
 'cp-title',

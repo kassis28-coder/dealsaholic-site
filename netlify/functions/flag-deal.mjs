@@ -2,6 +2,7 @@ import { getStore } from "@netlify/blobs";
 
 function flagReasonFor(issueType) {
   if (issueType === "expired-deal") return "expired-deal-reported-by-shopper";
+  if (issueType === "price-incorrect") return "incorrect-price-reported-by-shopper";
   if (issueType === "missing-price") return "missing-price";
   if (issueType === "missing-image") return "missing-image";
   if (issueType === "missing-price-image") return "missing-price-and-image";

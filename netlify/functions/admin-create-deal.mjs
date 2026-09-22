@@ -94,23 +94,59 @@ async function searchAmazonByTitle(title) {
     const items = data.items || data.searchResult?.items || [];
     if (!items[0]) return null;
     const item = items[0];
-    const asin = item.asin;
-    const image = item.images?.primary?.large?.url ||
-      `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
-    console.log(`Title search found ASIN: ${asin}`);
-    return {
-      asin,
-      image,
-      title: item.itemInfo?.title?.displayValue || null,
-      url: `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`,
-    };
+    console.log(`Title search found ASIN: ${item.asin}`);
+    return amazonItemFields(item);
   } catch (e) {
     console.error('searchAmazonByTitle failed:', e.message);
     return null;
   }
 }
 
-async function fetchAmazonImage(asin) {
+function formatMoney(amount, displayAmount) {
+  if (displayAmount && String(displayAmount).trim()) return String(displayAmount).trim();
+  const value = Number(amount);
+  return Number.isFinite(value) && value > 0 ? `$${value.toFixed(2)}` : null;
+}
+
+function normalizePriceText(value) {
+  const text = String(value || '').trim();
+  if (!text || text.toLowerCase() === 'check price') return text;
+  // Covers individual prices and typed ranges such as "9.60-25.20".
+  return text.replace(/(^|[-–—]\s*)(\d+(?:\.\d{1,2})?)(?![\d.])/g, (match, prefix, amount) => {
+    return `${prefix}${amount.startsWith('$') ? amount : `$${amount}`}`;
+  });
+}
+
+function amazonItemFields(item) {
+  if (!item) return null;
+  const listing = item.offersV2?.listings?.[0] || {};
+  const currentAmount = listing.price?.money?.amount;
+  const savingsAmount = listing.price?.savings?.money?.amount;
+  const currentPrice = formatMoney(currentAmount, listing.price?.money?.displayAmount);
+  const originalPrice = Number.isFinite(Number(currentAmount)) && Number.isFinite(Number(savingsAmount)) && Number(savingsAmount) > 0
+    ? `$${(Number(currentAmount) + Number(savingsAmount)).toFixed(2)}`
+    : null;
+  const discount = Number.isFinite(Number(listing.price?.savings?.percentage))
+    ? String(Math.round(Number(listing.price.savings.percentage)))
+    : (Number.isFinite(Number(currentAmount)) && Number.isFinite(Number(savingsAmount)) && Number(currentAmount) + Number(savingsAmount) > 0
+      ? String(Math.round((Number(savingsAmount) / (Number(currentAmount) + Number(savingsAmount))) * 100))
+      : null);
+  const asin = item.asin || null;
+  const image = item.images?.primary?.large?.url ||
+    item.images?.primary?.medium?.url ||
+    (asin ? `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg` : null);
+  return {
+      asin,
+      image,
+      title: item.itemInfo?.title?.displayValue || null,
+      url: `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`,
+      price: currentPrice,
+      originalPrice,
+      discount,
+    };
+}
+
+async function fetchAmazonItem(asin) {
   try {
     const accessToken = await getAmazonAccessToken();
     const res = await fetch(CATALOG_URL, {
@@ -126,15 +162,21 @@ async function fetchAmazonImage(asin) {
         partnerTag: PARTNER_TAG,
         partnerType: "Associates",
         marketplace: MARKETPLACE,
-        resources: ["images.primary.large", "itemInfo.title"],
+        resources: [
+          "images.primary.large",
+          "images.primary.medium",
+          "itemInfo.title",
+          "offersV2.listings.price",
+        ],
       }),
     });
     if (!res.ok) return null;
     const data = await res.json();
     const items = data.items || data.searchResult?.items || [];
-    return items[0]?.images?.primary?.large?.url || null;
+    const matched = items.find(item => String(item.asin || '').toUpperCase() === String(asin).toUpperCase()) || items[0];
+    return amazonItemFields(matched);
   } catch (e) {
-    console.log("Amazon image fetch failed:", e.message);
+    console.log("Amazon item fetch failed:", e.message);
     return null;
   }
 }
@@ -177,6 +219,16 @@ export default async (req, context) => {
 
     let { title, url, photoUrl, price, originalPrice, discount, discountCode, expiresOn } = body;
 
+    title = String(title || '').trim();
+    url = String(url || '').trim();
+    price = normalizePriceText(price);
+    originalPrice = normalizePriceText(originalPrice);
+    discount = String(discount || '').trim();
+
+    if (!title || !url) {
+      return new Response(JSON.stringify({ error: "Product title and URL are required" }), { status: 400 });
+    }
+
     let imageUrl = photoUrl || null;
     let finalUrl = url;
     let resolvedAsin = null;
@@ -199,12 +251,37 @@ export default async (req, context) => {
     const store = detectStore(finalUrl);
     const affiliateUrl = buildAffiliateUrl(finalUrl, store);
 
+    // Amazon's Creator API supplies the live offer price for manual Amazon
+    // submissions. This means the editor can paste a product URL without
+    // retyping the price. Manual values always win when the API has no data.
+    let amazonDetails = null;
+    if (store === "amazon") {
+      const asinFromUrl = resolvedAsin || finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1] || null;
+      if (asinFromUrl) amazonDetails = await fetchAmazonItem(asinFromUrl);
+      if (!amazonDetails && title) amazonDetails = await searchAmazonByTitle(title);
+
+      if (amazonDetails) {
+        resolvedAsin = resolvedAsin || amazonDetails.asin;
+        if (!price) price = amazonDetails.price || '';
+        if (!originalPrice) originalPrice = amazonDetails.originalPrice || '';
+        if (!discount) discount = amazonDetails.discount || '';
+        if (!imageUrl) imageUrl = amazonDetails.image || null;
+      }
+
+      if (!price) {
+        return new Response(JSON.stringify({
+          error: "Amazon price could not be found automatically. Please enter the current price and try again.",
+        }), { status: 422, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
     // Get image if still missing
     if (!imageUrl) {
       if (store === "amazon") {
         const asin = resolvedAsin || finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] || null;
         if (asin) {
-          imageUrl = await fetchAmazonImage(asin);
+          const fetched = amazonDetails || await fetchAmazonItem(asin);
+          imageUrl = fetched?.image || null;
           if (!imageUrl) {
             imageUrl = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`;
           }
