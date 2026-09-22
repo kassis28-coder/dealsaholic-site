@@ -169,7 +169,7 @@ a{color:inherit}
     </section>
 
     <section class="feature-grid" aria-label="Featured deal collections">
-      <a class="feature-card feature-card--main" href="/deals/electronics">
+      <a class="feature-card feature-card--main" href="/?store=all&amp;category=electronics">
         <div class="feature-copy"><span class="feature-kicker">Featured collection</span><h2>Tech deals worth the click.</h2><p>Fresh electronics, smart-home finds, and accessories at standout prices.</p><span class="feature-cta">Explore Tech →</span></div>
         <div class="feature-products" id="feature-main-products"></div><span class="feature-orb"></span>
       </a>
@@ -184,7 +184,7 @@ a{color:inherit}
       <a class="feature-card feature-card--promo" href="/?store=all&amp;category=promo">
         <div class="feature-copy"><span class="feature-kicker">Extra savings</span><h2>Promo codes</h2><p>Copy, shop, save.</p><span class="feature-cta">Reveal Codes →</span></div><span class="feature-orb"></span>
       </a>
-      <a class="feature-card feature-card--category" href="/deals/home">
+      <a class="feature-card feature-card--category" href="/?store=all&amp;category=home">
         <div class="feature-copy"><span class="feature-kicker">Home refresh</span><h2>Make home better</h2><p>Kitchen, décor, furniture, and more.</p><span class="feature-cta">Shop Home →</span></div><span class="feature-orb"></span>
       </a>
     </section>
@@ -217,7 +217,7 @@ a{color:inherit}
     <section class="seo-guide" aria-labelledby="best-deals-guide-title">
       <h2 id="best-deals-guide-title">Find the best online deals today</h2>
       <p>Deals-aholic brings current discounts, price drops, and promo codes together in one place. Browse by store or category, compare the listed savings, and confirm the final price with the retailer before purchasing.</p>
-      <div class="seo-guide__links"><a href="/amazon-deals">Amazon deals today</a><a href="/walmart-deals">Walmart deals today</a><a href="/?store=all&amp;category=promo">Current promo codes</a><a href="/deals/electronics">Electronics deals</a><a href="/deals/home">Home &amp; kitchen deals</a></div>
+      <div class="seo-guide__links"><a href="/amazon-deals">Amazon deals today</a><a href="/walmart-deals">Walmart deals today</a><a href="/?store=all&amp;category=promo">Current promo codes</a><a href="/?store=all&amp;category=electronics">Electronics deals</a><a href="/?store=all&amp;category=home">Home &amp; kitchen deals</a></div>
       <div class="seo-faq">
         <article><h3>Where can I find the best deals today?</h3><p>Browse current Amazon deals, Walmart deals, price drops, and promo codes organized by store and category.</p></article>
         <article><h3>How often are deals updated?</h3><p>Listings refresh throughout the day. Always verify the final price, code, and availability at the retailer.</p></article>
@@ -253,7 +253,7 @@ a{color:inherit}
   <div class="footer__inner">
     <div><a class="logo" href="/">Deals-<span>aholic</span></a><p>Deal discovery made simpler. We organize current offers by store and category, then send shoppers directly to the retailer.</p><div class="social-links"><a href="https://t.me/dealsaholic" target="_blank" rel="noopener">Telegram</a><a href="https://www.instagram.com/deals_aholic" target="_blank" rel="noopener">Instagram</a></div></div>
     <div><h3>Shop</h3><a href="/amazon-deals">Amazon Deals</a><a href="/walmart-deals">Walmart Deals</a><a href="/?store=all&amp;category=promo">Promo Codes</a></div>
-    <div><h3>Categories</h3><a href="/deals/electronics">Electronics</a><a href="/deals/home">Home & Kitchen</a><a href="/deals/fashion">Fashion</a><a href="/deals/beauty">Beauty</a></div>
+    <div><h3>Categories</h3><a href="/?store=all&amp;category=electronics">Electronics</a><a href="/?store=all&amp;category=home">Home & Kitchen</a><a href="/?store=all&amp;category=fashion">Fashion</a><a href="/?store=all&amp;category=beauty">Beauty</a></div>
     <div><h3>Deals-aholic</h3><a href="/telegram-deals">Telegram Deals</a><a href="/about.html">About</a><a href="/submit.html">Sell Here</a><a href="/privacy.html">Privacy Policy</a></div>
   </div>
   <div class="footer__bottom">
@@ -264,7 +264,7 @@ a{color:inherit}
 </footer>
 <script>
 const INITIAL_STORE=new URLSearchParams(location.search).get('store')||'home';
-const DEALS_JSON_URL=INITIAL_STORE==='home'?'/api/deals?view=home':'/api/deals';
+const DEALS_JSON_URL='/api/deals';
 const CATEGORIES=[
   {id:'all',label:'All deals',icon:'✦'},
   {id:'electronics',label:'Electronics',icon:'⌁'},
@@ -309,7 +309,7 @@ function best(deals){return deals.slice().sort(function(a,b){return (Number(b.di
 function dealIdentity(deal){return String(deal.id||deal.asin||deal.url||deal.productUrl||deal.title||'').trim().toLowerCase();}
 function takeUnique(deals,max,used){const picked=[];for(const deal of deals){const key=dealIdentity(deal);if(!key||used.has(key))continue;used.add(key);picked.push(deal);if(picked.length===max)break;}return picked;}
 function imageMarkup(deals,max){return deals.filter(function(d){return d.image;}).slice(0,max).map(function(d){return '<img src="'+escapeHtml(d.image)+'" alt="" loading="eager">';}).join('');}
-function renderCollections(){const source=CATEGORIES.filter(function(c){return !['all','promo'].includes(c.id);}).slice(0,6);document.getElementById('collection-grid').innerHTML=source.map(function(c){const count=allDeals.filter(function(d){return detectCategory(d.title)===c.id;}).length;return '<a class="collection-card" href="/deals/'+c.id+'"><strong>'+c.label+'</strong><span>'+count+' current deals</span><b>'+c.icon+'</b></a>';}).join('');}
+function renderCollections(){const source=CATEGORIES.filter(function(c){return !['all','promo'].includes(c.id);}).slice(0,6);document.getElementById('collection-grid').innerHTML=source.map(function(c){const count=allDeals.filter(function(d){return detectCategory(d.title)===c.id;}).length;return '<a class="collection-card" href="/?store=all&category='+encodeURIComponent(c.id)+'"><strong>'+c.label+'</strong><span>'+count+' current deals</span><b>'+c.icon+'</b></a>';}).join('');}
 function renderHome(){const liveImporterDeals=allDeals.filter(isLiveImporterDeal);const amazon=newest(liveImporterDeals.filter(function(d){return storeOf(d)==='amazon';}));const walmart=newest(liveImporterDeals.filter(function(d){return storeOf(d)==='walmart';}));const promo=newest(allDeals.filter(isPromo));const tech=newest(liveImporterDeals.filter(function(d){return detectCategory(d.title)==='electronics';}));document.getElementById('feature-main-products').innerHTML=imageMarkup(tech.length?tech:newest(liveImporterDeals),3);document.getElementById('feature-amazon-products').innerHTML=imageMarkup(amazon,1);document.getElementById('feature-walmart-products').innerHTML=imageMarkup(walmart,1);const used=new Set();const topDeals=takeUnique(best(liveImporterDeals),5,used);const amazonDeals=takeUnique(amazon,5,used);const walmartDeals=takeUnique(walmart,5,used);const promoDeals=takeUnique(promo,5,used);renderCollections();renderRow('top-deals-row',topDeals,'Fresh store deals are loading.');renderRow('amazon-deals-row',amazonDeals,'Amazon deals are loading.');renderRow('walmart-deals-row',walmartDeals,'Walmart deals are loading.');renderRow('promo-deals-row',promoDeals,'New promo codes are coming soon.',true);}
 function categoryLabel(id){const c=CATEGORIES.find(function(item){return item.id===id;});return c?c.label:'All deals';}
 function renderChips(){document.getElementById('category-chips').innerHTML=CATEGORIES.map(function(c){return '<button class="category-chip'+(currentCategory===c.id?' is-active':'')+'" data-category="'+c.id+'">'+c.icon+' '+c.label+'</button>';}).join('');document.querySelectorAll('.category-chip').forEach(function(btn){btn.addEventListener('click',function(){currentCategory=btn.dataset.category;renderChips();updateBrowseUrl();renderBrowse();});});}

@@ -228,22 +228,15 @@ function canonicalAmazonUrl(rawUrl) {
 function getDedupKeys({ asin, discountCode, amazonUrl, productUrl }) {
   const code = String(discountCode || '').trim().toUpperCase();
   const urlKey = canonicalAmazonUrl(amazonUrl || productUrl || '');
-  const suffix = `|code:${code || '-'}`;
   const keys = new Set();
 
-  // Keep the promo campaign ID and, once Amazon resolves it, its first ASIN.
-  // Saved promo records use the resolved /dp/ URL, so retaining both keys lets
-  // a later copy of the same email match the record already in the system.
-  // Product-only keys prevent the same item from being auto-approved again
-  // when a repeated seller email uses a different coupon code.
-  if (urlKey) {
-    keys.add(urlKey);
-    keys.add(`${urlKey}${suffix}`);
-  }
+  // A coupon is a separate offer. Do not block a newly emailed code for the
+  // same ASIN just because an older code has expired. Coded offers are
+  // deduplicated by product + code; offers without a code use the product key.
+  if (urlKey) keys.add(code ? `${urlKey}|code:${code}` : urlKey);
   if (asin) {
     const asinKey = `asin:${String(asin).toUpperCase()}`;
-    keys.add(asinKey);
-    keys.add(`${asinKey}${suffix}`);
+    keys.add(code ? `${asinKey}|code:${code}` : asinKey);
   }
   return keys;
 }
@@ -700,10 +693,11 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
   const structuredText = plainText || emailText || htmlToTextWithLines(rawHtml);
   const blocks = splitProductBlocks(structuredText);
   const blockedAdultUrls = new Set();
+  const drafts = [];
+  const seenKeys = new Set();
+  let structuredCount = 0;
 
   if (blocks.length > 0) {
-    const drafts = [];
-    const seenKeys = new Set();
     for (const block of blocks) {
       if (isAdultProduct(block)) {
         console.warn('[Adult filter] Blocked explicit adult product block');
@@ -727,18 +721,15 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
         imageUrl:       extractImageForProduct(rawHtml, cdnImages, asin, fields.amazonUrl) || null,
       });
     }
-    if (drafts.length > 0) {
-      console.log(`[Phase 1] Structured blocks: ${blocks.length}, products: ${drafts.length}, CDN images: ${cdnImages.length}`);
-      return { drafts, urlsFound: drafts.length };
+    structuredCount = drafts.length;
+    if (structuredCount > 0) {
+      console.log(`[Phase 1] Structured blocks: ${blocks.length}, products: ${structuredCount}, CDN images: ${cdnImages.length}`);
     }
   }
 
   const allUrls = extractAmazonUrls(combined).filter(url => !blockedAdultUrls.has(canonicalAmazonUrl(url)));
   const urlsToProcess = allUrls;
-  console.log(`[Phase 1] Fallback URLs found: ${allUrls.length}, processing: ${urlsToProcess.length}, CDN images: ${cdnImages.length}`);
-
-  const drafts = [];
-  const seenKeys = new Set();
+  console.log(`[Phase 1] Fallback URLs found: ${allUrls.length}, processing unmatched URLs, CDN images: ${cdnImages.length}`);
   for (let i = 0; i < urlsToProcess.length; i++) {
     const url = urlsToProcess[i];
     const asin = await resolveAsin(url);
@@ -772,6 +763,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
     drafts.push(draft);
   }
 
+  console.log(`[Phase 1] Complete extraction: ${drafts.length} products (${structuredCount} structured + ${Math.max(0, drafts.length - structuredCount)} additional URLs)`);
   return { drafts, urlsFound: allUrls.length };
 }
 
@@ -870,7 +862,8 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   const reviewIssues = [];
   if (!title) reviewIssues.push('missing title');
   if (!imageUrl) reviewIssues.push('missing image');
-  else if (!imageVerified) reviewIssues.push('image could not be verified against product page');
+  // A direct Amazon product URL/ASIN ties the extracted email image to the
+  // deal even when Amazon blocks a follow-up verification fetch.
   if (!isValidPromoCode(draft.discountCode)) reviewIssues.push('missing or invalid promo code');
 
   // Amazon's title is tied to the same ASIN page from which the primary image
@@ -881,8 +874,8 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
   const titleMatch = meta.title && title
     ? titleMatchScore(title, meta.title)
     : 0;
-  if (!draft.asin || !imageVerified || !title || (meta.title && titleMatch < 0.5)) {
-    reviewIssues.push('title/image match could not be verified');
+  if (!draft.asin || !title || (meta.title && titleMatch < 0.5)) {
+    reviewIssues.push('title/product match could not be verified');
   }
 
   const autoApproved = reviewIssues.length === 0;
