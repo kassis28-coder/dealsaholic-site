@@ -122,8 +122,8 @@ async function selectDeal(used) {
 export default async function handler() {
   // Social posts remain paused until the editorial collage workflow is
   // approved. This prevents the scheduler from sending another generic card.
-  if (process.env.SOCIAL_COLLAGE_ENABLED !== "true") {
-    return new Response(JSON.stringify({ skipped: "social collage publishing is paused" }), {
+  if (process.env.SOCIAL_COLLAGE_ENABLED !== "true" || process.env.SOCIAL_EDITORIAL_FORMAT_APPROVED !== "true") {
+    return new Response(JSON.stringify({ skipped: "social collage publishing is paused pending editorial format approval" }), {
       headers: { "Content-Type": "application/json" },
     });
   }

@@ -45,7 +45,7 @@ export default async function handler(req) {
     .sort((a, b) => (Number(b.discountPercent) || 0) - (Number(a.discountPercent) || 0))[0];
   if (!deal) return new Response(JSON.stringify({ error: "No eligible current deal" }), { status: 404, headers: { "Content-Type": "application/json" } });
 
-  const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(keyFor(deal))}`;
+  const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(keyFor(deal))}&v=editorial-safe-4x5`;
   const response = await fetch(`${GRAPH_API}/${PAGE_ID}/photos`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
