@@ -1,4 +1,5 @@
 import { getStore } from "@netlify/blobs";
+import { engagementPrompt } from "./social-caption-bank.mjs";
 
 const FACEBOOK_GRAPH_API = "https://graph.facebook.com/v22.0";
 const INSTAGRAM_GRAPH_API = "https://graph.instagram.com/v25.0";
@@ -41,15 +42,22 @@ function usable(deal) {
   );
 }
 
-function caption(deal) {
+function dealPageUrl(deal) {
+  const id = String(deal?.id || deal?.asin || "").trim();
+  // Send social visitors through Deals-Aholic first. This preserves the site
+  // redirect/affiliate tracking rather than placing an Amazon URL in a post.
+  return id ? `${SITE_URL}/d/${encodeURIComponent(id)}` : String(deal?.url || SITE_URL);
+}
+
+function caption(deal, promptIndex) {
   const lines = [
     "🔥 Deal drop!",
     deal.title,
     deal.price ? `💰 ${deal.price}${deal.originalPrice ? ` (was ${deal.originalPrice})` : ""}` : "",
+    engagementPrompt(promptIndex),
     "",
-    `Shop this deal: ${deal.url}`,
-    `More daily deals: ${SITE_URL}`,
-    "Tap the link before the price changes.",
+    `Shop this exact deal: ${dealPageUrl(deal)}`,
+    "Link is also in our bio. Follow @deals_aholic for more daily finds, price drops, and promo codes.",
     "",
     "#ad As an Amazon Associate, Deals-Aholic may earn from qualifying purchases.",
     "#DealsAholic #AmazonFinds #DealAlert #Deals #ShoppingDeals #Sale",
@@ -141,7 +149,7 @@ export default async function handler() {
 
   const key = keyFor(deal);
   const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(key)}`;
-  const postCaption = caption(deal);
+  const postCaption = caption(deal, state.usedDealKeys?.length || 0);
   const result = { deal: { id: key, title: deal.title }, instagram: null, facebook: null, errors: [] };
 
   if (instagramToken) {
