@@ -5,7 +5,10 @@ const FACEBOOK_GRAPH_API = "https://graph.facebook.com/v22.0";
 const INSTAGRAM_GRAPH_API = "https://graph.instagram.com/v25.0";
 const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
-const SLOTS = new Set(["09", "14", "19"]);
+// Six daily editorial slots in America/New_York. Publishing remains guarded by
+// the approval flags below, so changing this schedule cannot release an
+// unapproved visual template.
+const SLOTS = new Set(["07", "10", "13", "16", "19", "22"]);
 const SHOPFORLESS_PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
 
 function currentEasternSlot() {
