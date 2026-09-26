@@ -111,6 +111,10 @@ body { margin: 0; background: var(--paper); font-family: 'Inter', sans-serif; co
 <div class="tab tab--create" data-status="create" onclick="setTab('create')">➕ Create Post</div>
 </div>
 
+<div id="pending-actions" style="display:none; margin: 0 0 16px;">
+<button class="btn btn--delete" onclick="clearPendingSubmissions()">🗑️ Clear all pending</button>
+<span id="pending-actions-msg"></span>
+</div>
 <div id="submissions-list"></div>
 <div id="amazon-flagged-list"></div>
 
@@ -448,6 +452,7 @@ renderList();
 
 function renderList() {
 const container = document.getElementById('submissions-list');
+document.getElementById('pending-actions').style.display = currentTab === 'pending' && allSubmissions.some(s => s.status === 'pending') ? 'block' : 'none';
 let filtered;
 
 if (currentTab === 'email') {
@@ -695,6 +700,32 @@ renderList();
 
 } catch (err) {
 alert('Could not reach the server. Please try again.');
+}
+}
+
+async function clearPendingSubmissions() {
+const count = allSubmissions.filter(s => s.status === 'pending').length;
+if (!count || !confirm(`Delete all ${count} pending submissions? Approved and rejected deals will remain.`)) return;
+const message = document.getElementById('pending-actions-msg');
+message.textContent = ' Clearing pending submissions…';
+try {
+const res = await fetch('/api/clear-pending-submissions', {
+method: 'POST', headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword }),
+});
+const data = await res.json();
+if (!res.ok) throw new Error(data.error || 'Clear failed');
+// Refresh from the server; a partial failure must remain visible for review.
+const list = await fetch('/api/get-submissions', {
+method: 'POST', headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ password: adminPassword }),
+});
+if (!list.ok) throw new Error('Cleared records, but could not refresh the list');
+allSubmissions = (await list.json()).submissions || [];
+renderList();
+message.textContent = ` Deleted ${data.deleted} pending submissions${data.failed ? `; ${data.failed} failed` : ''}.`;
+} catch (error) {
+message.textContent = ` ${error.message}`;
 }
 }
 
