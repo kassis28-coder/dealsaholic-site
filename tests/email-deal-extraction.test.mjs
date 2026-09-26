@@ -42,3 +42,9 @@ https://www.amazon.com/dp/B0H1WCH79Q`;
   assert.equal(validateDraft(drafts[1], 1).valid, false);
   assert.equal(validateDraft(drafts[0], 0).valid, true);
 });
+
+test('expired email offers are not reimported during replay', () => {
+  const draft = { amazonUrl: 'https://www.amazon.com/dp/B0H1WCH79Q', asin: 'B0H1WCH79Q',
+    dealPrice: '$13.99', discountCode: 'ZAAKHX4C', expirationDate: '2020-09-30T23:59:00Z' };
+  assert.deepEqual(validateDraft(draft, 0).issues, ['deal has expired']);
+});
