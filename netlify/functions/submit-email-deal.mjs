@@ -687,7 +687,7 @@ async function fetchAmazonMeta(url) {
 // Each draft contains only what was found in that product's context.
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-async function extractAllProducts(rawHtml, plainText, emailText) {
+export async function extractAllProducts(rawHtml, plainText, emailText) {
   const cdnImages = extractCdnImages(rawHtml);
   const combined = rawHtml + '\n' + (plainText || '') + '\n' + (emailText || '');
   const structuredText = plainText || emailText || htmlToTextWithLines(rawHtml);
@@ -695,6 +695,10 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
   const blockedAdultUrls = new Set();
   const drafts = [];
   const seenKeys = new Set();
+  // Coded offers use product+code keys for cross-email deduplication. The
+  // URL-only fallback has no code, so those keys cannot identify the same
+  // product within this message. Track product identity separately here.
+  const structuredProducts = new Set();
   let structuredCount = 0;
 
   if (blocks.length > 0) {
@@ -710,6 +714,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
       const dedupKeys = getDedupKeys({ ...fields, asin });
       if (hasAnyDedupKey(dedupKeys, seenKeys)) continue;
       for (const key of dedupKeys) seenKeys.add(key);
+      structuredProducts.add(asin ? `asin:${asin.toUpperCase()}` : canonicalAmazonUrl(fields.amazonUrl));
       drafts.push({
         amazonUrl:      fields.amazonUrl,
         asin:           asin || null,
@@ -733,6 +738,7 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
   for (let i = 0; i < urlsToProcess.length; i++) {
     const url = urlsToProcess[i];
     const asin = await resolveAsin(url);
+    if (structuredProducts.has(asin ? `asin:${asin.toUpperCase()}` : canonicalAmazonUrl(url))) continue;
     const dedupKeys = getDedupKeys({ asin, amazonUrl: url });
     if (hasAnyDedupKey(dedupKeys, seenKeys)) continue;
     for (const key of dedupKeys) seenKeys.add(key);
@@ -771,12 +777,16 @@ async function extractAllProducts(rawHtml, plainText, emailText) {
 // PHASE 2 â Validate each draft independently
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-function validateDraft(draft, i) {
+export function validateDraft(draft, i) {
   const issues = [];
   if (!draft.amazonUrl) issues.push('no Amazon URL');
   if (!draft.asin && !/\/dp\/|\/gp\/product\/|\/promocode\//i.test(draft.amazonUrl || '')) {
   issues.push('could not resolve ASIN and URL is not a direct product link');
 }
+  // A URL alone cannot reconstruct an emailed promotion. Amazon's page price
+  // is often different from the coupon price, and it cannot supply the code.
+  if (!draft.dealPrice) issues.push('no deal price in email');
+  if (!isValidPromoCode(draft.discountCode)) issues.push('no valid promo code in email');
   if (issues.length === 0) {
     if (!draft.productName)   console.log(`[Phase 2] Product ${i + 1}: no title in context â will try Amazon page`);
     if (!draft.dealPrice)     console.log(`[Phase 2] Product ${i + 1}: no price in context â will try Amazon page`);
@@ -923,7 +933,7 @@ async function saveDraft(draft, store, indexArr, ids, deals, existingKeys) {
 
 async function loadExistingDedupKeys(store, indexArr) {
   const keys = new Set();
-  const batchSize = 20;
+  const batchSize = 250;
 
   for (let i = 0; i < indexArr.length; i += batchSize) {
     const batch = indexArr.slice(i, i + batchSize);
@@ -997,16 +1007,20 @@ export default async (req) => {
     console.log(`[Phase 3] Existing deal keys: ${existingKeys.size}`);
 
     const ids = [], deals = [], savedRecords = [];
-    for (const draft of validDrafts) {
-      try {
-        const record = await saveDraft(draft, store, indexArr, ids, deals, existingKeys);
-        if (record) savedRecords.push(record);
-      } catch (err) {
-        console.error(`[Phase 3] Failed to save ${draft.amazonUrl}:`, err.message);
-      }
+    // Amazon metadata reads can take seconds each. Work in bounded groups and
+    // checkpoint the index so a function timeout cannot strand saved blobs.
+    for (let offset = 0; offset < validDrafts.length; offset += 8) {
+      const group = validDrafts.slice(offset, offset + 8);
+      const records = await Promise.all(group.map(async (draft) => {
+        try { return await saveDraft(draft, store, indexArr, ids, deals, existingKeys); }
+        catch (err) {
+          console.error(`[Phase 3] Failed to save ${draft.amazonUrl}:`, err.message);
+          return null;
+        }
+      }));
+      savedRecords.push(...records.filter(Boolean));
+      if (records.some(Boolean)) await store.set('index', JSON.stringify(indexArr));
     }
-
-    if (savedRecords.length > 0) await store.set('index', JSON.stringify(indexArr));
     console.log(`[Phase 3] Complete: ${savedRecords.length} records saved`);
 
     const first = savedRecords[0];
