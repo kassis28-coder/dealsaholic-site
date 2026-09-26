@@ -787,6 +787,9 @@ export function validateDraft(draft, i) {
   // is often different from the coupon price, and it cannot supply the code.
   if (!draft.dealPrice) issues.push('no deal price in email');
   if (!isValidPromoCode(draft.discountCode)) issues.push('no valid promo code in email');
+  if (draft.expirationDate && new Date(draft.expirationDate).getTime() <= Date.now()) {
+    issues.push('deal has expired');
+  }
   if (issues.length === 0) {
     if (!draft.productName)   console.log(`[Phase 2] Product ${i + 1}: no title in context â will try Amazon page`);
     if (!draft.dealPrice)     console.log(`[Phase 2] Product ${i + 1}: no price in context â will try Amazon page`);
