@@ -97,38 +97,43 @@ export default async function handler(req) {
   const deal = await findDeal(id);
   if (!deal || deal.needsReview) return new Response("Deal not found", { status: 404 });
 
-  // Instagram profiles crop portrait posts to a square preview. Keep every
-  // important element within the centered 1080 x 1080 safe area (y=135–1215)
-  // so the grid preview and the complete 4:5 post remain intentional.
-  const titleLines = wrapToWidth(deal.title, serifFont, 54, 850, 2);
+  // Editorial 4:5 layout inspired by the approved Deals-Aholic references:
+  // warm neutral canvas, magazine-style typography, strong product hero, and
+  // clear price hierarchy. All critical copy stays inside Instagram's square
+  // preview safe area (y=135–1215).
+  const titleLines = wrapToWidth(deal.title, serifFont, 58, 820, 2);
   const titleSvg = titleLines
-    .map((line, index) => textPath(serifFont, line, 540, 955 + index * 60, 54, { anchor: "middle", fill: "#342027" }))
+    .map((line, index) => textPath(serifFont, line, 118, 310 + index * 64, 58, { fill: "#161616" }))
     .join("");
   const price = String(deal.price || "Shop now");
-  const original = deal.originalPrice ? `Was ${deal.originalPrice}` : "Limited-time deal";
+  const original = deal.originalPrice ? `WAS ${deal.originalPrice}` : "LIMITED-TIME FIND";
+  const promo = String(deal.promoCode || deal.discountCode || deal.code || "").trim();
   const base = Buffer.from(`
     <svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffdfb"/><stop offset=".5" stop-color="#f9e4e0"/><stop offset="1" stop-color="#efd0ce"/></linearGradient>
-        <linearGradient id="pill" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#d98d91"/><stop offset="1" stop-color="#b85d68"/></linearGradient>
-        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#8d5a61" flood-opacity=".17"/></filter>
+        <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+          <stop stop-color="#f6f0e7"/>
+          <stop offset=".55" stop-color="#efe5d8"/>
+          <stop offset="1" stop-color="#e8ddce"/>
+        </linearGradient>
+        <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#5a493d" flood-opacity=".16"/>
+        </filter>
       </defs>
-      <rect width="100%" height="100%" fill="url(#bg)"/>
-      <rect x="40" y="40" width="1000" height="1270" rx="48" fill="#fffdfc" opacity=".84"/>
-      <!-- Safe area begins: do not put essential copy above y=135. -->
-      <path d="M104 142 C330 105, 744 108, 976 146 L958 226 C690 194, 332 198, 122 232 Z" fill="#d68689" opacity=".94"/>
-      ${textPath(serifFont, "DEALS-AHOLIC FINDS", 540, 204, 43, { anchor: "middle", fill: "#ffffff" })}
-      ${textPath(sansFont, "CURATED DEAL OF THE DAY", 540, 285, 22, { anchor: "middle", fill: "#8e6066" })}
-      <rect x="108" y="316" width="864" height="432" rx="44" fill="#fffaf8" stroke="#efc8c4" stroke-width="3" filter="url(#shadow)"/>
-      <path d="M116 738 Q540 782 964 738 L964 766 Q540 806 116 766 Z" fill="#efcdca" opacity=".8"/>
-      <rect x="308" y="727" width="464" height="118" rx="59" fill="url(#pill)" filter="url(#shadow)"/>
-      ${textPath(serifFont, price, 540, 808, 82, { anchor: "middle", fill: "#ffffff" })}
+      <rect width="100%" height="100%" fill="url(#paper)"/>
+      <rect x="52" y="52" width="976" height="1246" rx="18" fill="#fbf8f2" stroke="#d7cabd" stroke-width="2"/>
+      ${textPath(sansFont, "DEALS-AHOLIC", 118, 158, 24, { fill: "#171717" })}
+      ${textPath(sansFont, "THE DAILY DEAL EDIT", 962, 158, 20, { anchor: "end", fill: "#8f5f3f" })}
+      <line x1="118" y1="186" x2="962" y2="186" stroke="#c9b7a7" stroke-width="2"/>
       ${titleSvg}
-      ${textPath(sansFont, original, 540, 1092, 27, { anchor: "middle", fill: "#7e6266" })}
-      <rect x="150" y="1120" width="780" height="72" rx="36" fill="#fff8f5" stroke="#d9a3a4" stroke-width="2"/>
-      ${textPath(serifFont, "Shop this deal at deals-aholic.com", 540, 1168, 31, { anchor: "middle", fill: "#39242b" })}
-      <!-- Safe area ends at y=1215. Decorative content only below this line. -->
-      ${textPath(sansFont, "LIMITED TIME  •  #AD", 540, 1255, 19, { anchor: "middle", fill: "#aa7075" })}
+      <rect x="116" y="420" width="848" height="515" rx="12" fill="#ffffff" filter="url(#softShadow)"/>
+      <rect x="116" y="962" width="848" height="2" fill="#d4c5b7"/>
+      ${textPath(sansFont, original, 118, 1022, 22, { fill: "#7d6f64" })}
+      ${textPath(serifFont, price, 118, 1128, 92, { fill: "#171717" })}
+      ${promo ? textPath(sansFont, `CODE ${promo}`, 960, 1105, 24, { anchor: "end", fill: "#c86827" }) : ""}
+      <rect x="118" y="1174" width="844" height="64" rx="32" fill="#171717"/>
+      ${textPath(sansFont, "COMMENT LINK  •  WE'LL DM YOU THE DEAL", 540, 1217, 23, { anchor: "middle", fill: "#ffffff" })}
+      ${textPath(sansFont, "SHOP MORE AT DEALS-AHOLIC.COM   •   #AD", 540, 1272, 18, { anchor: "middle", fill: "#7b6a5e" })}
     </svg>
   `);
 
@@ -136,7 +141,7 @@ export default async function handler(req) {
   // Never let the scheduler publish a blank placeholder card. A post is only
   // useful when the real, verified product visual is available.
   if (!product) return new Response("Product image is unavailable", { status: 422 });
-  const composite = [{ input: product, left: 110, top: 236 }];
+  const composite = [{ input: product, left: 126, top: 450 }];
   // Explicitly resize the final asset to Instagram's portrait feed format.
   // This prevents accidental source-image dimensions from changing the output.
   const jpeg = await sharp(base)
