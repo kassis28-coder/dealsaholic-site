@@ -1,93 +1,52 @@
 import { getStore } from "@netlify/blobs";
-import { engagementPrompt } from "./social-caption-bank.mjs";
 
-const FACEBOOK_GRAPH_API = "https://graph.facebook.com/v22.0";
 const INSTAGRAM_GRAPH_API = "https://graph.instagram.com/v25.0";
-const SITE_URL = "https://deals-aholic.com";
 const TIME_ZONE = "America/New_York";
-// Six daily editorial slots in America/New_York. Publishing remains guarded by
-// the approval flags below, so changing this schedule cannot release an
-// unapproved visual template.
-const SLOTS = new Set(["07", "10", "13", "16", "19", "22"]);
-const SHOPFORLESS_PAGE_ID = process.env.SHOPFORLESS_PAGE_ID || "101455682008516";
+const SLOT_HOURS = new Set(["07", "10", "13", "16", "19", "22"]);
+const RETRY_WINDOW_MINUTES = 25;
 
-function currentEasternSlot() {
+function easternNow() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(new Date());
-  const value = Object.fromEntries(parts.filter((item) => item.type !== "literal").map((item) => [item.type, item.value]));
-  if (!SLOTS.has(value.hour) || Number(value.minute) > 4) return null;
-  return { key: `${value.year}-${value.month}-${value.day}`, hour: value.hour };
+  const v = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+  return { date: `${v.year}-${v.month}-${v.day}`, hour: v.hour, minute: Number(v.minute) };
 }
 
-function keyFor(deal) {
-  return String(deal.id || deal.asin || deal.url || "");
-}
-
-function timestamp(deal) {
-  const value = new Date(deal.createdAt || deal.fetchedAt || 0).getTime();
-  return Number.isFinite(value) ? value : 0;
-}
-
-function usable(deal) {
-  const title = String(deal?.title || "").trim();
-  const url = String(deal?.url || "").trim();
-  const image = String(deal?.image || deal?.imageUrl || "").trim();
-  return Boolean(
-    !deal?.needsReview && title.length >= 8 && !/^amazon deal$/i.test(title) && url && image &&
-    !/<(?:html|body|head)(?:\s|>)/i.test(title)
-  );
-}
-
-function dealPageUrl(deal) {
-  const id = String(deal?.id || deal?.asin || "").trim();
-  // Send social visitors through Deals-Aholic first. This preserves the site
-  // redirect/affiliate tracking rather than placing an Amazon URL in a post.
-  return id ? `${SITE_URL}/d/${encodeURIComponent(id)}` : String(deal?.url || SITE_URL);
-}
-
-function caption(deal, promptIndex) {
+function buildCaption(slot) {
   const lines = [
     "🔥 Deal drop!",
-    deal.title,
-    deal.price ? `💰 ${deal.price}${deal.originalPrice ? ` (was ${deal.originalPrice})` : ""}` : "",
-    engagementPrompt(promptIndex),
+    slot.title,
+    slot.price ? `💰 ${slot.price}${slot.originalPrice ? ` (was ${slot.originalPrice})` : ""}` : "",
+    slot.promoCode ? `🏷️ Promo code: ${slot.promoCode}` : "",
     "",
-    `Shop this exact deal: ${dealPageUrl(deal)}`,
-    "Link is also in our bio. Follow @deals_aholic for more daily finds, price drops, and promo codes.",
+    "Comment LINK and I’ll send you the exact deal in your DMs 💌",
+    "",
+    "Follow @deals_aholic for more daily finds, price drops, and promo codes.",
     "",
     "#ad As an Amazon Associate, Deals-Aholic may earn from qualifying purchases.",
-    "#DealsAholic #AmazonFinds #DealAlert #Deals #ShoppingDeals #Sale",
+    "#DealsAholic #AmazonFinds #DealAlert #ShoppingDeals #Sale",
+    "",
+    // LinkDM DM Planner draft code must remain in the caption so LinkDM can
+    // attach the correct AutoDM to this exact scheduled post.
+    slot.linkdmDraftCode,
   ];
-  return lines.filter((line, index) => line || index > 2).join("\n").slice(0, 2100);
+  return lines.filter(Boolean).join("\n").slice(0, 2100);
 }
 
-async function postForm(apiBase, path, params) {
+async function postForm(path, params) {
   const body = new URLSearchParams(params);
-  const response = await fetch(`${apiBase}/${path}`, {
+  const response = await fetch(`${INSTAGRAM_GRAPH_API}/${path}`, {
     method: "POST",
     signal: AbortSignal.timeout(25_000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.error) throw new Error(data.error?.message || `Meta request failed (${response.status})`);
+  if (!response.ok || data.error) throw new Error(data.error?.message || `Instagram request failed (${response.status})`);
   return data;
-}
-
-async function publishFacebook(cardUrl, postCaption, token) {
-  return postForm(FACEBOOK_GRAPH_API, `${SHOPFORLESS_PAGE_ID}/photos`, {
-    url: cardUrl,
-    caption: postCaption,
-    published: "true",
-    access_token: token,
-  });
 }
 
 async function instagramProfile(token) {
@@ -96,93 +55,92 @@ async function instagramProfile(token) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.error || !data.id) throw new Error(data.error?.message || "Instagram account could not be resolved");
+  if (data.username && data.username.toLowerCase() !== "deals_aholic") {
+    throw new Error(`Connected Instagram account is @${data.username}, expected @deals_aholic`);
+  }
   return data;
 }
 
-async function publishInstagram(cardUrl, postCaption, token) {
+async function publishInstagram(imageUrl, caption, token) {
   const profile = await instagramProfile(token);
-  const container = await postForm(INSTAGRAM_GRAPH_API, `${profile.id}/media`, {
-    image_url: cardUrl,
-    caption: postCaption,
+  const container = await postForm(`${profile.id}/media`, {
+    image_url: imageUrl,
+    caption,
     access_token: token,
   });
   if (!container.id) throw new Error("Instagram did not return a media container ID");
-  return postForm(INSTAGRAM_GRAPH_API, `${profile.id}/media_publish`, {
+
+  const published = await postForm(`${profile.id}/media_publish`, {
     creation_id: container.id,
     access_token: token,
   });
-}
-
-async function selectDeal(used) {
-  const latest = await getStore("deals").get("latest", { type: "json" }).catch(() => null);
-  const deals = Array.isArray(latest?.deals) ? [...latest.deals] : [];
-  return deals
-    .filter(usable)
-    .sort((a, b) => (Number(b.discountPercent) || 0) - (Number(a.discountPercent) || 0) || timestamp(b) - timestamp(a))
-    .find((deal) => !used.includes(keyFor(deal))) || null;
+  if (!published.id) throw new Error("Instagram did not return a published media ID");
+  return { containerId: container.id, mediaId: published.id, username: profile.username || null };
 }
 
 export default async function handler() {
-  // Social posts remain paused until the editorial collage workflow is
-  // approved. This prevents the scheduler from sending another generic card.
-  if (process.env.SOCIAL_COLLAGE_ENABLED !== "true" || process.env.SOCIAL_EDITORIAL_FORMAT_APPROVED !== "true") {
-    return new Response(JSON.stringify({ skipped: "social collage publishing is paused pending editorial format approval" }), {
-      headers: { "Content-Type": "application/json" },
-    });
+  const now = easternNow();
+  if (!SLOT_HOURS.has(now.hour) || now.minute >= RETRY_WINDOW_MINUTES) {
+    return Response.json({ skipped: "outside Instagram publishing window", now });
   }
 
-  const slot = currentEasternSlot();
-  if (!slot) return new Response(JSON.stringify({ skipped: "outside scheduled social window" }), { headers: { "Content-Type": "application/json" } });
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+  if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN is not configured");
 
-  const instagramToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const facebookToken = process.env.SHOPFORLESS_PAGE_TOKEN || process.env.FACEBOOK_PAGE_TOKEN || process.env.META_SYSTEM_TOKEN;
-  if (!instagramToken && !facebookToken) throw new Error("No social publishing token is configured");
-
-  const stateStore = getStore("social-publishing-state");
-  const stateKey = `daily-${slot.key}`;
-  const state = await stateStore.get(stateKey, { type: "json" }).catch(() => null) || { usedDealKeys: [], slots: {} };
-  if (state.slots?.[slot.hour]) return new Response(JSON.stringify({ skipped: "slot already processed", slot }), { headers: { "Content-Type": "application/json" } });
-
-  const deal = await selectDeal(state.usedDealKeys || []);
-  if (!deal) {
-    state.slots[slot.hour] = { skipped: "no eligible deals", at: new Date().toISOString() };
-    await stateStore.setJSON(stateKey, state);
-    return new Response(JSON.stringify({ skipped: "no eligible deals" }), { headers: { "Content-Type": "application/json" } });
+  const store = getStore("instagram-daily-plan");
+  const planKey = `plan-${now.date}`;
+  const plan = await store.get(planKey, { type: "json" }).catch(() => null);
+  if (!plan?.slots?.[now.hour]) {
+    return Response.json({ skipped: "no prepared plan for this slot", date: now.date, hour: now.hour }, { status: 409 });
   }
 
-  const key = keyFor(deal);
-  // New template version avoids an old CDN-cached image being reused by Meta.
-  const cardUrl = `${SITE_URL}/api/social-card?id=${encodeURIComponent(key)}&v=editorial-safe-4x5`;
-  const postCaption = caption(deal, state.usedDealKeys?.length || 0);
-  const result = { deal: { id: key, title: deal.title }, instagram: null, facebook: null, errors: [] };
-
-  if (instagramToken) {
-    try { result.instagram = await publishInstagram(cardUrl, postCaption, instagramToken); }
-    catch (error) { result.errors.push({ platform: "instagram", message: error.message }); }
-  }
-  if (facebookToken) {
-    try { result.facebook = await publishFacebook(cardUrl, postCaption, facebookToken); }
-    catch (error) { result.errors.push({ platform: "facebook", message: error.message }); }
+  const slot = plan.slots[now.hour];
+  if (slot.instagramStatus === "published" && slot.instagramMediaId) {
+    return Response.json({ skipped: "Instagram slot already published", mediaId: slot.instagramMediaId });
   }
 
-  if (!result.instagram && !result.facebook) {
-    console.error("[publish-social-deals] No platform accepted post", JSON.stringify(result));
-    throw new Error(result.errors.map((item) => `${item.platform}: ${item.message}`).join(" | ") || "No social platform is configured");
+  // Never publish without a LinkDM draft. This prevents a live Instagram post
+  // from going out without the requested comment-to-DM automation.
+  if (!slot.linkdmDraftCode || slot.linkdmStatus !== "ready") {
+    slot.instagramStatus = "blocked_linkdm";
+    slot.lastError = "LinkDM draft code is missing";
+    slot.retryCount = Number(slot.retryCount || 0) + 1;
+    plan.updatedAt = new Date().toISOString();
+    await store.setJSON(planKey, plan);
+    return Response.json({ blocked: "LinkDM draft code is missing", date: now.date, hour: now.hour }, { status: 409 });
   }
 
-  // A successful post to either authorized channel consumes the time slot to
-  // prevent duplicate Instagram posts when the Facebook Page token is repaired.
-  state.usedDealKeys = [...new Set([...(state.usedDealKeys || []), key])].slice(-100);
-  state.slots[slot.hour] = {
-    key,
-    at: new Date().toISOString(),
-    instagram: result.instagram?.id || null,
-    facebook: result.facebook?.id || null,
-    errors: result.errors,
-  };
-  await stateStore.setJSON(stateKey, state);
-  console.log("[publish-social-deals]", JSON.stringify(result));
-  return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
+  slot.instagramStatus = "publishing";
+  slot.lastAttemptAt = new Date().toISOString();
+  plan.updatedAt = slot.lastAttemptAt;
+  await store.setJSON(planKey, plan);
+
+  try {
+    const published = await publishInstagram(slot.socialImageUrl, buildCaption(slot), token);
+    slot.instagramStatus = "published";
+    slot.instagramMediaId = published.mediaId;
+    slot.instagramContainerId = published.containerId;
+    slot.publishedAt = new Date().toISOString();
+    slot.lastError = null;
+    slot.linkdmStatus = "awaiting_comment_test";
+    plan.updatedAt = slot.publishedAt;
+    plan.status = Object.values(plan.slots).every((s) => s.instagramStatus === "published") ? "published" : "in_progress";
+    await store.setJSON(planKey, plan);
+    console.log("[publish-instagram-deal]", JSON.stringify({
+      date: now.date, hour: now.hour, dealId: slot.dealId, mediaId: slot.instagramMediaId,
+      destinationUrl: slot.destinationUrl, linkdmDraftCode: slot.linkdmDraftCode,
+    }));
+    return Response.json({ ok: true, date: now.date, hour: now.hour, dealId: slot.dealId, instagramMediaId: slot.instagramMediaId });
+  } catch (error) {
+    slot.instagramStatus = "retrying";
+    slot.retryCount = Number(slot.retryCount || 0) + 1;
+    slot.lastError = error.message;
+    slot.lastAttemptAt = new Date().toISOString();
+    plan.updatedAt = slot.lastAttemptAt;
+    await store.setJSON(planKey, plan);
+    console.error("[publish-instagram-deal]", error);
+    return Response.json({ error: error.message, retryCount: slot.retryCount }, { status: 502 });
+  }
 }
 
 export const config = { schedule: "*/5 * * * *" };
