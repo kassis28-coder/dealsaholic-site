@@ -23,7 +23,7 @@ Critical copy is kept inside the centered 1080×1080 safe area (`y=135..1215`),
 so Instagram's square profile/feed crop cannot cut off the title, price, code,
 branding, or CTA.
 
-`publish-social-deals` runs every five minutes. It publishes only the frozen
+`publish-instagram-deals` runs every five minutes. It publishes only the frozen
 slot for the current hour, verifies that its stored creative is validated and
 publicly retrievable, confirms the token belongs to `@deals_aholic`, creates one
 Instagram container, waits for processing to finish, publishes it, and logs the
