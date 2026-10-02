@@ -43,7 +43,7 @@ test("freezes one exact deal and uses matching data in image URL and caption", (
   slot.linkdm_draft_code = "DRAFT-CODE-123";
   slot.linkdm_status = "ready";
   assert.equal(slot.deal_url, "https://deals-aholic.com/d/B0TEST123");
-  assert.equal(slot.social_image_url, "https://deals-aholic.com/api/social-card?date=2026-09-29&hour=10");
+  assert.equal(slot.social_image_url, "https://deals-aholic.com/api/instagram-social-card?date=2026-09-29&hour=10");
   const caption = buildCaption(slot);
   assert.match(caption, /Exact Product Name/);
   assert.match(caption, /\$19\.99 \(was \$29\.99\)/);
@@ -102,8 +102,8 @@ test("new slots wait for the persistent LinkDM next-post synchronization", () =>
 
 test("Instagram implementation is frozen-slot only and treats LinkDM as optional", async () => {
   const [publish, card] = await Promise.all([
-    fs.readFile(new URL("../netlify/functions/publish-social-deals.mjs", import.meta.url), "utf8"),
-    fs.readFile(new URL("../netlify/functions/social-card.mjs", import.meta.url), "utf8"),
+    fs.readFile(new URL("../netlify/functions/publish-instagram-deals.mjs", import.meta.url), "utf8"),
+    fs.readFile(new URL("../netlify/functions/instagram-social-card.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(publish, /LinkDM is optional/);
   assert.match(publish, /instagram_container_id/);
