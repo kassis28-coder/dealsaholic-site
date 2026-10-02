@@ -98,7 +98,7 @@ export function slotSnapshot(deal, hour, scheduledAt) {
     original_price: deal.originalPrice ? String(deal.originalPrice) : null,
     promo_code: promo,
     deal_url: canonicalDealUrl(deal),
-    social_image_url: `${SITE_URL}/api/social-card?date=${encodeURIComponent(scheduledAt.slice(0, 10))}&hour=${hour}`,
+    social_image_url: `${SITE_URL}/api/instagram-social-card?date=${encodeURIComponent(scheduledAt.slice(0, 10))}&hour=${hour}`,
     creative_key: null,
     creative_status: "pending_generation",
     creative_width: null,
