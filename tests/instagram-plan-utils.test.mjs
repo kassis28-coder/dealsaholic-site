@@ -3,6 +3,8 @@ import test from "node:test";
 import fs from "node:fs/promises";
 import {
   SLOT_HOURS,
+  SLOT_HOURS_EVENING_BATCH,
+  SLOT_HOURS_NOON_BATCH,
   addEasternDays,
   buildCaption,
   easternNow,
@@ -10,10 +12,19 @@ import {
   nextInstagramAction,
   publicSlot,
   slotSnapshot,
+  productKey,
 } from "../netlify/functions/instagram-plan-utils.mjs";
 
-test("represents exactly the six required ET slots", () => {
-  assert.deepEqual(SLOT_HOURS, ["07", "10", "13", "16", "19", "22"]);
+test("represents exactly twelve hourly ET slots in two six-post batches", () => {
+  assert.deepEqual(SLOT_HOURS, ["08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"]);
+  assert.deepEqual(SLOT_HOURS_NOON_BATCH, ["08", "09", "10", "11", "12", "13"]);
+  assert.deepEqual(SLOT_HOURS_EVENING_BATCH, ["14", "15", "16", "17", "18", "19"]);
+});
+
+test("productKey prevents the same ASIN from being treated as a new product", () => {
+  assert.equal(productKey({ id: "submission-one", asin: "b0abc12345" }), "asin:B0ABC12345");
+  assert.equal(productKey({ id: "submission-two", asin: "B0ABC12345" }), "asin:B0ABC12345");
+  assert.equal(productKey({ id: "submission-only" }), "deal:submission-only");
 });
 
 test("keeps ET date arithmetic stable across daylight saving boundaries", () => {
@@ -115,4 +126,15 @@ test("Instagram implementation is frozen-slot only and treats LinkDM as optional
   const queue = await fs.readFile(new URL("../netlify/functions/queue-instagram-creative.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(queue, /facebook\.com|FACEBOOK_|page_id/i);
   assert.match(queue, /1080x1350/);
+});
+
+test("two recurring preparation functions gate the noon and evening batches", async () => {
+  const [noon, evening] = await Promise.all([
+    fs.readFile(new URL("../netlify/functions/prepare-instagram-noon.mjs", import.meta.url), "utf8"),
+    fs.readFile(new URL("../netlify/functions/prepare-instagram-day.mjs", import.meta.url), "utf8"),
+  ]);
+  assert.match(noon, /prepareInstagramBatch\(req, \{ batch: "noon" \}\)/);
+  assert.match(evening, /prepareInstagramBatch\(req, \{ batch: "evening" \}\)/);
+  assert.match(noon, /schedule: "\*\/5 \* \* \* \*"/);
+  assert.match(evening, /schedule: "\*\/5 \* \* \* \*"/);
 });

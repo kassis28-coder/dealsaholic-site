@@ -1,6 +1,10 @@
 export const SITE_URL = "https://deals-aholic.com";
 export const TIME_ZONE = "America/New_York";
-export const SLOT_HOURS = ["07", "10", "13", "16", "19", "22"];
+// The two daily preparation runs each reserve a contiguous six-hour block.
+// Publishing remains one post per hour, 8 AM–7 PM in the account's timezone.
+export const SLOT_HOURS = Array.from({ length: 12 }, (_, index) => String(index + 8).padStart(2, "0"));
+export const SLOT_HOURS_NOON_BATCH = SLOT_HOURS.slice(0, 6);
+export const SLOT_HOURS_EVENING_BATCH = SLOT_HOURS.slice(6);
 export const RETRY_WINDOW_MINUTES = 55;
 
 const IMAGE_HOSTS = [
@@ -41,6 +45,11 @@ export function addEasternDays(dateKey, days) {
 
 export function dealId(deal) {
   return String(deal?.id || deal?.asin || "").trim();
+}
+
+export function productKey(deal) {
+  const asin = String(deal?.asin || "").trim().toUpperCase();
+  return asin ? `asin:${asin}` : `deal:${dealId(deal)}`;
 }
 
 export function validImageUrl(value) {
@@ -90,6 +99,7 @@ export function slotSnapshot(deal, hour, scheduledAt) {
     hour,
     scheduled_at: scheduledAt,
     deal_id: id,
+    product_key: productKey(deal),
     title: String(deal.title).trim(),
     source_image_url: String(deal.image || deal.imageUrl),
     approved_editorial_image_url: String(deal.approvedInstagramImageUrl || deal.instagramEditorialImageUrl || "") || null,
@@ -164,6 +174,7 @@ export function publicSlot(slot) {
     hour: slot.hour,
     scheduled_at: slot.scheduled_at,
     deal_id: slot.deal_id,
+    product_key: slot.product_key,
     title: slot.title,
     source_image_url: slot.source_image_url,
     price: slot.price,
