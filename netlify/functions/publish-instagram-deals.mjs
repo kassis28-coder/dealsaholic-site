@@ -1,4 +1,5 @@
 import { getStore } from "@netlify/blobs";
+import { fetchPublishedInstagramDealIds } from "./instagram-dedupe.mjs";
 import {
   RETRY_WINDOW_MINUTES,
   SLOT_HOURS,
@@ -100,6 +101,25 @@ export default async function handler() {
     return Response.json({ blocked: slot.last_error, date: now.date, hour: now.hour }, { status: 409 });
   }
 
+  // Re-check the live Instagram captions immediately before publishing. This
+  // protects against a deal being posted manually after the daily plan was
+  // prepared. Fail closed: a duplicate is never replaced by a second post.
+  try {
+    const publishedDealIds = await fetchPublishedInstagramDealIds(token);
+    if (publishedDealIds.has(String(slot.deal_id))) {
+      slot.instagram_status = "duplicate_detected";
+      slot.last_error = "Deal already exists on Instagram; a different product must be planned";
+      await save(store, key, plan);
+      return Response.json({ blocked: slot.last_error, deal_id: slot.deal_id }, { status: 409 });
+    }
+  } catch (error) {
+    slot.instagram_status = "retrying";
+    slot.last_error = `Instagram duplicate check failed; ${error.message}`;
+    slot.retry_count = Number(slot.retry_count || 0) + 1;
+    await save(store, key, plan);
+    return Response.json({ error: slot.last_error }, { status: 502 });
+  }
+
   // LinkDM is optional. When no draft exists the frozen caption sends shoppers
   // directly to deals-aholic.com and never promises an unavailable DM.
   const profile = await instagramProfile(token).catch(async (error) => {
@@ -188,10 +208,16 @@ export default async function handler() {
     // action unless a documented LinkDM API credential is supplied.
     slot.linkdm_status = slot.linkdm_draft_code ? "draft_code_published_pending_external_verification" : "next_post_published_pending_sync";
     await save(store, key, plan);
-    await getStore("instagram-deal-history").setJSON(`deal-${encodeURIComponent(slot.deal_id)}`, {
-      deal_id: slot.deal_id, status: "published", plan_date: now.date, hour: now.hour,
-      instagram_media_id: slot.instagram_media_id, published_at: slot.published_at,
-    });
+    const historyStore = getStore("instagram-deal-history");
+    const historyRecord = {
+      deal_id: slot.deal_id, product_key: slot.product_key, status: "published",
+      plan_date: now.date, hour: now.hour, instagram_media_id: slot.instagram_media_id,
+      published_at: slot.published_at,
+    };
+    await Promise.all([
+      historyStore.setJSON(`deal-${encodeURIComponent(slot.deal_id)}`, historyRecord),
+      historyStore.setJSON(`product-${encodeURIComponent(slot.product_key || `deal:${slot.deal_id}`)}`, historyRecord),
+    ]);
     console.log("[publish-instagram-deal]", JSON.stringify({
       date: now.date, hour: now.hour, dealId: slot.deal_id, mediaId: slot.instagram_media_id,
       containerId: slot.instagram_container_id,
