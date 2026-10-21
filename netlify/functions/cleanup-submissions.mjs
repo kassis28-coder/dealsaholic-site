@@ -19,26 +19,28 @@ export default async (req, context) => {
   try { index = await store.get('index', { type: 'json' }) || []; } catch (e) { index = []; }
 
   const now = new Date();
-  const keepIds = [];
   const removedIds = [];
 
-  for (const id of index) {
+  // Bound parallel storage reads instead of waiting for thousands of network
+  // round trips in sequence. Preserve the existing deletion eligibility rules.
+  const uniqueIds = [...new Set(index)];
+  const processRecord = async (id) => {
     try {
       const record = await store.get(id, { type: 'json' });
-      if (!record) { removedIds.push(id); continue; }
+      if (!record) { removedIds.push(id); return; }
 
       // Remove garbage / error-message submissions permanently
       if (isGarbageSubmission(record)) {
         await store.delete(id);
         removedIds.push(id);
-        continue;
+        return;
       }
 
       // Remove if expired
       if (record.expiresOn && new Date(record.expiresOn) < now) {
         await store.delete(id);
         removedIds.push(id);
-        continue;
+        return;
       }
 
       // Remove if older than 7 days and no expiry set
@@ -47,18 +49,22 @@ export default async (req, context) => {
         if (age > 7 * 24 * 60 * 60 * 1000) {
           await store.delete(id);
           removedIds.push(id);
-          continue;
+          return;
         }
       }
 
-      keepIds.push(id);
-    } catch (e) {
-      keepIds.push(id);
-    }
+    } catch (e) { /* Keep records when a storage read/delete fails. */ }
+  };
+  for (let offset = 0; offset < uniqueIds.length; offset += 50) {
+    await Promise.all(uniqueIds.slice(offset, offset + 50).map(processRecord));
   }
 
-  // Update index with only valid deals
-  await store.setJSON('index', keepIds);
+  // Re-read before writing so imports appended during this scan are retained.
+  // If this read fails, do not overwrite the live index with the old snapshot.
+  const removed = new Set(removedIds);
+  const currentIndex = await store.get('index', { type: 'json' });
+  const keepIds = (Array.isArray(currentIndex) ? currentIndex : index).filter(id => !removed.has(id));
+  if (removed.size) await store.setJSON('index', keepIds);
 
   return new Response(JSON.stringify({
     success: true,
@@ -70,5 +76,5 @@ export default async (req, context) => {
 };
 
 export const config = {
-  schedule: '0 * * * *',
+  schedule: '0 */6 * * *',
 };

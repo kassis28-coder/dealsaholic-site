@@ -1,9 +1,11 @@
 import { getStore } from "@netlify/blobs";
 
-// Rebuilding this feed requires reading more than 2,000 reviewed submissions.
-// Keep the already-built feed warm long enough that normal visitors never pay
-// that cold-build cost. New Amazon and Walmart results become visible within a few minutes.
-const PUBLIC_FEED_CACHE_TTL_MS = 5 * 60 * 1000;
+// The scheduled refresher rebuilds every 15 minutes. Visitor requests reuse
+// its durable snapshot instead of scanning thousands of records at the same
+// five-minute boundary. Fall back to rebuilding if the scheduler is an hour late.
+const PUBLIC_FEED_CACHE_TTL_MS = 15 * 60 * 1000;
+const PUBLIC_FEED_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+let pendingPublicFeedRebuild = null;
 // Bump this whenever the rules that decide whether an approved deal is public
 // change, so the first request after deployment rebuilds instead of serving
 // the old decision from a durable cache.
@@ -432,6 +434,7 @@ async function getApprovedSellerDeals() {
           createdAt:
             record.createdAt ||
             null,
+          expiresOn: record.expiresOn || null,
         });
       }
     }
@@ -443,7 +446,7 @@ async function getApprovedSellerDeals() {
   }
 }
 
-export async function rebuildPublicFeed(
+async function buildPublicFeed(
   publicCache
 ) {
   const store =
@@ -582,6 +585,40 @@ export async function rebuildPublicFeed(
   return combined;
 }
 
+// Coalesce overlapping scheduled/cold/fallback requests in the same instance.
+// The durable snapshot remains shared across instances.
+export function rebuildPublicFeed(publicCache) {
+  if (!pendingPublicFeedRebuild) {
+    pendingPublicFeedRebuild = buildPublicFeed(publicCache).finally(() => {
+      pendingPublicFeedRebuild = null;
+    });
+  }
+  return pendingPublicFeedRebuild;
+}
+
+function livePayload(payload) {
+  const now = Date.now();
+  const cutoff = now - AMAZON_PUBLIC_WINDOW_MS;
+  return {
+    ...payload,
+    deals: (payload.deals || []).filter(deal => {
+      const expiry = new Date(deal.expiresOn).getTime();
+      if (deal.expiresOn && Number.isFinite(expiry) && expiry < now) return false;
+      // Seller records are governed by expiresOn, not the Amazon import window.
+      if (deal.fetchedAt) {
+        const fetchedAt = new Date(deal.fetchedAt).getTime();
+        if (Number.isFinite(fetchedAt) && fetchedAt < cutoff) return false;
+      }
+      return true;
+    }),
+  };
+}
+
+function feedResponse(payload, homepageOnly, headers = RESPONSE_HEADERS) {
+  const live = livePayload(payload);
+  return new Response(JSON.stringify(homepageOnly ? compactHomepagePayload(live) : live), { headers });
+}
+
 export default async (
   req,
   context
@@ -607,33 +644,20 @@ export default async (
 
     if (cachedFeed?.payload) {
       const cacheAge = Date.now() - cachedFeed.cachedAt;
-      if (cacheAge < PUBLIC_FEED_CACHE_TTL_MS) {
-        const responsePayload = homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload;
-        return new Response(JSON.stringify(responsePayload), { headers: RESPONSE_HEADERS });
+      if (cacheAge < PUBLIC_FEED_CACHE_MAX_AGE_MS) {
+        return feedResponse(cachedFeed.payload, homepageOnly,
+          cacheAge < PUBLIC_FEED_CACHE_TTL_MS ? RESPONSE_HEADERS : STALE_RESPONSE_HEADERS);
       }
-      // The durable cache is stale: rebuild now so recently imported email
-      // offers and the newest Amazon rotation become visible automatically.
+      // Recover if scheduled refreshes have stopped for an hour.
     }
 
     const combined = await rebuildPublicFeed(publicCache);
 
-    return new Response(
-      JSON.stringify(homepageOnly ? compactHomepagePayload(combined) : combined),
-      {
-        headers:
-          RESPONSE_HEADERS,
-      }
-    );
+    return feedResponse(combined, homepageOnly);
 
   } catch (err) {
     if (cachedFeed?.payload) {
-      return new Response(
-        JSON.stringify(homepageOnly ? compactHomepagePayload(cachedFeed.payload) : cachedFeed.payload),
-        {
-          headers:
-            RESPONSE_HEADERS,
-        }
-      );
+      return feedResponse(cachedFeed.payload, homepageOnly, STALE_RESPONSE_HEADERS);
     }
 
     return new Response(

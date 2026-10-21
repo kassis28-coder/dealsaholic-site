@@ -24,5 +24,5 @@ export default async function refreshPublicDealsCache() {
 }
 
 export const config = {
-  schedule: "*/5 * * * *",
+  schedule: "*/15 * * * *",
 };
