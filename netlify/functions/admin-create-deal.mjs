@@ -12,6 +12,16 @@ const WALMART_AFFILIATE = process.env.WALMART_IMPACT_PREFIX || "https://goto.wal
 const TARGET_AFFILIATE = process.env.TARGET_IMPACT_PREFIX || "";
 const TEMU_AFFILIATE = "https://temuaffiliateprogram.pxf.io/c/1788825/1580294/18350?u=";
 
+function extractAmazonAsin(url) {
+  try {
+    const path = new URL(url).pathname;
+    const match = path.match(/(?:^|\/)(?:dp|gp\/product|product)\/([A-Z0-9]{10})(?:\/|$)/i);
+    return match ? match[1].toUpperCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 function detectStore(url) {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -19,6 +29,8 @@ function detectStore(url) {
     if (host.includes("goto.target.") || host.includes("target.sjv.io")) return "target_affiliate";
     if (host === "mavely.app.link" || host.endsWith(".mavely.app.link") || host.includes("mavelyinfluencer.com")) return "target_affiliate";
     if (host.includes("temuaffiliateprogram.")) return "temu_affiliate";
+    // Amazon short/affiliate links such as link.amazon/B0ciBNGp6
+    if (host === "link.amazon" || host.endsWith(".link.amazon") || host === "amzn.to" || host.endsWith(".amzn.to")) return "amazon";
     if (host.includes("amazon.")) return "amazon";
     if (host.includes("walmart.")) return "walmart";
     if (host.includes("target.")) return "target";
@@ -32,22 +44,10 @@ function detectStore(url) {
 function buildAffiliateUrl(url, store) {
   switch (store) {
     case "amazon": {
-      const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/i);
-      const asin = asinMatch ? asinMatch[1] : null;
+      const asin = extractAmazonAsin(url);
       if (asin) return `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`;
       return url.includes("tag=") ? url : `${url}${url.includes("?") ? "&" : "?"}tag=${PARTNER_TAG}`;
     }
-    case "walmart":
-      return `${WALMART_AFFILIATE}${encodeURIComponent(url)}`;
-    case "target":
-      if (!TARGET_AFFILIATE) throw new Error("Target Impact link is not configured. Paste an already-tracked Target Impact link or add TARGET_IMPACT_PREFIX in Netlify.");
-      return `${TARGET_AFFILIATE}${encodeURIComponent(url)}`;
-    case "temu":
-      return `${TEMU_AFFILIATE}${encodeURIComponent(url)}`;
-    default:
-      return url;
-  }
-}
 
 async function getAmazonAccessToken() {
   const res = await fetch(TOKEN_URL, {
