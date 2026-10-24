@@ -153,8 +153,11 @@
     .app-download__panel { display: block; padding: 22px 18px; border-radius: 18px; }
     .app-download__title { font-size: 24px; }
     .app-download__copy { font-size: 13px; }
-    .app-download__actions { margin-top: 18px; display: grid; gap: 9px; }
-    .app-download__button { width: 100%; }
+    .app-download__actions { margin-top: 18px; display: flex; gap: 8px; }
+    .app-download__button { min-width: 0; flex: 1 1 0; width: auto; padding: 10px 8px; gap: 6px; }
+    .app-download__button small { font-size: 8px; }
+    .app-download__button strong { font-size: 11px; }
+    .app-download__icon { font-size: 20px; }
   }
   @media (prefers-reduced-motion: reduce) { .deal-card { transition: none; } }
 </style>
