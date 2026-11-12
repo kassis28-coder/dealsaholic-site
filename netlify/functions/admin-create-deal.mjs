@@ -48,6 +48,10 @@ function buildAffiliateUrl(url, store) {
       if (asin) return `https://www.amazon.com/dp/${asin}?tag=${PARTNER_TAG}`;
       return url.includes("tag=") ? url : `${url}${url.includes("?") ? "&" : "?"}tag=${PARTNER_TAG}`;
     }
+    default:
+      return url;
+  }
+}
 
 async function getAmazonAccessToken() {
   const res = await fetch(TOKEN_URL, {
