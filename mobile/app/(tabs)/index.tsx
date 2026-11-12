@@ -130,6 +130,18 @@ export default function DealsScreen() {
       </View>
       <Pressable
         accessibilityRole="link"
+        accessibilityLabel="Shop my Instagram posts"
+        style={styles.instagramBanner}
+        onPress={() => Linking.openURL('https://deals-aholic.us')}>
+        <View style={styles.instagramCopy}>
+          <Text style={styles.instagramEyebrow}>FEATURED ON INSTAGRAM</Text>
+          <Text style={styles.instagramTitle}>Shop my Instagram posts</Text>
+          <Text style={styles.instagramText}>See the latest deals I’m sharing on Instagram.</Text>
+        </View>
+        <View style={styles.instagramButton}><Text style={styles.instagramButtonText}>Shop the posts →</Text></View>
+      </Pressable>
+      <Pressable
+        accessibilityRole="link"
         accessibilityLabel="Join the Deals-aholic Telegram channel"
         style={styles.telegramBanner}
         onPress={() => Linking.openURL('https://t.me/dealsaholic')}>
@@ -215,6 +227,13 @@ const styles = StyleSheet.create({
   heroImage: { width: '92%', height: '92%' },
   search: { height: 50, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: colors.card, borderRadius: 14, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.line },
   searchInput: { flex: 1, color: colors.ink, fontSize: 15 },
+  instagramBanner: { minHeight: 126, marginTop: 12, marginBottom: 14, borderRadius: 22, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#E83E86', borderWidth: 1, borderColor: '#D92F72' },
+  instagramCopy: { flex: 1 },
+  instagramEyebrow: { color: '#FFE8F2', fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
+  instagramTitle: { color: '#FFFFFF', fontSize: 24, lineHeight: 28, fontWeight: '900', marginTop: 6 },
+  instagramText: { color: '#FFF1F7', fontSize: 11, lineHeight: 16, marginTop: 5 },
+  instagramButton: { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 11 },
+  instagramButtonText: { color: '#9A2456', fontSize: 11, fontWeight: '900' },
   telegramBanner: { minHeight: 76, marginTop: 12, borderRadius: 17, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#DFF4FF', borderWidth: 1, borderColor: '#9BD9F5' },
   telegramIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#229ED9' },
   telegramCopy: { flex: 1 },
