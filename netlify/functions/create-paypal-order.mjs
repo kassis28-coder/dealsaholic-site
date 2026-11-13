@@ -14,6 +14,12 @@ const CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
 const PAYPAL_API = "https://api-m.paypal.com";
 const SITE_URL = "https://strong-moonbeam-b8d8e4.netlify.app";
 
+const ADULT_PRODUCT_RE = /\b(?:adult\s+(?:toy|novelty|product)|sex(?:ual)?\s+(?:toy|aid|product)|vibrators?|dildos?|masturbators?|mastubators?|masturbation|male\s+enhancement|penis\s+(?:pump|ring)|cock\s+ring|butt\s+plug|anal\s+(?:plug|toy|beads)|bondage\s+(?:gear|kit|toy)|erotic\s+(?:toy|massager)|love\s+doll)\b/i;
+
+function isAdultProduct(value) {
+  return ADULT_PRODUCT_RE.test(String(value || ""));
+}
+
 const PACKAGES = {
   single: { posts: 1, amount: "3.00", label: "1 Post" },
   five: { posts: 5, amount: "12.00", label: "5 Posts" },
@@ -47,6 +53,14 @@ export default async (req) => {
       return new Response(
         JSON.stringify({ error: "Invalid package selected." }),
         { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const submission = body.submission || {};
+    if (isAdultProduct(`${submission.productTitle} ${submission.productUrl}`)) {
+      return new Response(
+        JSON.stringify({ error: "Adult products, sex toys, and sexually explicit products cannot be submitted." }),
+        { status: 422, headers: { "Content-Type": "application/json" } }
       );
     }
 
