@@ -147,9 +147,10 @@ export default async (req) => {
       const issues = [];
       if (!asin) issues.push('missing ASIN');
       if (!resolvedTitle) issues.push('missing title');
-      if (!meta.image) issues.push('missing verified image');
+      const verifiedImage = meta.image || record.image || record.imageUrl || record.photoUrl || null;
+      if (!verifiedImage) issues.push('missing verified image');
       if (!/^[A-Z0-9]{4,20}$/i.test(String(record.discountCode || '').trim())) issues.push('missing or invalid promo code');
-      const titleAndImageVerified = Boolean(asin && meta.image && resolvedTitle && (!meta.title || matchScore >= 0.5));
+      const titleAndImageVerified = Boolean(asin && verifiedImage && resolvedTitle && (!meta.title || matchScore >= 0.5));
       if (!titleAndImageVerified) issues.push('title/image match could not be verified');
 
       const approved = issues.length === 0;
@@ -157,10 +158,10 @@ export default async (req) => {
         record.asin = asin;
         record.productTitle = resolvedTitle;
         record.title = resolvedTitle;
-        if (meta.image) {
-          record.image = meta.image;
-          record.imageUrl = meta.image;
-          record.photoUrl = meta.image;
+        if (verifiedImage) {
+          record.image = verifiedImage;
+          record.imageUrl = verifiedImage;
+          record.photoUrl = verifiedImage;
         }
         record.status = approved ? 'approved' : 'pending';
         record.reviewReason = approved ? null : issues.join('; ');
