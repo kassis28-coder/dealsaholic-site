@@ -437,7 +437,7 @@ function titleMatchScore(targetTitle, cardTitle) {
   if (!target.size || !candidate.size) return 0;
   let matches = 0;
   for (const token of target) if (candidate.has(token)) matches++;
-  return matches / target.size;
+  return matches / Math.min(target.size, candidate.size);
 }
 
 // Promo landing pages are not product pages. This reads only their product-card
@@ -698,7 +698,7 @@ async function fetchAmazonMeta(url) {
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export async function extractAllProducts(rawHtml, plainText, emailText) {
-  const imageSource = rawHtml || emailText || plainText || '';
+  const imageSource = [rawHtml, emailText, plainText].filter(Boolean).join('\n');
   const cdnImages = extractCdnImages(imageSource);
   const combined = rawHtml + '\n' + (plainText || '') + '\n' + (emailText || '');
   const structuredText = plainText || emailText || htmlToTextWithLines(rawHtml);
