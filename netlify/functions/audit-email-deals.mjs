@@ -23,9 +23,21 @@ function titleMatchScore(left, right) {
 
 function decodeImageUrl(value) {
   return String(value || '')
-    .replace(/\\u0026/gi, '&')
-    .replace(/\\u003d/gi, '=')
-    .replace(/\\\//g, '/');
+    .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
+    .replace(/\\u0026/gi, '&').replace(/\\u003d/gi, '=').replace(/\\\//g, '/');
+}
+
+function extractAmazonPageImage(html) {
+  const source = decodeImageUrl(html);
+  const candidates = [
+    source.match(/<img[^>]+id=[\"']landingImage[\"'][^>]+data-old-hires=[\"']([^\"']+)/i)?.[1],
+    source.match(/<img[^>]+id=[\"']landingImage[\"'][^>]+src=[\"']([^\"']+)/i)?.[1],
+    source.match(/[\"'](?:hiRes|large|mainUrl|thumb)[\"']\s*:\s*[\"'](https?:\/\/[^\"']+)/i)?.[1],
+    source.match(/<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)/i)?.[1],
+    source.match(/https?:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com)\/images\/I\/[A-Za-z0-9%._-]+/i)?.[0],
+  ];
+  const image = decodeImageUrl(candidates.find(Boolean));
+  return /^https:\/\//i.test(image) ? image : null;
 }
 
 async function fetchAmazonMeta(asin) {
@@ -44,12 +56,7 @@ async function fetchAmazonMeta(asin) {
     const title = html.match(/<span[^>]*id=["']productTitle["'][^>]*>\s*([^<]+?)\s*<\/span>/i)?.[1]?.trim()
       || html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]?.trim()
       || null;
-    const imageCandidate = html.match(/["']hiRes["']\s*:\s*["'](https?(?:\\.|[^"'])+)["']/i)?.[1]
-      || html.match(/["']large["']\s*:\s*["'](https?(?:\\.|[^"'])+)["']/i)?.[1]
-      || html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]
-      || null;
-    const image = decodeImageUrl(imageCandidate);
-    return { title, image: /^https:\/\//i.test(image) ? image : null };
+    return { title, image: extractAmazonPageImage(html) };
   } catch (error) {
     console.warn(`[audit-email-deals] Amazon lookup failed for ${asin}: ${error.message}`);
     return {};
