@@ -29,6 +29,13 @@ async function getAccessToken() {
 
 const PARTNER_TAG = process.env.AMAZON_PARTNER_TAG || "daholic-20";
 
+// Keep explicit adult products out of the public seller-submission queue.
+const ADULT_PRODUCT_RE = /\\b(?:adult\\s+(?:toy|novelty|product)|sex(?:ual)?\\s+(?:toy|aid|product)|vibrators?|dildos?|masturbators?|mastubators?|masturbation|male\\s+enhancement|penis\\s+(?:pump|ring)|cock\\s+ring|butt\\s+plug|anal\\s+(?:plug|toy|beads)|bondage\\s+(?:gear|kit|toy)|erotic\\s+(?:toy|massager)|love\\s+doll)\\b/i;
+
+function isAdultProduct(value) {
+  return ADULT_PRODUCT_RE.test(String(value || ""));
+}
+
 function isAmazonUrl(url) {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -101,6 +108,13 @@ export default async (req) => {
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
+    }
+
+    if (isAdultProduct(`${submission.productTitle} ${submission.productUrl}`)) {
+      return new Response(
+        JSON.stringify({ error: "Adult products, sex toys, and sexually explicit products cannot be submitted." }),
+        { status: 422, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     const accessToken = await getAccessToken();
