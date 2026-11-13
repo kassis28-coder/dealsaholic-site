@@ -45,24 +45,33 @@ function htmlToTextWithLines(html) {
     .trim();
 }
 
+function decodeEmailImage(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
+    .replace(/\\u0026/gi, '&').replace(/\\u003d/gi, '=').replace(/\\\//g, '/');
+}
+
+function isAmazonImage(value) {
+  return /^https?:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com|[a-z0-9-]+\.ssl-images-amazon\.com)\/images\//i.test(value || '');
+}
+
 function extractCdnImages(html) {
-  const patterns = [
-    /https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/images-na\.ssl-images-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/images\.amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/[a-z0-9-]+\.ssl-images-amazon\.com\/images\/[A-Za-z0-9%._/-]+\.(?:jpg|jpeg|png|webp)/gi,
-    /https:\/\/ecx\.images-amazon\.com\/images\/I\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/gi,
-  ];
+  const source = decodeEmailImage(html);
   const seen = new Set();
   const images = [];
-  for (const pat of patterns) {
-    for (const url of (html.match(pat) || [])) {
-      const clean = url.split('?')[0];
-      if (!seen.has(clean) && !/_SL75_|_SS40_|thumbnail/i.test(clean)) {
-        seen.add(clean);
-        images.push(clean);
-      }
-    }
+  const add = (value) => {
+    const clean = decodeEmailImage(value).replace(/[\"'<>\s,]+$/, '');
+    if (!isAmazonImage(clean) || /_SL75_|_SS40_|thumbnail|sprite|pixel|tracking|transparent/i.test(clean)) return;
+    if (!seen.has(clean)) { seen.add(clean); images.push(clean); }
+  };
+  const broad = /https?:\/\/(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|images\.amazon\.com|ecx\.images-amazon\.com|[a-z0-9-]+\.ssl-images-amazon\.com)\/images\/[A-Za-z0-9%._,/?=&-]+/gi;
+  for (const url of source.match(broad) || []) add(url);
+  for (const tag of source.match(/<img\b[^>]*>/gi) || []) {
+    for (const match of tag.matchAll(/\b(?:src|data-src|data-original|data-lazy-src)\s*=\s*[\"']([^\"']+)[\"']/gi)) add(match[1]);
+    const srcset = tag.match(/\bsrcset\s*=\s*[\"']([^\"']+)[\"']/i)?.[1] || '';
+    for (const item of srcset.split(',')) add(item.trim().split(/\s+/)[0]);
+    const dynamic = tag.match(/data-a-dynamic-image\s*=\s*[\"']([^\"']+)[\"']/i)?.[1];
+    if (dynamic) { try { Object.keys(JSON.parse(dynamic)).forEach(add); } catch {} }
   }
   return images;
 }
@@ -631,11 +640,12 @@ function extractImageForProduct(rawHtml, cdnImages, asin, url) {
     if (match) return match;
   }
   // 2. Proximity: image closest to this URL in raw HTML (within 3000 chars)
-  const urlPos = rawHtml.indexOf(url);
+  const searchableHtml = decodeEmailImage(rawHtml);
+  const urlPos = searchableHtml.indexOf(decodeEmailImage(url));
   if (urlPos >= 0) {
     let best = null, bestDist = Infinity;
     for (const img of cdnImages) {
-      const pos = rawHtml.indexOf(img);
+      const pos = searchableHtml.indexOf(decodeEmailImage(img));
       if (pos >= 0) {
         const dist = Math.abs(pos - urlPos);
         if (dist < bestDist && dist < 3000) { bestDist = dist; best = img; }
@@ -667,7 +677,7 @@ async function fetchAmazonMeta(url) {
       html.match(/id="landingImage"[^>]*data-old-hires="([^"]+)"/i)?.[1] ||
       html.match(/https?:\\?\/\\?\/m\.media-amazon\.com\\?\/images\\?\/I\\?\/[A-Za-z0-9%._-]+\.(?:jpg|jpeg|png|webp)/i)?.[0] ||
       null;
-    const image = decodeAmazonImageUrl(imageCandidate);
+    const image = firstAmazonProductImage(html) || decodeAmazonImageUrl(imageCandidate);
     const pw = html.match(/class="a-price-whole"[^>]*>(\d+)<\/span>/)?.[1];
     const pf = html.match(/class="a-price-fraction"[^>]*>(\d+)<\/span>/)?.[1];
     const price = pw ? parseDollar(`${pw}.${pf || '00'}`) : null;
@@ -688,7 +698,8 @@ async function fetchAmazonMeta(url) {
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export async function extractAllProducts(rawHtml, plainText, emailText) {
-  const cdnImages = extractCdnImages(rawHtml);
+  const imageSource = rawHtml || emailText || plainText || '';
+  const cdnImages = extractCdnImages(imageSource);
   const combined = rawHtml + '\n' + (plainText || '') + '\n' + (emailText || '');
   const structuredText = plainText || emailText || htmlToTextWithLines(rawHtml);
   const blocks = splitProductBlocks(structuredText);
@@ -723,7 +734,7 @@ export async function extractAllProducts(rawHtml, plainText, emailText) {
         originalPrice:  fields.originalPrice || null,
         discountCode:   fields.discountCode || null,
         expirationDate: fields.expirationDate || null,
-        imageUrl:       extractImageForProduct(rawHtml, cdnImages, asin, fields.amazonUrl) || null,
+        imageUrl:       extractImageForProduct(imageSource, cdnImages, asin, fields.amazonUrl) || null,
       });
     }
     structuredCount = drafts.length;
@@ -751,7 +762,7 @@ export async function extractAllProducts(rawHtml, plainText, emailText) {
       originalPrice:  null,
       discountCode:   null,
       expirationDate: null,
-      imageUrl:       extractImageForProduct(rawHtml, cdnImages, asin, url) || null,
+      imageUrl:       extractImageForProduct(imageSource, cdnImages, asin, url) || null,
     };
 
     console.log(`[Phase 1] Product ${i + 1}/${urlsToProcess.length}:`, JSON.stringify({
