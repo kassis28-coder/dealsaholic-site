@@ -17,7 +17,7 @@ type DealsContextValue = {
 };
 
 const FAVORITES_KEY = 'deals-aholic:favorites';
-const HOURLY_REFRESH_MS = 60 * 60 * 1000;
+const FEED_REFRESH_MS = 15 * 60 * 1000;
 const DealsContext = createContext<DealsContextValue | null>(null);
 
 export function DealsProvider({ children }: PropsWithChildren) {
@@ -53,9 +53,9 @@ export function DealsProvider({ children }: PropsWithChildren) {
       if (stored) setFavorites(new Set(JSON.parse(stored)));
     }).catch(() => undefined);
 
-    const interval = setInterval(() => load('background'), HOURLY_REFRESH_MS);
+    const interval = setInterval(() => load('background'), FEED_REFRESH_MS);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && Date.now() - lastLoadedAt.current >= HOURLY_REFRESH_MS) load('background');
+      if (state === 'active' && Date.now() - lastLoadedAt.current >= FEED_REFRESH_MS) load('background');
     });
     return () => {
       clearInterval(interval);
