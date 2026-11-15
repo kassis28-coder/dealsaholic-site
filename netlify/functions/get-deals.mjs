@@ -287,7 +287,7 @@ function isRestrictedContent(deal) {
     deal.subcategory,
   ].filter(Boolean).join(" ")).toLowerCase();
 
-  return /\\b(?:book|books|novel|paperback|hardcover|kindle|audiobook|ebook|literature|politic|political|election|president|senator|congress|campaign|democrat|republican|liberal|conservative|immigration|coup|war|iran|israel|palestine|biden|trump|obama|kennedy)\\b/.test(text);
+  return /\b(?:book|books|novel|paperback|hardcover|kindle|audiobook|ebook|literature|politic|political|election|president|senator|congress|campaign|democrat|republican|liberal|conservative|immigration|coup|war|iran|israel|palestine|biden|trump|obama|kennedy)\b/.test(text);
 }
 
 function isGarbageSubmission(record) {
