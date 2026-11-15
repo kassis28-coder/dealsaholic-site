@@ -9,7 +9,7 @@ let pendingPublicFeedRebuild = null;
 // Bump this whenever the rules that decide whether an approved deal is public
 // change, so the first request after deployment rebuilds instead of serving
 // the old decision from a durable cache.
-const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v5";
+const PUBLIC_FEED_CACHE_KEY = "latest-deduped-v6";
 
 // Retain the rotating Amazon inventory long enough to build a complete catalog.
 const AMAZON_PUBLIC_WINDOW_MS = Number(process.env.DEALS_PUBLIC_AMAZON_WINDOW_HOURS || 168) * 60 * 60 * 1000;
@@ -274,6 +274,20 @@ function deduplicateDeals(candidates) {
   }
 
   return deduped;
+}
+
+function isRestrictedContent(deal) {
+  const text = String([
+    deal.title,
+    deal.category,
+    deal.categoryName,
+    deal.department,
+    deal.productType,
+    deal.browseNode,
+    deal.subcategory,
+  ].filter(Boolean).join(" ")).toLowerCase();
+
+  return /\\b(?:book|books|novel|paperback|hardcover|kindle|audiobook|ebook|literature|politic|political|election|president|senator|congress|campaign|democrat|republican|liberal|conservative|immigration|coup|war|iran|israel|palestine|biden|trump|obama|kennedy)\\b/.test(text);
 }
 
 function isGarbageSubmission(record) {
@@ -555,7 +569,7 @@ async function buildPublicFeed(
   const allDeals = [
     ...sellerDeals,
     ...amazonDeals,
-  ];
+  ].filter(deal => !isRestrictedContent(deal));
 
   const deduped =
     deduplicateDeals(allDeals);
@@ -601,7 +615,7 @@ function livePayload(payload) {
   const cutoff = now - AMAZON_PUBLIC_WINDOW_MS;
   return {
     ...payload,
-    deals: (payload.deals || []).filter(deal => {
+    deals: (payload.deals || []).filter(deal => !isRestrictedContent(deal) && {
       const expiry = new Date(deal.expiresOn).getTime();
       if (deal.expiresOn && Number.isFinite(expiry) && expiry < now) return false;
       // Seller records are governed by expiresOn, not the Amazon import window.
