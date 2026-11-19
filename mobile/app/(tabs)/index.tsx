@@ -84,6 +84,7 @@ export default function DealsScreen() {
     const remaining = new Date(deal.expiresOn).getTime() - Date.now();
     return remaining > 0 && remaining <= 48 * 60 * 60 * 1000;
   }).sort((a, b) => new Date(a.expiresOn || 0).getTime() - new Date(b.expiresOn || 0).getTime());
+  const blackFridayDeals = deals.filter((deal) => ['Amazon', 'Walmart'].includes(retailerName(deal))).slice(0, 20);
   const imageDeals = deals.filter((deal) => !!deal.image);
   const heroKeywords = [
     ['couch', 'sofa', 'sectional', 'recliner'],
@@ -140,6 +141,17 @@ export default function DealsScreen() {
         </View>
         <View style={styles.instagramButton}><Text style={styles.instagramButtonText}>Shop the posts →</Text></View>
       </Pressable>
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel="View Black Friday deals"
+        style={styles.blackFridayBanner}
+        onPress={() => Linking.openURL('https://deals-aholic.com/black-friday.html')}>
+        <Text style={styles.blackFridayKicker}>LIMITED-TIME EVENT · ENDS NOVEMBER 28</Text>
+        <Text style={styles.blackFridayTitle}>Black Friday deals</Text>
+        <Text style={styles.blackFridayText}>Shop fresh Amazon and Walmart deals from the website.</Text>
+        <Text style={styles.blackFridayLink}>View Black Friday deals →</Text>
+      </Pressable>
+      {showDiscoveryShelves && !!blackFridayDeals.length && <DealShelf title="🖤 Black Friday Deals" deals={blackFridayDeals.slice(0, 12)} />}
       <Pressable
         accessibilityRole="link"
         accessibilityLabel="Join the Deals-aholic Telegram channel"
@@ -234,6 +246,11 @@ const styles = StyleSheet.create({
   instagramText: { color: '#FFF1F7', fontSize: 11, lineHeight: 16, marginTop: 5 },
   instagramButton: { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 11 },
   instagramButtonText: { color: '#9A2456', fontSize: 11, fontWeight: '900' },
+  blackFridayBanner: { backgroundColor: '#171717', borderRadius: 18, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: '#8B1212' },
+  blackFridayKicker: { color: '#FFD166', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  blackFridayTitle: { color: '#FFFFFF', fontSize: 25, fontWeight: '900', marginTop: 7 },
+  blackFridayText: { color: '#E5E7EB', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  blackFridayLink: { color: '#FFD166', fontSize: 12, fontWeight: '900', marginTop: 12 },
   telegramBanner: { minHeight: 76, marginTop: 12, borderRadius: 17, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#DFF4FF', borderWidth: 1, borderColor: '#9BD9F5' },
   telegramIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#229ED9' },
   telegramCopy: { flex: 1 },
