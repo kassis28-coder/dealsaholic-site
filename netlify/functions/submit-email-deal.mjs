@@ -53,12 +53,12 @@ function decodeEmailImage(value) {
 }
 
 function isRetailerImage(value) {
-  const url = decodeEmailImage(value).replace(/^\\s+|\\s+$/g, '');
-  return /^https?:\\/\\//i.test(url) || /^\\/\\//.test(url);
+  const url = decodeEmailImage(value).replace(/^\s+|\s+$/g, '');
+  return /^https?:\/\//i.test(url) || /^\/\//.test(url);
 }
 
 function normalizeEmailImage(value) {
-  let url = decodeEmailImage(value).replace(/[\\"'<>\\s,]+$/, '');
+  let url = decodeEmailImage(value).replace(/[\\"'<>\s,]+$/, '');
   if (url.startsWith('//')) url = 'https:' + url;
   return url;
 }
@@ -72,13 +72,13 @@ function extractCdnImages(html) {
     if (!isRetailerImage(clean) || /(?:pixel|tracking|transparent|spacer|sprite|logo|icon|badge)/i.test(clean)) return;
     if (!seen.has(clean)) { seen.add(clean); images.push(clean); }
   };
-  const urlPattern = /(?:https?:\\/\\/|\\/\\/)[^\\s"'<>]+/gi;
+  const urlPattern = /(?:https?:\/\/|\\/\\/)[^\s"'<>]+/gi;
   for (const url of source.match(urlPattern) || []) add(url);
-  for (const tag of source.match(/<img\\b[^>]*>/gi) || []) {
-    for (const match of tag.matchAll(/\\b(?:src|data-src|data-original|data-lazy-src|data-image|data-fallback-src)\\s*=\\s*["']([^"']+)["']/gi)) add(match[1]);
-    const srcset = tag.match(/\\bsrcset\\s*=\\s*["']([^"']+)["']/i)?.[1] || '';
-    for (const item of srcset.split(',')) add(item.trim().split(/\\s+/)[0]);
-    const dynamic = tag.match(/data-a-dynamic-image\\s*=\\s*["']([^"']+)["']/i)?.[1];
+  for (const tag of source.match(/<img\b[^>]*>/gi) || []) {
+    for (const match of tag.matchAll(/\b(?:src|data-src|data-original|data-lazy-src|data-image|data-fallback-src)\s*=\s*["']([^"']+)["']/gi)) add(match[1]);
+    const srcset = tag.match(/\\bsrcset\s*=\s*["']([^"']+)["']/i)?.[1] || '';
+    for (const item of srcset.split(',')) add(item.trim().split(/\s+/)[0]);
+    const dynamic = tag.match(/data-a-dynamic-image\s*=\s*["']([^"']+)["']/i)?.[1];
     if (dynamic) { try { Object.keys(JSON.parse(dynamic)).forEach(add); } catch {} }
   }
   return images;
