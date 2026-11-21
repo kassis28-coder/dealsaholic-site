@@ -84,6 +84,39 @@ async function fetchAmazonProductImage(asin) {
   }
 }
 
+async function fetchWalmartProductImage(url) {
+  if (!/walmart\\.com/i.test(url || '')) return null;
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; DealsAholic/1.0)",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const candidates = [
+      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1],
+      html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1],
+      html.match(/"imageUrl"\\s*:\\s*"([^"]+)/i)?.[1],
+      html.match(/"thumbnailUrl"\\s*:\\s*"([^"]+)/i)?.[1],
+      html.match(/https?:\\/\\/(?:i5\\.)?walmartimages\\.com\\/[^"'\\s\\\\]+/i)?.[0],
+    ];
+    for (const candidate of candidates) {
+      const image = String(candidate || "")
+        .replace(/\\u0026/gi, "&").replace(/\\u003d/gi, "=")
+        .replace(/\\\\\\//g, "/").replace(/&amp;/gi, "&");
+      if (/^https?:\\/\\//i.test(image) && /walmartimages\\.com|images\\.walmart\\.com/i.test(image)) return image;
+    }
+    return null;
+  } catch (e) {
+    console.log("[backfill] Walmart image lookup failed:", e.message);
+    return null;
+  }
+}
+
 // Fetch image directly from a product URL (fallback when no ASIN available)
 async function fetchImageFromUrl(url) {
   if (!url) return null;
@@ -207,11 +240,11 @@ export default async (req) => {
       // Get image — via ASIN first, then directly from URL
       let imageUrl = null;
       if (!imageUrl) {
-        if (asin) {
-          imageUrl = await fetchAmazonProductImage(asin);
-        }
-        if (!imageUrl && productUrl) {
-          imageUrl = await fetchImageFromUrl(productUrl);
+        if (/walmart\\.com/i.test(productUrl || "")) {
+          imageUrl = await fetchWalmartProductImage(productUrl);
+        } else {
+          if (asin) imageUrl = await fetchAmazonProductImage(asin);
+          if (!imageUrl && productUrl) imageUrl = await fetchImageFromUrl(productUrl);
         }
       }
 
