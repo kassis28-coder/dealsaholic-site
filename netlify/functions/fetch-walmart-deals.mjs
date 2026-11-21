@@ -37,28 +37,23 @@ function reviewStatusForImage(image) {
 
 function firstImageUrl(...candidates) {
   const values = [...candidates];
+  const keys = [
+    "url","src","href","image","imageUrl","imageURL","Image","ImageUrl","ImageURL",
+    "thumbnail","thumbnailUrl","thumbnailURL","ThumbnailUrl","ThumbnailURL",
+    "primaryImage","primaryImageUrl","PrimaryImage","PrimaryImageUrl",
+    "mainImage","mainImageUrl","MainImageUrl","productImage","ProductImage",
+    "largeImage","largeImageUrl","LargeImageUrl","mediumImageUrl","smallImageUrl",
+    "images","allImages","ImageUrls","AdditionalImages","AdditionalImageUrls",
+    "media","Media","imageInfo","productImages"
+  ];
   while (values.length) {
     const value = values.shift();
-    if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) {
-      return value.trim();
-    }
-    if (Array.isArray(value)) {
-      values.push(...value);
-    } else if (value && typeof value === "object") {
-      values.push(
-        value.url,
-        value.src,
-        value.href,
-        value.ImageUrl,
-        value.imageUrl,
-        value.ThumbnailUrl,
-        value.thumbnailUrl,
-        value.large,
-        value.medium,
-        value.images,
-        value.allImages
-      );
-    }
+    if (typeof value === "string") {
+      let url = value.trim().replace(/&amp;/gi, "&").replace(/\\\\\\//g, "/");
+      if (url.startsWith("//")) url = "https:" + url;
+      if (/^https?:\\/\\//i.test(url) && !/(?:pixel|tracking|transparent|sprite)/i.test(url)) return url;
+    } else if (Array.isArray(value)) values.push(...value);
+    else if (value && typeof value === "object") keys.forEach((key) => values.push(value[key]));
   }
   return null;
 }
@@ -198,12 +193,15 @@ function normalizeWalmartItem(raw) {
   if (discountPercent !== null && discountPercent < MIN_DISCOUNT && !isRollback) return null;
   const canonicalUrl = raw.canonicalUrl ? `https://www.walmart.com${raw.canonicalUrl}` : `https://www.walmart.com/ip/${id}`;
   const image = firstImageUrl(
-    raw.imageInfo?.thumbnailUrl,
-    raw.imageInfo?.thumbnail,
-    raw.imageInfo?.allImages,
-    raw.imageInfo?.images,
+    raw.imageInfo,
+    raw.productImage,
+    raw.productImages,
+    raw.primaryImage,
+    raw.primaryImageUrl,
     raw.imageUrl,
-    raw.images
+    raw.images,
+    raw.media,
+    raw.Media
   );
   return {
     id: `walmart-${id}`, title,
