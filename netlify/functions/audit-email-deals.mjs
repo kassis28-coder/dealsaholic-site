@@ -64,7 +64,7 @@ async function fetchAmazonMeta(asin) {
 }
 
 async function fetchWalmartMeta(url) {
-  if (!/walmart\\.com/i.test(url || '')) return {};
+  if (!/walmart\.com/i.test(url || '')) return {};
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DealsAholic/1.0)', 'Accept-Language': 'en-US,en;q=0.9' },
@@ -78,7 +78,7 @@ async function fetchWalmartMeta(url) {
       || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)/i)?.[1]
       || html.match(/"imageUrl"\\s*:\\s*"([^"]+)/i)?.[1]
       || html.match(/"thumbnailUrl"\\s*:\\s*"([^"]+)/i)?.[1]
-      || html.match(/https?:\\/\\/(?:i5\\.)?walmartimages\\.com\\/[^"'\\s\\\\]+/i)?.[0]
+      || html.match(/https?:\/\/(?:i5\\.)?walmartimages\\.com\\/[^"'\\s\\\\]+/i)?.[0]
     );
     const title = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1]
       || html.match(/<title[^>]*>\\s*([^<]+?)\\s*<\\/title>/i)?.[1]?.trim()
@@ -157,7 +157,7 @@ export default async (req) => {
       }
 
       const recordUrl = record.productUrl || record.url || record.amazonUrl || '';
-      const meta = /walmart\\.com/i.test(recordUrl)
+      const meta = /walmart\.com/i.test(recordUrl)
         ? await fetchWalmartMeta(recordUrl)
         : await fetchAmazonMeta(asin);
       if (ADULT_PRODUCT_RE.test(meta.title || '')) {
@@ -175,12 +175,12 @@ export default async (req) => {
       const resolvedTitle = currentTitle || meta.title || '';
       const matchScore = titleMatchScore(resolvedTitle, meta.title);
       const issues = [];
-      if (!asin && !/walmart\\.com/i.test(recordUrl)) issues.push('missing ASIN');
+      if (!asin && !/walmart\.com/i.test(recordUrl)) issues.push('missing ASIN');
       if (!resolvedTitle) issues.push('missing title');
       const verifiedImage = meta.image || record.image || record.imageUrl || record.photoUrl || null;
       if (!verifiedImage) issues.push('missing verified image');
       if (!/^[A-Z0-9]{4,20}$/i.test(String(record.discountCode || '').trim())) issues.push('missing or invalid promo code');
-      const titleAndImageVerified = Boolean((asin || /walmart\\.com/i.test(recordUrl)) && verifiedImage && resolvedTitle && (!meta.title || matchScore >= 0.5));
+      const titleAndImageVerified = Boolean((asin || /walmart\.com/i.test(recordUrl)) && verifiedImage && resolvedTitle && (!meta.title || matchScore >= 0.5));
       if (!titleAndImageVerified) issues.push('title/image match could not be verified');
 
       const approved = issues.length === 0;
